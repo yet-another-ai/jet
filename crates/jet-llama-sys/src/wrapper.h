@@ -23,6 +23,15 @@ int32_t jet_chat_render(
     char * error,
     size_t error_capacity);
 
+// Creates a sampler chain that computes full-vocabulary softmax followed by
+// target gather and log in llama.cpp's model-output backend. The caller owns
+// the returned llama_sampler.
+struct llama_sampler * jet_score_sampler_init(size_t target_width);
+bool jet_score_sampler_set_targets(
+    struct llama_sampler * sampler,
+    const llama_token * targets,
+    size_t target_count);
+
 struct jet_thinking_sampler;
 
 struct jet_thinking_sampler * jet_thinking_sampler_init(

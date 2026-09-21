@@ -30,11 +30,20 @@ run on the same development machine, so its value is approximate.
 | Backend | Wall time | Requests/s | Overall | BoolQ | MMLU | Mean gold NLL |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | CPU | ~220 s | ~2.46 | 252/541 (46.58%) | 143/256 (55.86%) | 109/285 (38.25%) | 2.0857 |
-| Vulkan | 70.86 s | 7.63 | 255/541 (47.13%) | 142/256 (55.47%) | 113/285 (39.65%) | 2.0978 |
+| Vulkan, CPU softmax | 70.86 s | 7.63 | 255/541 (47.13%) | 142/256 (55.47%) | 113/285 (39.65%) | 2.0978 |
+| Vulkan, GPU softmax + target gather | 69.51 s | 7.78 | 255/541 (47.13%) | 142/256 (55.47%) | 113/285 (39.65%) | 2.0977 |
 
-This is about a **3.10x end-to-end speedup** and a **67.8% wall-time reduction** versus the recorded
-CPU run. llama.cpp reported all 29 model layers, the 2,016 MiB KV buffer, and the 298.75 MiB compute
-buffer on `Vulkan0`. Peak host RSS reported for the process was approximately 741 MiB.
+The optimized Vulkan path is about a **3.17x end-to-end speedup** and a **68.4% wall-time reduction**
+versus the recorded CPU run. Moving vocabulary normalization to Vulkan improved the original GPU
+run by only 1.9%, so logits normalization and host transfer were not the dominant bottleneck on
+this workload. Gathering only target probabilities did not improve wall time beyond the full-row
+GPU softmax experiment, but reduced its Vulkan compute buffer from 449.02 MiB to 317.39 MiB. Peak
+host RSS for the final run was approximately 741 MiB. All measurements were cold process starts
+with no explicit warm-up.
+
+The target-gather run produced no top-1 changes relative to the full-row GPU softmax run across all
+541 examples. The maximum absolute candidate-probability difference was `7.1e-8` and the mean was
+`4.5e-9`.
 
 The backend results are not bit-identical. Fourteen of 541 top-1 predictions changed: seven moved
 from wrong to correct, four from correct to wrong, and three remained wrong. Across reported

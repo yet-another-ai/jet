@@ -21,6 +21,13 @@ exhausted. Thinking uses configurable temperature, top-k, top-p, and seed values
 trace is generated once per question and then frozen; all candidate scores are conditional on that
 same trace.
 
+For Vulkan batched execution, generation and scoring use two contexts over the same model. The
+single-sequence generation context copies its selected logits row to the CPU for the bounded
+thinking sampler. The scoring context performs vocabulary softmax, target-token gather, and log on
+the GPU and returns only a fixed-width target vector per output row. This avoids changing a live
+sampler graph between thinking and scoring and does not duplicate model weights; the additional
+state is one generation KV cache plus its compute buffers.
+
 The JSONL request is only Jet's external API. Before tokenization, Jet uses Tera to render each
 question as a human-readable user message with explicit `Context`, `Instruction`, and `Candidate
 answers` sections. Structured objects are rendered with sorted keys, arrays retain their input

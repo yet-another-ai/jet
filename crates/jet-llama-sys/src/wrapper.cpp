@@ -32,7 +32,140 @@ common_chat_msg message(const char * role, const char * content) {
     result.content = content;
     return result;
 }
+
+const char * score_sampler_name(const llama_sampler *) {
+    return "jet-score-softmax";
+}
+
+struct score_sampler_context {
+    size_t target_width;
+    std::vector<llama_token> targets;
+    std::vector<ggml_tensor *> target_inputs;
+};
+
+extern llama_sampler_i score_sampler_interface;
+
+void score_sampler_apply(llama_sampler *, llama_token_data_array *) {
+    // Jet only attaches this sampler to a model-output backend. The host path is
+    // intentionally a no-op so a failed backend initialization is detected by
+    // the missing device result instead of silently changing scoring semantics.
+}
+
+llama_sampler * score_sampler_clone(const llama_sampler * sampler) {
+    const auto * context = static_cast<const score_sampler_context *>(sampler->ctx);
+    return llama_sampler_init(
+        &score_sampler_interface,
+        new score_sampler_context{context->target_width, {}, {}});
+}
+
+void score_sampler_free(llama_sampler * sampler) {
+    delete static_cast<score_sampler_context *>(sampler->ctx);
+}
+
+bool score_sampler_backend_init(llama_sampler *, ggml_backend_buffer_type_t, uint32_t) {
+    return true;
+}
+
+void score_sampler_backend_apply(
+    llama_sampler * sampler,
+    ggml_context * context,
+    ggml_cgraph *,
+    llama_sampler_data * data) {
+    auto * sampler_context = static_cast<score_sampler_context *>(sampler->ctx);
+    auto * target =
+        ggml_new_tensor_1d(context, GGML_TYPE_I32, sampler_context->target_width);
+    ggml_set_input(target);
+    sampler_context->target_inputs.push_back(target);
+
+    auto * probabilities = ggml_soft_max(context, data->logits);
+    ggml_set_name(probabilities, "jet_score_probabilities");
+    auto * probability_rows =
+        ggml_reshape_2d(context, probabilities, 1, ggml_nelements(probabilities));
+    auto * target_probability = ggml_get_rows(context, probability_rows, target);
+    auto * target_log_probability = ggml_log(context, target_probability);
+    ggml_set_name(target_log_probability, "jet_score_target_log_probability");
+    data->logits = nullptr;
+    data->probs = target_log_probability;
+    data->sampled = nullptr;
+    data->candidates = nullptr;
+}
+
+void score_sampler_backend_set_input(llama_sampler * sampler) {
+    auto * context = static_cast<score_sampler_context *>(sampler->ctx);
+    for (size_t index = 0; index < context->target_inputs.size(); ++index) {
+        const size_t offset = index * context->target_width;
+        if (offset + context->target_width <= context->targets.size()) {
+            ggml_backend_tensor_set(
+                context->target_inputs[index],
+                context->targets.data() + offset,
+                0,
+                context->target_width * sizeof(llama_token));
+        }
+    }
+}
+
+void score_sampler_backend_reset(llama_sampler * sampler) {
+    auto * context = static_cast<score_sampler_context *>(sampler->ctx);
+    context->target_inputs.clear();
+}
+
+llama_sampler_i score_sampler_interface = {
+    /* .name              = */ score_sampler_name,
+    /* .accept            = */ nullptr,
+    /* .apply             = */ score_sampler_apply,
+    /* .reset             = */ nullptr,
+    /* .clone             = */ score_sampler_clone,
+    /* .free              = */ score_sampler_free,
+    /* .backend_init      = */ score_sampler_backend_init,
+    /* .backend_accept    = */ nullptr,
+    /* .backend_apply     = */ score_sampler_backend_apply,
+    /* .backend_set_input = */ score_sampler_backend_set_input,
+    /* .backend_reset     = */ score_sampler_backend_reset,
+    /* .copy_state        = */ nullptr,
+};
 }  // namespace
+
+extern "C" struct llama_sampler * jet_score_sampler_init(size_t target_width) {
+    if (target_width == 0) {
+        return nullptr;
+    }
+    auto * chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    auto * softmax = llama_sampler_init(
+        &score_sampler_interface,
+        new score_sampler_context{target_width, {}, {}});
+    if (chain == nullptr || softmax == nullptr) {
+        if (chain != nullptr) {
+            llama_sampler_free(chain);
+        }
+        if (softmax != nullptr) {
+            llama_sampler_free(softmax);
+        }
+        return nullptr;
+    }
+    llama_sampler_chain_add(chain, softmax);
+    return chain;
+}
+
+extern "C" bool jet_score_sampler_set_targets(
+    struct llama_sampler * sampler,
+    const llama_token * targets,
+    size_t target_count) {
+    auto * softmax = llama_sampler_chain_get(sampler, 0);
+    if (softmax == nullptr || softmax->iface != &score_sampler_interface ||
+        (targets == nullptr && target_count != 0)) {
+        return false;
+    }
+    auto * context = static_cast<score_sampler_context *>(softmax->ctx);
+    if (target_count % context->target_width != 0) {
+        return false;
+    }
+    if (target_count == 0) {
+        context->targets.clear();
+    } else {
+        context->targets.assign(targets, targets + target_count);
+    }
+    return true;
+}
 
 extern "C" int32_t jet_chat_render(
     const struct llama_model * model,

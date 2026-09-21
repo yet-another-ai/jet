@@ -62,6 +62,32 @@ enum OutputAction {
     },
 }
 
+enum OutputDistribution<'a> {
+    Logits(&'a [f32]),
+    DeviceLogProbabilities(&'a [f32]),
+}
+
+impl OutputDistribution<'_> {
+    fn target_log_probability(&self, target: sys::llama_token, target_index: usize) -> Result<f64> {
+        match self {
+            Self::Logits(values) => target_log_probability(values, target),
+            Self::DeviceLogProbabilities(values) => {
+                let value = f64::from(*values.get(target_index).ok_or_else(|| {
+                    JetError::NativeRuntime(
+                        "Vulkan score target index exceeds sampler output".to_owned(),
+                    )
+                })?);
+                if value.is_nan() || value == f64::INFINITY || value > 0.0 {
+                    return Err(JetError::NonFiniteScore(format!(
+                        "Vulkan softmax returned invalid target log-probability {value}"
+                    )));
+                }
+                Ok(value)
+            }
+        }
+    }
+}
+
 struct DecodeItem {
     token: sys::llama_token,
     position: sys::llama_pos,
@@ -72,9 +98,13 @@ struct DecodeItem {
 pub(crate) struct LlamaScorer {
     model: NonNull<sys::llama_model>,
     context: NonNull<sys::llama_context>,
+    generation_context: Option<NonNull<sys::llama_context>>,
     vocab: NonNull<sys::llama_vocab>,
     config: EngineConfig,
     vocab_size: usize,
+    score_samplers: Vec<NonNull<sys::llama_sampler>>,
+    device_softmax: bool,
+    device_target_width: usize,
     _single_threaded: PhantomData<Rc<()>>,
 }
 
@@ -134,6 +164,11 @@ impl LlamaScorer {
     }
 
     fn finish_load(model: NonNull<sys::llama_model>, config: EngineConfig) -> Result<Self> {
+        let device_softmax =
+            config.backend == Backend::Vulkan && config.execution_mode == ExecutionMode::Batched;
+        let needs_generation_context =
+            device_softmax && config.thinking.mode != ThinkingMode::Disabled;
+        let device_target_width = (config.max_sequences as usize).saturating_sub(1);
         let total_context = config
             .context_tokens_per_sequence
             .checked_mul(config.max_sequences)
@@ -156,14 +191,91 @@ impl LlamaScorer {
         context_params.op_offload = offload;
         context_params.kv_unified = true;
 
+        let mut score_samplers: Vec<NonNull<sys::llama_sampler>> = Vec::new();
+        let mut sampler_configs = Vec::new();
+        if device_softmax {
+            for sequence in 0..config.max_sequences {
+                // SAFETY: the bridge returns a newly allocated llama sampler chain or null.
+                let sampler =
+                    NonNull::new(unsafe { sys::jet_score_sampler_init(device_target_width) })
+                        .ok_or_else(|| {
+                            for sampler in &score_samplers {
+                                // SAFETY: every pointer came from jet_score_sampler_init and is owned here.
+                                unsafe { sys::llama_sampler_free(sampler.as_ptr()) };
+                            }
+                            JetError::NativeRuntime(
+                                "failed to create Vulkan score softmax sampler".to_owned(),
+                            )
+                        })?;
+                score_samplers.push(sampler);
+                sampler_configs.push(sys::llama_sampler_seq_config {
+                    seq_id: sequence as i32,
+                    sampler: sampler.as_ptr(),
+                });
+            }
+            context_params.samplers = sampler_configs.as_mut_ptr();
+            context_params.n_samplers = sampler_configs.len();
+        }
+
         // SAFETY: model remains owned by the scorer and parameters are initialized.
         let context =
-            NonNull::new(unsafe { sys::llama_init_from_model(model.as_ptr(), context_params) })
-                .ok_or_else(|| {
-                    JetError::NativeRuntime("failed to create llama context".to_owned())
-                })?;
+            NonNull::new(unsafe { sys::llama_init_from_model(model.as_ptr(), context_params) });
+        let Some(context) = context else {
+            for sampler in score_samplers {
+                // SAFETY: context creation failed, so no native object retains these samplers.
+                unsafe { sys::llama_sampler_free(sampler.as_ptr()) };
+            }
+            return Err(JetError::NativeRuntime(
+                "failed to create llama context".to_owned(),
+            ));
+        };
         // SAFETY: context is live and exclusively owned here.
         unsafe { sys::llama_set_causal_attn(context.as_ptr(), true) };
+
+        let generation_context = if needs_generation_context {
+            // Keep generation on the Vulkan model backend, but omit the device-side scoring
+            // sampler so llama.cpp exposes the selected logits row to the CPU sampler.
+            // This context shares model weights with the scoring context and owns only its
+            // single-sequence runtime state (KV cache and compute buffers).
+            // SAFETY: default parameter struct is initialized by llama.cpp.
+            let mut generation_params = unsafe { sys::llama_context_default_params() };
+            generation_params.n_ctx = config.context_tokens_per_sequence;
+            generation_params.n_batch = config.token_batch;
+            generation_params.n_ubatch = config.micro_batch;
+            generation_params.n_seq_max = 1;
+            generation_params.n_outputs_max = 1;
+            generation_params.n_outputs_max_per_seq = 1;
+            generation_params.n_threads = config.threads;
+            generation_params.n_threads_batch = config.threads;
+            generation_params.embeddings = false;
+            generation_params.offload_kqv = offload;
+            generation_params.op_offload = offload;
+            generation_params.kv_unified = true;
+
+            // SAFETY: model remains live and generation_params contains no borrowed pointers.
+            match NonNull::new(unsafe {
+                sys::llama_init_from_model(model.as_ptr(), generation_params)
+            }) {
+                Some(generation_context) => {
+                    // SAFETY: context is live and exclusively owned here.
+                    unsafe { sys::llama_set_causal_attn(generation_context.as_ptr(), true) };
+                    Some(generation_context)
+                }
+                None => {
+                    // SAFETY: scoring context was created above and is still owned here.
+                    unsafe { sys::llama_free(context.as_ptr()) };
+                    for sampler in score_samplers {
+                        // SAFETY: scoring context is gone, so these remain owned here.
+                        unsafe { sys::llama_sampler_free(sampler.as_ptr()) };
+                    }
+                    return Err(JetError::NativeRuntime(
+                        "failed to create llama generation context".to_owned(),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
 
         let vocabulary = (|| {
             // SAFETY: the model is live; its vocab remains valid for the model lifetime.
@@ -183,8 +295,16 @@ impl LlamaScorer {
         let (vocab, vocab_size) = match vocabulary {
             Ok(value) => value,
             Err(error) => {
+                if let Some(generation_context) = generation_context {
+                    // SAFETY: generation context was successfully created and is owned here.
+                    unsafe { sys::llama_free(generation_context.as_ptr()) };
+                }
                 // SAFETY: context was successfully created and has not been transferred.
                 unsafe { sys::llama_free(context.as_ptr()) };
+                for sampler in score_samplers {
+                    // SAFETY: the context is gone and the sampler remains owned by this function.
+                    unsafe { sys::llama_sampler_free(sampler.as_ptr()) };
+                }
                 return Err(error);
             }
         };
@@ -192,9 +312,13 @@ impl LlamaScorer {
         Ok(Self {
             model,
             context,
+            generation_context,
             vocab,
             config,
             vocab_size,
+            score_samplers,
+            device_softmax,
+            device_target_width,
             _single_threaded: PhantomData,
         })
     }
@@ -504,7 +628,7 @@ impl LlamaScorer {
         .ok_or_else(|| template_error(&error))?;
         let sampler = ThinkingSampler(sampler);
 
-        self.clear_memory();
+        self.clear_generation_memory();
         let generation = (|| {
             let mut logits_index = self.decode_generation_input(&prompt, 0)?;
             let mut generated = Vec::with_capacity(budget.saturating_add(16));
@@ -516,7 +640,7 @@ impl LlamaScorer {
                 let mut token = unsafe {
                     sys::jet_thinking_sampler_sample(
                         sampler.0.as_ptr(),
-                        self.context.as_ptr(),
+                        self.generation_context().as_ptr(),
                         logits_index,
                     )
                 };
@@ -535,7 +659,7 @@ impl LlamaScorer {
                     token = unsafe {
                         sys::jet_thinking_sampler_sample(
                             sampler.0.as_ptr(),
-                            self.context.as_ptr(),
+                            self.generation_context().as_ptr(),
                             logits_index,
                         )
                     };
@@ -567,7 +691,7 @@ impl LlamaScorer {
                     .to_owned(),
             ))
         })();
-        self.clear_memory();
+        self.clear_generation_memory();
         let generated = generation?;
         let rendered = self.detokenize(&generated)?;
         let reasoning =
@@ -626,7 +750,8 @@ impl LlamaScorer {
                     }
                 }
                 // SAFETY: context and initialized batch remain live for the call.
-                let status = unsafe { sys::llama_decode(self.context.as_ptr(), batch) };
+                let status =
+                    unsafe { sys::llama_decode(self.generation_context().as_ptr(), batch) };
                 if status != 0 {
                     return Err(JetError::NativeRuntime(format!(
                         "llama_decode failed during thinking with status {status}"
@@ -831,6 +956,76 @@ impl LlamaScorer {
                     }
                 }
 
+                if self.device_softmax {
+                    let mut targets = vec![Vec::new(); self.score_samplers.len()];
+                    for item in chunk {
+                        match item.output {
+                            OutputAction::None => {}
+                            OutputAction::Prefix(group_index) => {
+                                let group = groups.get(group_index).ok_or_else(|| {
+                                    JetError::NativeRuntime(
+                                        "missing active prefix group".to_owned(),
+                                    )
+                                })?;
+                                let job = &jobs[group.spec.job_index];
+                                let range = group.spec.candidate_start..group.spec.candidate_end;
+                                let sequence = usize::try_from(item.sequence).map_err(|_| {
+                                    JetError::NativeRuntime(
+                                        "score sequence ID is negative".to_owned(),
+                                    )
+                                })?;
+                                let sequence_targets =
+                                    targets.get_mut(sequence).ok_or_else(|| {
+                                        JetError::NativeRuntime(
+                                            "score sequence ID exceeds sampler count".to_owned(),
+                                        )
+                                    })?;
+                                sequence_targets
+                                    .extend(job.targets[range].iter().map(|target| target[0]));
+                                let padding = sequence_targets.last().copied().unwrap_or_default();
+                                sequence_targets.resize(self.device_target_width, padding);
+                            }
+                            OutputAction::Target { target, .. } => {
+                                let sequence = usize::try_from(item.sequence).map_err(|_| {
+                                    JetError::NativeRuntime(
+                                        "score sequence ID is negative".to_owned(),
+                                    )
+                                })?;
+                                let sequence_targets =
+                                    targets.get_mut(sequence).ok_or_else(|| {
+                                        JetError::NativeRuntime(
+                                            "score sequence ID exceeds sampler count".to_owned(),
+                                        )
+                                    })?;
+                                sequence_targets.push(target);
+                                sequence_targets.resize(
+                                    sequence_targets.len() + self.device_target_width - 1,
+                                    target,
+                                );
+                            }
+                        }
+                    }
+                    for (sampler, targets) in self.score_samplers.iter().zip(&targets) {
+                        let target_ptr = if targets.is_empty() {
+                            ptr::null()
+                        } else {
+                            targets.as_ptr()
+                        };
+                        // SAFETY: sampler is owned by the scorer and target_ptr is live for the call.
+                        if !unsafe {
+                            sys::jet_score_sampler_set_targets(
+                                sampler.as_ptr(),
+                                target_ptr,
+                                targets.len(),
+                            )
+                        } {
+                            return Err(JetError::NativeRuntime(
+                                "failed to set Vulkan score targets".to_owned(),
+                            ));
+                        }
+                    }
+                }
+
                 // SAFETY: context and batch are live; all positions and sequence IDs were initialized.
                 let status = unsafe { sys::llama_decode(self.context.as_ptr(), batch) };
                 if status != 0 {
@@ -839,8 +1034,13 @@ impl LlamaScorer {
                     )));
                 }
                 // SAFETY: llama_decode succeeded; selected output rows remain valid until the next decode.
-                let logits = unsafe { sys::llama_get_logits(self.context.as_ptr()) };
-                if logits.is_null()
+                let logits = if self.device_softmax {
+                    ptr::null_mut()
+                } else {
+                    unsafe { sys::llama_get_logits(self.context.as_ptr()) }
+                };
+                if !self.device_softmax
+                    && logits.is_null()
                     && chunk
                         .iter()
                         .any(|item| !matches!(item.output, OutputAction::None))
@@ -851,21 +1051,28 @@ impl LlamaScorer {
                 }
 
                 let mut output_row = 0_usize;
+                let output_count = chunk
+                    .iter()
+                    .filter(|item| !matches!(item.output, OutputAction::None))
+                    .count();
                 for item in chunk {
                     match item.output {
                         OutputAction::None => {}
                         OutputAction::Prefix(group_index) => {
-                            let row = self.logits_row(logits, output_row);
+                            let distribution =
+                                self.output_distribution(logits, output_row, output_count)?;
                             let group = groups.get(group_index).ok_or_else(|| {
                                 JetError::NativeRuntime("missing active prefix group".to_owned())
                             })?;
                             let job = &jobs[group.spec.job_index];
                             let range = group.spec.candidate_start..group.spec.candidate_end;
-                            for (target, total) in job.targets[range.clone()]
+                            for (target_index, (target, total)) in job.targets[range.clone()]
                                 .iter()
                                 .zip(&mut accumulated[group.spec.job_index][range])
+                                .enumerate()
                             {
-                                *total += target_log_probability(row, target[0])?;
+                                *total +=
+                                    distribution.target_log_probability(target[0], target_index)?;
                             }
                             output_row += 1;
                         }
@@ -874,9 +1081,10 @@ impl LlamaScorer {
                             candidate_index,
                             target,
                         } => {
-                            let row = self.logits_row(logits, output_row);
+                            let distribution =
+                                self.output_distribution(logits, output_row, output_count)?;
                             accumulated[job_index][candidate_index] +=
-                                target_log_probability(row, target)?;
+                                distribution.target_log_probability(target, 0)?;
                             output_row += 1;
                         }
                     }
@@ -893,6 +1101,45 @@ impl LlamaScorer {
     fn logits_row(&self, logits: *mut f32, row: usize) -> &[f32] {
         // SAFETY: caller only requests rows selected in the most recent successful decode.
         unsafe { slice::from_raw_parts(logits.add(row * self.vocab_size), self.vocab_size) }
+    }
+
+    fn output_distribution(
+        &self,
+        logits: *mut f32,
+        row: usize,
+        output_count: usize,
+    ) -> Result<OutputDistribution<'_>> {
+        if !self.device_softmax {
+            return Ok(OutputDistribution::Logits(self.logits_row(logits, row)));
+        }
+        let row = i32::try_from(row).map_err(|_| {
+            JetError::NativeRuntime("Vulkan score output row exceeds i32".to_owned())
+        })?;
+        let output_count = i32::try_from(output_count).map_err(|_| {
+            JetError::NativeRuntime("Vulkan score output count exceeds i32".to_owned())
+        })?;
+        let sampled_index = row - output_count;
+        // SAFETY: row identifies an output selected in the most recent successful decode.
+        let count =
+            unsafe { sys::llama_get_sampled_probs_count_ith(self.context.as_ptr(), sampled_index) };
+        if count as usize != self.device_target_width {
+            return Err(JetError::NativeRuntime(format!(
+                "Vulkan score softmax returned {count} values instead of {} target log-probabilities",
+                self.device_target_width
+            )));
+        }
+        // SAFETY: the count above describes this row, which remains live until the next decode.
+        let probabilities =
+            unsafe { sys::llama_get_sampled_probs_ith(self.context.as_ptr(), sampled_index) };
+        if probabilities.is_null() {
+            return Err(JetError::NativeRuntime(
+                "Vulkan score softmax did not expose probabilities".to_owned(),
+            ));
+        }
+        // SAFETY: llama.cpp reported device_target_width contiguous f32 values.
+        Ok(OutputDistribution::DeviceLogProbabilities(unsafe {
+            slice::from_raw_parts(probabilities, self.device_target_width)
+        }))
     }
 
     fn score_reference(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
@@ -972,6 +1219,16 @@ impl LlamaScorer {
         // SAFETY: memory belongs to the live context; no decode is running concurrently.
         unsafe { sys::llama_memory_clear(sys::llama_get_memory(self.context.as_ptr()), true) };
     }
+
+    fn generation_context(&self) -> NonNull<sys::llama_context> {
+        self.generation_context.unwrap_or(self.context)
+    }
+
+    fn clear_generation_memory(&self) {
+        let context = self.generation_context();
+        // SAFETY: memory belongs to the live generation context; no decode is running concurrently.
+        unsafe { sys::llama_memory_clear(sys::llama_get_memory(context.as_ptr()), true) };
+    }
 }
 
 impl SequenceScorer for LlamaScorer {
@@ -1040,7 +1297,13 @@ impl Drop for LlamaScorer {
     fn drop(&mut self) {
         // SAFETY: context was created from model and must be freed before the model.
         unsafe {
+            if let Some(generation_context) = self.generation_context {
+                sys::llama_free(generation_context.as_ptr());
+            }
             sys::llama_free(self.context.as_ptr());
+            for sampler in &self.score_samplers {
+                sys::llama_sampler_free(sampler.as_ptr());
+            }
             sys::llama_model_free(self.model.as_ptr());
         }
     }
@@ -1064,6 +1327,11 @@ fn validate_config(config: &EngineConfig) -> Result<()> {
     if config.max_sequences < 2 {
         return Err(JetError::InvalidRequest(
             "max_sequences must be at least 2".to_owned(),
+        ));
+    }
+    if config.max_sequences > i32::MAX as u32 {
+        return Err(JetError::InvalidRequest(
+            "max_sequences exceeds llama.cpp limits".to_owned(),
         ));
     }
     if config.micro_batch > config.token_batch {
@@ -1324,7 +1592,7 @@ mod tests {
         config.context_tokens_per_sequence = 512;
         config.token_batch = 512;
         config.micro_batch = 128;
-        config.max_sequences = 2;
+        config.max_sequences = 3;
         config.max_output_rows = 512;
         config.threads = 2;
         let mut scorer = LlamaScorer::load(config)?;
@@ -1337,6 +1605,45 @@ mod tests {
         let scores = collect_scores(scorer.score_batch(&[job]))?;
         assert_eq!(scores.len(), 1);
         assert_eq!(scores[0].log_probabilities.len(), 2);
+        assert!(
+            scores[0]
+                .log_probabilities
+                .iter()
+                .all(|value| value.is_finite())
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "vulkan")]
+    #[test]
+    #[ignore = "requires JET_MODEL_PATH and a working Vulkan device"]
+    fn qwen_vulkan_thinking_uses_split_contexts() -> Result<()> {
+        let model_path = std::env::var_os("JET_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::qwen3_vulkan(model_path);
+        config.context_tokens_per_sequence = 512;
+        config.token_batch = 512;
+        config.micro_batch = 128;
+        config.max_sequences = 3;
+        config.max_output_rows = 128;
+        config.threads = 2;
+        config.thinking.mode = ThinkingMode::Required;
+        config.thinking.max_tokens = 8;
+        let mut scorer = LlamaScorer::load(config)?;
+        assert!(scorer.device_softmax);
+        assert!(scorer.generation_context.is_some());
+
+        let job = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"Vulkan thinking split-context smoke test"}"#.to_owned(),
+            targets: vec!["false".to_owned(), "true".to_owned()],
+        };
+        let scores = collect_scores(scorer.score_batch(&[job]))?;
+        assert_eq!(scores.len(), 1);
+        assert!(scores[0].thinking_tokens > 0);
+        assert!(scores[0].thinking_tokens <= 12);
+        assert_eq!(scores[0].prefill_count, 1);
         assert!(
             scores[0]
                 .log_probabilities

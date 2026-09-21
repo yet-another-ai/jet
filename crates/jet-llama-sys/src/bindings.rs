@@ -2662,6 +2662,16 @@ unsafe extern "C" {
         error_capacity: usize,
     ) -> i32;
 }
+unsafe extern "C" {
+    pub fn jet_score_sampler_init(target_width: usize) -> *mut llama_sampler;
+}
+unsafe extern "C" {
+    pub fn jet_score_sampler_set_targets(
+        sampler: *mut llama_sampler,
+        targets: *const llama_token,
+        target_count: usize,
+    ) -> bool;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct jet_thinking_sampler {

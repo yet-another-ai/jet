@@ -76,6 +76,11 @@ mise exec -- cargo run -p jet-cli -- judge \
 for ordinary non-reasoning models. `required` rejects a template that does not expose a usable
 reasoning end marker and final-answer continuation.
 
+With the Vulkan backend, bounded thinking uses a separate single-sequence context that exposes one
+logits row to the CPU sampler. The model weights and transformer compute remain on the GPU. Once
+thinking closes, batched candidate scoring runs in the main Vulkan context, including
+full-vocabulary softmax and target-token gathering on the GPU.
+
 Each non-empty input line is one request. The request deliberately has no `model` field:
 
 ```json

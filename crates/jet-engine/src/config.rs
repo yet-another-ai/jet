@@ -86,6 +86,7 @@ impl EngineConfig {
     pub fn vulkan(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
         let mut config = Self::cpu(model_path, model_id);
         config.backend = Backend::Vulkan;
+        config.max_output_rows = 256;
         config
     }
 
@@ -104,6 +105,10 @@ mod tests {
         assert_eq!(
             EngineConfig::qwen3_vulkan("model.gguf").backend,
             Backend::Vulkan
+        );
+        assert_eq!(
+            EngineConfig::qwen3_vulkan("model.gguf").max_output_rows,
+            256
         );
     }
 }

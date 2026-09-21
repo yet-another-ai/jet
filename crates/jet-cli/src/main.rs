@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use jet_core::{DecisionRequest, ErrorCode, JetError, Result};
-use jet_engine::{Backend, Engine, EngineConfig, ExecutionMode, ThinkingMode};
+use jet_engine::{Engine, EngineConfig, ExecutionMode, ThinkingMode};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -40,8 +40,8 @@ struct JudgeArgs {
     micro_batch: u32,
     #[arg(long, default_value_t = 9)]
     max_sequences: u32,
-    #[arg(long, default_value_t = 2_048)]
-    max_output_rows: u32,
+    #[arg(long)]
+    max_output_rows: Option<u32>,
     #[arg(long)]
     threads: Option<i32>,
     #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
@@ -125,19 +125,20 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         ));
     }
 
-    let mut config = EngineConfig::cpu(&args.model_path, args.model_id);
+    let mut config = match args.backend {
+        BackendArg::Cpu => EngineConfig::cpu(&args.model_path, args.model_id),
+        BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, args.model_id),
+    };
     config.context_tokens_per_sequence = args.context_tokens;
     config.token_batch = args.token_batch;
     config.micro_batch = args.micro_batch;
     config.max_sequences = args.max_sequences;
-    config.max_output_rows = args.max_output_rows;
+    if let Some(max_output_rows) = args.max_output_rows {
+        config.max_output_rows = max_output_rows;
+    }
     if let Some(threads) = args.threads {
         config.threads = threads;
     }
-    config.backend = match args.backend {
-        BackendArg::Cpu => Backend::Cpu,
-        BackendArg::Vulkan => Backend::Vulkan,
-    };
     config.execution_mode = match args.execution {
         ExecutionArg::Reference => ExecutionMode::Reference,
         ExecutionArg::Batched => ExecutionMode::Batched,
