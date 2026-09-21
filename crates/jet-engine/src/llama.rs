@@ -4,11 +4,13 @@ use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::slice;
 use std::sync::Once;
+use std::time::Instant;
 
 use jet_core::{JetError, Result};
 use jet_llama_sys as sys;
 use serde::Deserialize;
 
+use crate::EngineTimings;
 use crate::config::{Backend, EngineConfig, ExecutionMode, ThinkingMode};
 use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
 
@@ -107,12 +109,14 @@ pub(crate) struct LlamaScorer {
     device_target_width: usize,
     candidate_capacity: usize,
     isolate_candidate_groups: bool,
+    timings: EngineTimings,
     _single_threaded: PhantomData<Rc<()>>,
 }
 
 impl LlamaScorer {
     pub(crate) fn load(config: EngineConfig) -> Result<Self> {
         validate_config(&config)?;
+        let started = config.collect_timings.then(Instant::now);
         BACKEND_INIT.call_once(|| {
             // SAFETY: llama.cpp requires one process-wide initialization before any model calls.
             unsafe { sys::llama_backend_init() };
@@ -157,7 +161,10 @@ impl LlamaScorer {
                 ))
             })?;
 
-        let load_result = Self::finish_load(model, config);
+        let mut load_result = Self::finish_load(model, config);
+        if let Ok(scorer) = &mut load_result {
+            scorer.timings.load_ms = elapsed_ms(started);
+        }
         if load_result.is_err() {
             // SAFETY: model was returned by llama_model_load_from_file and no context owns it.
             unsafe { sys::llama_model_free(model.as_ptr()) };
@@ -172,7 +179,7 @@ impl LlamaScorer {
             device_softmax && config.thinking.mode != ThinkingMode::Disabled;
         // llama.cpp can copy a hybrid/recurrent prefix to multiple sequence IDs, but advancing
         // multiple sequence groups in the same decode changes their recurrent results. Keep each
-        // candidate group in its own wave. Pure KV-cache models retain shared-prefix fan-out and
+        // candidate fork serial. Pure KV-cache models retain shared-prefix fan-out and
         // cross-question batching.
         // SAFETY: model is live for the duration of the scorer.
         let isolates_candidate_forks = unsafe {
@@ -337,8 +344,17 @@ impl LlamaScorer {
             device_target_width,
             candidate_capacity,
             isolate_candidate_groups: isolates_candidate_forks,
+            timings: EngineTimings::default(),
             _single_threaded: PhantomData,
         })
+    }
+
+    pub(crate) fn timings(&self) -> &EngineTimings {
+        &self.timings
+    }
+
+    fn timing_start(&self) -> Option<Instant> {
+        self.config.collect_timings.then(Instant::now)
     }
 
     fn tokenize_jobs(&mut self, jobs: &[ScoreJob]) -> Result<Vec<TokenizedJob>> {
@@ -420,7 +436,14 @@ impl LlamaScorer {
                 }
 
                 let logical_prompt_tokens = self.tokenize(&plan.prompt)?.len();
-                let (reasoning, thinking_tokens) = self.generate_reasoning(&plan)?;
+                let started = self.timing_start();
+                let cache_before = self.timings.cache_ms;
+                let generated = self.generate_reasoning(&plan);
+                if started.is_some() {
+                    self.timings.thinking_ms +=
+                        (elapsed_ms(started) - (self.timings.cache_ms - cache_before)).max(0.0);
+                }
+                let (reasoning, thinking_tokens) = generated?;
                 let final_plan = self.render_chat_plan(job, true, Some(&reasoning))?;
                 if final_plan.prompt.is_empty()
                     || final_plan.prompt == plan.prompt
@@ -646,7 +669,6 @@ impl LlamaScorer {
         .ok_or_else(|| template_error(&error))?;
         let sampler = ThinkingSampler(sampler);
 
-        self.clear_generation_memory();
         let generation = (|| {
             let mut logits_index = self.decode_generation_input(&prompt, 0)?;
             let mut generated = Vec::with_capacity(budget.saturating_add(16));
@@ -770,6 +792,9 @@ impl LlamaScorer {
                 // SAFETY: context and initialized batch remain live for the call.
                 let status =
                     unsafe { sys::llama_decode(self.generation_context().as_ptr(), batch) };
+                if self.config.collect_timings {
+                    self.timings.decode_calls += 1;
+                }
                 if status != 0 {
                     return Err(JetError::NativeRuntime(format!(
                         "llama_decode failed during thinking with status {status}"
@@ -790,6 +815,9 @@ impl LlamaScorer {
     }
 
     fn score_batched(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
+        if self.isolate_candidate_groups {
+            return self.score_serial_forks(jobs);
+        }
         let candidate_capacity = self.candidate_capacity;
         let mut groups = Vec::new();
         for (job_index, job) in jobs.iter().enumerate() {
@@ -806,10 +834,6 @@ impl LlamaScorer {
         let mut current = Vec::new();
         let mut sequences_used = 0_usize;
         for group in groups {
-            if self.isolate_candidate_groups {
-                waves.push(vec![group]);
-                continue;
-            }
             let needed = 1 + group.candidate_end - group.candidate_start;
             if sequences_used + needed > self.config.max_sequences as usize && !current.is_empty() {
                 waves.push(std::mem::take(&mut current));
@@ -844,6 +868,179 @@ impl LlamaScorer {
             .collect())
     }
 
+    fn ensure_target_width(&mut self, jobs: &[TokenizedJob]) -> Result<()> {
+        if !self.device_softmax {
+            return Ok(());
+        }
+        let width = jobs
+            .iter()
+            .map(|job| prefix_targets(&job.targets).len())
+            .max()
+            .unwrap_or(0);
+        if width <= self.device_target_width {
+            return Ok(());
+        }
+        // SAFETY: samplers are owned here. Finish any outstanding work before changing graph inputs.
+        unsafe { sys::llama_synchronize(self.context.as_ptr()) };
+        for (sequence, sampler) in self.score_samplers.iter_mut().enumerate() {
+            // SAFETY: the bridge creates an owned, uninitialized chain. Existing chains cannot
+            // be rebound because llama.cpp permits backend initialization only once per chain.
+            let replacement = NonNull::new(unsafe { sys::jet_score_sampler_init(width) })
+                .ok_or_else(|| {
+                    JetError::NativeRuntime("failed to allocate Vulkan score targets".to_owned())
+                })?;
+            // SAFETY: context and replacement are live; the next decode rebuilds the sampling graph.
+            if !unsafe {
+                sys::llama_set_sampler(self.context.as_ptr(), sequence as i32, replacement.as_ptr())
+            } {
+                // SAFETY: the context did not retain this unsupported sampler.
+                unsafe { sys::llama_sampler_free(replacement.as_ptr()) };
+                return Err(JetError::NativeRuntime(
+                    "failed to resize Vulkan score targets".to_owned(),
+                ));
+            }
+            let previous = std::mem::replace(sampler, replacement);
+            // SAFETY: pending work was synchronized and the context now uses replacement.
+            unsafe { sys::llama_sampler_free(previous.as_ptr()) };
+        }
+        self.device_target_width = width;
+        Ok(())
+    }
+
+    fn score_serial_forks(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
+        self.ensure_target_width(jobs)?;
+        let mut accumulated: Vec<Vec<f64>> = jobs
+            .iter()
+            .map(|job| vec![0.0; job.targets.len()])
+            .collect();
+        let mut results = Vec::with_capacity(jobs.len());
+        for (job_index, job) in jobs.iter().enumerate() {
+            let result: Result<ScoreResult> = (|| {
+                let groups = [ActiveGroup {
+                    spec: GroupSpec {
+                        job_index,
+                        candidate_start: 0,
+                        candidate_end: job.targets.len(),
+                    },
+                    prefix_sequence: 0,
+                    candidate_sequences: Vec::new(),
+                }];
+                let prefix_items = job
+                    .prompt
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(index, token)| {
+                        Ok(DecodeItem {
+                            token,
+                            position: position(index)?,
+                            sequence: 0,
+                            output: if index + 1 == job.prompt.len() {
+                                OutputAction::Prefix(0)
+                            } else {
+                                OutputAction::None
+                            },
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                self.decode_prefill(&prefix_items, jobs, &groups, &mut accumulated)?;
+
+                for (candidate_index, tokens) in job.targets.iter().enumerate() {
+                    // A one-token candidate was completely scored by the shared prefix output.
+                    if tokens.len() == 1 {
+                        continue;
+                    }
+                    // Keep sequence 0 immutable. Advancing only sequence 1 lets recurrent memory
+                    // copy its shared source state without mixing several candidate forks.
+                    self.copy_prefix(0, 1)?;
+                    let suffix_items = (0..tokens.len() - 1)
+                        .map(|index| {
+                            Ok(DecodeItem {
+                                token: tokens[index],
+                                position: position(job.prompt.len() + index)?,
+                                sequence: 1,
+                                output: OutputAction::Target {
+                                    job_index,
+                                    candidate_index,
+                                    target: tokens[index + 1],
+                                },
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    self.decode_candidates(&suffix_items, jobs, &groups, &mut accumulated)?;
+                }
+                Ok(ScoreResult {
+                    log_probabilities: accumulated[job_index].clone(),
+                    prompt_tokens: job.logical_prompt_tokens,
+                    thinking_tokens: job.thinking_tokens,
+                    target_token_counts: job.targets.iter().map(Vec::len).collect(),
+                    prefill_count: 1,
+                })
+            })();
+            self.clear_memory();
+            results.push(result?);
+        }
+        Ok(results)
+    }
+
+    fn copy_prefix(
+        &mut self,
+        source: sys::llama_seq_id,
+        destination: sys::llama_seq_id,
+    ) -> Result<()> {
+        let started = self.timing_start();
+        // SAFETY: these sequence IDs are within the live context's configured capacity.
+        let memory = unsafe { sys::llama_get_memory(self.context.as_ptr()) };
+        // SAFETY: removing the entire destination is supported for both KV and recurrent state.
+        let removed = unsafe { sys::llama_memory_seq_rm(memory, destination, -1, -1) };
+        if removed {
+            // SAFETY: source remains live; only the destination will be advanced by the caller.
+            unsafe { sys::llama_memory_seq_cp(memory, source, destination, -1, -1) };
+        }
+        self.timings.cache_ms += elapsed_ms(started);
+        if !removed {
+            return Err(JetError::NativeRuntime(
+                "failed to reset candidate sequence".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn decode_prefill(
+        &mut self,
+        items: &[DecodeItem],
+        jobs: &[TokenizedJob],
+        groups: &[ActiveGroup],
+        accumulated: &mut [Vec<f64>],
+    ) -> Result<()> {
+        let started = self.timing_start();
+        if self.config.collect_timings {
+            self.timings.prefill_tokens += items.len() as u64;
+            self.timings.prefill_count += groups.len() as u64;
+        }
+        let result = self.decode_items(items, jobs, groups, accumulated);
+        // Reading the selected final prompt output synchronizes the backend, including earlier
+        // chunks without outputs. Do not insert a synchronization between those chunks.
+        self.timings.prefill_ms += elapsed_ms(started);
+        result
+    }
+
+    fn decode_candidates(
+        &mut self,
+        items: &[DecodeItem],
+        jobs: &[TokenizedJob],
+        groups: &[ActiveGroup],
+        accumulated: &mut [Vec<f64>],
+    ) -> Result<()> {
+        let started = self.timing_start();
+        if self.config.collect_timings {
+            self.timings.candidate_tokens += items.len() as u64;
+        }
+        let result = self.decode_items(items, jobs, groups, accumulated);
+        self.timings.candidate_ms += elapsed_ms(started);
+        result
+    }
+
     fn process_wave(
         &mut self,
         jobs: &[TokenizedJob],
@@ -851,7 +1048,6 @@ impl LlamaScorer {
         accumulated: &mut [Vec<f64>],
         prefill_counts: &mut [usize],
     ) -> Result<()> {
-        self.clear_memory();
         let result = (|| {
             let mut next_sequence: sys::llama_seq_id = 0;
             let mut groups = Vec::with_capacity(specs.len());
@@ -890,16 +1086,11 @@ impl LlamaScorer {
                     });
                 }
             }
-            self.decode_items(&prefix_items, jobs, &groups, accumulated)?;
+            self.decode_prefill(&prefix_items, jobs, &groups, accumulated)?;
 
-            // SAFETY: memory belongs to the live context and sequence IDs are within n_seq_max.
-            let memory = unsafe { sys::llama_get_memory(self.context.as_ptr()) };
             for group in &groups {
                 for sequence in &group.candidate_sequences {
-                    // SAFETY: copying the complete live prefix to a fresh sequence is supported by llama.cpp.
-                    unsafe {
-                        sys::llama_memory_seq_cp(memory, group.prefix_sequence, *sequence, -1, -1)
-                    };
+                    self.copy_prefix(group.prefix_sequence, *sequence)?;
                 }
             }
 
@@ -924,7 +1115,7 @@ impl LlamaScorer {
                     }
                 }
             }
-            self.decode_items(&suffix_items, jobs, &groups, accumulated)
+            self.decode_candidates(&suffix_items, jobs, &groups, accumulated)
         })();
         self.clear_memory();
         result
@@ -1002,8 +1193,12 @@ impl LlamaScorer {
                                             "score sequence ID exceeds sampler count".to_owned(),
                                         )
                                     })?;
-                                sequence_targets
-                                    .extend(job.targets[range].iter().map(|target| target[0]));
+                                sequence_targets.extend(prefix_targets(&job.targets[range]));
+                                if sequence_targets.len() > self.device_target_width {
+                                    return Err(JetError::NativeRuntime(
+                                        "prefix targets exceed the device gather width".to_owned(),
+                                    ));
+                                }
                                 let padding = sequence_targets.last().copied().unwrap_or_default();
                                 sequence_targets.resize(self.device_target_width, padding);
                             }
@@ -1050,6 +1245,9 @@ impl LlamaScorer {
 
                 // SAFETY: context and batch are live; all positions and sequence IDs were initialized.
                 let status = unsafe { sys::llama_decode(self.context.as_ptr(), batch) };
+                if self.config.collect_timings {
+                    self.timings.decode_calls += 1;
+                }
                 if status != 0 {
                     return Err(JetError::NativeRuntime(format!(
                         "llama_decode failed with status {status}"
@@ -1088,11 +1286,17 @@ impl LlamaScorer {
                             })?;
                             let job = &jobs[group.spec.job_index];
                             let range = group.spec.candidate_start..group.spec.candidate_end;
-                            for (target_index, (target, total)) in job.targets[range.clone()]
+                            let first_tokens = prefix_targets(&job.targets[range.clone()]);
+                            for (target, total) in job.targets[range.clone()]
                                 .iter()
                                 .zip(&mut accumulated[group.spec.job_index][range])
-                                .enumerate()
                             {
+                                let target_index =
+                                    first_tokens.binary_search(&target[0]).map_err(|_| {
+                                        JetError::NativeRuntime(
+                                            "prefix target was not gathered".to_owned(),
+                                        )
+                                    })?;
                                 *total +=
                                     distribution.target_log_probability(target[0], target_index)?;
                             }
@@ -1169,7 +1373,6 @@ impl LlamaScorer {
         for job in jobs {
             let mut log_probabilities = Vec::with_capacity(job.targets.len());
             for target in &job.targets {
-                self.clear_memory();
                 let result = (|| {
                     let mut prompt_items = Vec::with_capacity(job.prompt.len());
                     for (index, token) in job.prompt.iter().copied().enumerate() {
@@ -1200,7 +1403,7 @@ impl LlamaScorer {
                         candidate_sequences: Vec::new(),
                     }];
                     let mut accumulated = vec![vec![0.0]];
-                    self.decode_items(
+                    self.decode_prefill(
                         &prompt_items,
                         std::slice::from_ref(&reference_job),
                         &groups,
@@ -1220,7 +1423,12 @@ impl LlamaScorer {
                             },
                         });
                     }
-                    self.decode_items(&suffix_items, &[reference_job], &groups, &mut accumulated)?;
+                    self.decode_candidates(
+                        &suffix_items,
+                        &[reference_job],
+                        &groups,
+                        &mut accumulated,
+                    )?;
                     Ok::<_, JetError>(accumulated[0][0])
                 })();
                 self.clear_memory();
@@ -1237,24 +1445,37 @@ impl LlamaScorer {
         Ok(results)
     }
 
-    fn clear_memory(&self) {
-        // SAFETY: memory belongs to the live context; no decode is running concurrently.
-        unsafe { sys::llama_memory_clear(sys::llama_get_memory(self.context.as_ptr()), true) };
+    fn clear_memory(&mut self) {
+        let started = self.timing_start();
+        // SAFETY: scoring has finished. Reset sequence metadata; new recurrent states are
+        // initialized by llama.cpp's graph, and attention masks exclude the old KV entries.
+        unsafe { sys::llama_memory_clear(sys::llama_get_memory(self.context.as_ptr()), false) };
+        self.timings.cache_ms += elapsed_ms(started);
     }
 
     fn generation_context(&self) -> NonNull<sys::llama_context> {
         self.generation_context.unwrap_or(self.context)
     }
 
-    fn clear_generation_memory(&self) {
+    fn clear_generation_memory(&mut self) {
+        let started = self.timing_start();
         let context = self.generation_context();
-        // SAFETY: memory belongs to the live generation context; no decode is running concurrently.
-        unsafe { sys::llama_memory_clear(sys::llama_get_memory(context.as_ptr()), true) };
+        // SAFETY: generation has finished; subsequent decoding initializes fresh sequence state.
+        unsafe { sys::llama_memory_clear(sys::llama_get_memory(context.as_ptr()), false) };
+        self.timings.cache_ms += elapsed_ms(started);
     }
 }
 
 impl SequenceScorer for LlamaScorer {
     fn score_batch(&mut self, jobs: &[ScoreJob]) -> Vec<Result<ScoreResult>> {
+        let batch_started = self.timing_start();
+        let prepare_started = self.timing_start();
+        let thinking_before = self.timings.thinking_ms;
+        let cache_before = self.timings.cache_ms;
+        if self.config.collect_timings {
+            self.timings.batches += 1;
+            self.timings.jobs += jobs.len() as u64;
+        }
         let mut slots: Vec<Option<Result<ScoreResult>>> = (0..jobs.len()).map(|_| None).collect();
         let mut tokenized = Vec::new();
         let mut valid_indices = Vec::new();
@@ -1274,6 +1495,12 @@ impl SequenceScorer for LlamaScorer {
             }
         }
 
+        if prepare_started.is_some() {
+            self.timings.prepare_ms += (elapsed_ms(prepare_started)
+                - (self.timings.thinking_ms - thinking_before)
+                - (self.timings.cache_ms - cache_before))
+                .max(0.0);
+        }
         let scored = match self.config.execution_mode {
             ExecutionMode::Reference => self.score_reference(&tokenized),
             ExecutionMode::Batched => self.score_batched(&tokenized),
@@ -1302,6 +1529,7 @@ impl SequenceScorer for LlamaScorer {
             }
         }
 
+        self.timings.batch_ms += elapsed_ms(batch_started);
         slots
             .into_iter()
             .map(|slot| {
@@ -1426,6 +1654,17 @@ fn template_error(error: &[i8]) -> JetError {
             .into_owned()
     };
     JetError::UnsupportedModel(message)
+}
+
+fn elapsed_ms(started: Option<Instant>) -> f64 {
+    started.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1_000.0)
+}
+
+fn prefix_targets(targets: &[Vec<sys::llama_token>]) -> Vec<sys::llama_token> {
+    let mut tokens: Vec<_> = targets.iter().map(|target| target[0]).collect();
+    tokens.sort_unstable();
+    tokens.dedup();
+    tokens
 }
 
 fn position(value: usize) -> Result<sys::llama_pos> {
@@ -1644,32 +1883,104 @@ mod tests {
             JetError::InvalidRequest("JET_QWEN35_MODEL_PATH is required for model tests".to_owned())
         })?;
         let mut config = EngineConfig::vulkan(model_path, "qwen/qwen3.5");
-        config.context_tokens_per_sequence = 512;
+        config.context_tokens_per_sequence = 1_024;
         config.token_batch = 512;
         config.micro_batch = 128;
-        config.max_sequences = 5;
-        config.max_output_rows = 128;
+        config.max_sequences = 2;
+        config.max_output_rows = 64;
         config.threads = 2;
-        config.execution_mode = ExecutionMode::Reference;
+        config.collect_timings = true;
         let mut scorer = LlamaScorer::load(config)?;
-        assert_eq!(scorer.candidate_capacity, 1);
+        assert!(scorer.isolate_candidate_groups);
+        assert!(scorer.device_softmax);
+        assert_eq!(scorer.device_target_width, 1);
 
         let job = ScoreJob {
             system_content: crate::prompt::SYSTEM_INSTRUCTION,
             user_content: "State:\nFind the maximum possible order for an element of S_n for n = 10.\n\nTask:\nChoose the single correct answer.\n\nCandidates:\n\"6\", \"12\", \"30\", \"105\"\n\nResponse format:\nOne quoted candidate exactly as listed above; no explanation, whitespace, or extra text.".to_owned(),
+            targets: vec!["\"6\"".to_owned(), "\"12\"".to_owned(), "\"30\"".to_owned(), "\"105\"".to_owned()],
+        };
+        let first = collect_scores(scorer.score_batch(std::slice::from_ref(&job)))?;
+        assert_eq!(first[0].prefill_count, 1);
+
+        // Grow the gather after a completed decode, exceed the physical sequence capacity,
+        // and mix single-token answers, shared first tokens, and a multi-chunk suffix.
+        let varied = ScoreJob {
+            system_content: job.system_content,
+            user_content: format!(
+                "{}\n{}",
+                job.user_content,
+                "Additional context. ".repeat(80)
+            ),
             targets: vec![
-                "\"6\"".to_owned(),
-                "\"12\"".to_owned(),
-                "\"30\"".to_owned(),
-                "\"105\"".to_owned(),
+                "A".to_owned(),
+                "B".to_owned(),
+                "Yes".to_owned(),
+                "No".to_owned(),
+                "Maybe".to_owned(),
+                "Alpha".to_owned(),
+                "Beta".to_owned(),
+                "Yes indeed".to_owned(),
+                "No thanks".to_owned(),
+                "word ".repeat(130),
             ],
         };
+        let mut reversed = varied.clone();
+        reversed.targets.reverse();
+        let jobs = vec![varied, job.clone(), reversed];
+        let tokens = scorer.tokenize_jobs(&jobs)?;
+        assert!(tokens[0].targets.iter().any(|target| target.len() == 1));
+        assert!(tokens[0].targets.iter().any(|target| target.len() > 64));
+        let expected_width = tokens
+            .iter()
+            .map(|job| prefix_targets(&job.targets).len())
+            .max()
+            .unwrap_or(0);
+        let before = scorer.timings.clone();
+        let batched = collect_scores(scorer.score_batch(&jobs))?;
+        assert!(batched.iter().all(|score| score.prefill_count == 1));
+        assert!(scorer.device_target_width >= expected_width);
+        assert!(scorer.device_target_width > 1);
+        assert_eq!(
+            scorer.timings.prefill_count - before.prefill_count,
+            jobs.len() as u64
+        );
+        assert_eq!(
+            scorer.timings.prefill_tokens - before.prefill_tokens,
+            tokens
+                .iter()
+                .map(|job| job.prompt.len() as u64)
+                .sum::<u64>()
+        );
+        assert_eq!(
+            scorer.timings.candidate_tokens - before.candidate_tokens,
+            tokens
+                .iter()
+                .flat_map(|job| &job.targets)
+                .map(|target| target.len().saturating_sub(1) as u64)
+                .sum::<u64>()
+        );
+        assert!(scorer.timings.prefill_ms > before.prefill_ms);
+        assert!(scorer.timings.candidate_ms > before.candidate_ms);
 
-        let reference = collect_scores(scorer.score_batch(std::slice::from_ref(&job)))?;
+        // The same device sampler scores each candidate independently in reference mode.
+        scorer.config.execution_mode = ExecutionMode::Reference;
+        let reference = collect_scores(scorer.score_batch(&jobs))?;
+        compare_scores(&reference, &batched)?;
+        let reversed_scores: Vec<_> = batched[2].log_probabilities.iter().rev().copied().collect();
+        assert_eq!(batched[0].log_probabilities, reversed_scores);
+
         scorer.config.execution_mode = ExecutionMode::Batched;
-        let batched = collect_scores(scorer.score_batch(&[job]))?;
-        assert_eq!(batched[0].prefill_count, 4);
-        compare_scores(&reference, &batched)
+        let mut too_long = job.clone();
+        too_long.user_content = "invalid oversized prompt ".repeat(1_024);
+        let recovered = scorer.score_batch(&[too_long, job.clone()]);
+        assert!(matches!(
+            recovered.first(),
+            Some(Err(JetError::ContextExceeded { .. }))
+        ));
+        let recovered = recovered.into_iter().skip(1).collect::<Result<Vec<_>>>()?;
+        compare_scores(&first, &recovered)?;
+        compare_scores(&first, &collect_scores(scorer.score_batch(&[job]))?)
     }
 
     #[cfg(feature = "vulkan")]

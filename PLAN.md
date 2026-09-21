@@ -14,6 +14,8 @@
 - Decisions 风格的 `noul`、`choice`、`score` 请求/响应；请求明确不接受 `model` 字段。
 - `Engine::load`、`Engine::decide`、`Engine::decide_batch` Rust API 和 `jet judge` JSONL CLI。
 - continuation-only teacher-forced scoring、逐候选 reference path、原生多序列 batch、同题 prompt 前缀复用和按 sequence/output 预算分波。
+- Qwen3.5 hybrid/recurrent 模型保留只读前缀，串行复制并推进候选分支；清理时仅重置缓存元数据，避免每轮同步清零整块显存。
+- 可选 `EngineConfig.collect_timings` / `--timings PATH` 阶段计时，以及实际 prefill token、prefill 次数和 decode 次数；计时独立于 Decisions JSONL 响应。
 - GGUF 内置 Jinja chat template；普通非 thinking 模型可直接评分，reasoning 模板支持 `Disabled`、`Auto`、`Required` 三种模式。
 - 可选的有界 thinking：配置最大 token、temperature、top-k、top-p 和 seed；每题只生成一份 trace，经模板的 `reasoning_content` continuation 转入最终答案区，再把冻结前缀用于候选批量评分。
 - 模板协议不硬编码 `<think>`：复用固定 llama.cpp 的 reasoning 元数据、结束标记和 content continuation，可覆盖 tag 与 channel 类型协议；已移除仅允许 `qwen3` 架构的加载限制。
@@ -27,9 +29,9 @@
 
 - CUDA、Metal 和其他硬件后端，以及 Windows/macOS Vulkan 的构建与真实设备验收。
 - DeepSeek、GPT-OSS、Kimi、Gemma 等 reasoning 模型及至少一个普通非 thinking 模型的真实权重/模板验收；当前除 Qwen3 外仅通过 llama.cpp 统一模板协议层接入，不能宣称已经逐模型验证。
-- thinking 生成目前按问题串行执行；跨问题 generation batch、阶段耗时观测和 request/question 级预算覆盖尚未实现，现有配置作用于整个 Engine/CLI 运行。
+- thinking 生成目前按问题串行执行；跨问题 generation batch 和 request/question 级预算覆盖尚未实现，现有配置作用于整个 Engine/CLI 运行。
 - 在线有界队列、最大等待时间、取消、超时、背压和跨请求缓存。
-- 设备端 logits 归约、候选 trie 复用和基于 profile 的吞吐优化。
+- 进一步融合设备端 logits 归约、候选 trie 复用和基于 profile 的吞吐优化；Vulkan softmax + target gather 已实现。
 - 完整 CI、发行包、跨平台支持矩阵、性能基准和任务准确率/校准评估。
 - HTTP/gRPC 服务、多 GPU 和分布式执行。
 
@@ -435,7 +437,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 - [x] 正确保存并立即归约首目标 token 所需的前缀末尾 logits。
 - [ ] 增加有界队列、按预算组批、在线最大等待时间和离线连续处理。
 - [x] 实现 sequence/output 预算下的可恢复分波，不截断输入；候选失败时所属请求失败。
-- [ ] 加入前缀处理计数、缓存/共享情况和阶段耗时等观测。
+- [x] 加入实际 prefill token/次数、decode 次数和阶段耗时；跨请求缓存命中率随在线缓存功能继续补充。
 
 完成条件：与无共享 P2 的每个候选原始分数一致；共享前缀实际计算次数可验证；取消和请求复用无旧 KV 残留。
 

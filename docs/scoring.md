@@ -24,7 +24,9 @@ same trace.
 For Vulkan batched execution, generation and scoring use two contexts over the same model. The
 single-sequence generation context copies its selected logits row to the CPU for the bounded
 thinking sampler. The scoring context performs vocabulary softmax, target-token gather, and log on
-the GPU and returns only a fixed-width target vector per output row. This avoids changing a live
+the GPU and returns only a target vector per output row. The vector width is fixed for a decode;
+for hybrid and recurrent models, it grows as needed to cover distinct candidate first tokens,
+independently of the number of sequence slots. This avoids changing a live
 sampler graph between thinking and scoring and does not duplicate model weights; the additional
 state is one generation KV cache plus its compute buffers.
 
@@ -57,13 +59,29 @@ set and must not be interpreted as the candidate's absolute probability over the
 
 For pure KV-cache models, the optimized executor prefills a question prefix, including its frozen
 reasoning when enabled, once when all candidates fit the configured sequence budget, copies that
-sequence's memory, and scores candidate suffixes in native batches. Hybrid and recurrent models
-cannot safely advance multiple copied states in one llama.cpp decode wave, so Jet automatically
-isolates their candidate groups. This repeats prefix work and reduces throughput but preserves
-reference-equivalent scores. Oversized work is split into waves without truncating input. The
-reference execution mode scores each candidate independently and exists for correctness
-comparisons.
+sequence's memory, and scores candidate suffixes in native batches. Oversized work is split into
+waves without truncating input.
+
+Hybrid and recurrent models, including Qwen3.5, also prefill each question once. Sequence 0 holds
+the unchanged prefix, whose final output scores the first token of every candidate. Before each
+remaining continuation, Jet removes sequence 1's previous state and copies the prefix into it;
+only sequence 1 advances. llama.cpp preserves the shared recurrent state through copy-on-write.
+Candidates and questions run serially on this path because advancing several recurrent forks in
+the same decode can change their results. A one-token candidate needs no continuation decode.
+Two sequence slots suffice even when a question has more than two candidates, and Vulkan's target
+gather grows to cover all distinct first tokens. The reference execution mode continues to score
+each candidate independently and exists for correctness comparisons.
+
+Completed scoring waves and serial questions release sequence metadata once. Cache cleanup does
+not zero the entire KV or recurrent-state allocation: attention masks exclude old KV entries and
+llama.cpp initializes fresh recurrent state when decoding the next sequence. The same metadata
+reset is used by the thinking context. This removes the full-buffer writes and waits previously
+performed during cleanup.
 
 `usage.input_tokens` counts the original rendered question prompt once. `usage.output_tokens`
 includes generated thinking tokens, including protocol closure, plus every candidate token that was
 scored.
+
+Optional [stage timings](development.md#stage-timings) report actual scoring prefill and continuation
+decode work separately. These counters can change with prefix reuse and execution mode; the
+logical `usage` accounting above does not change.

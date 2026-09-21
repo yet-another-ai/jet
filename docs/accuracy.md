@@ -89,14 +89,14 @@ single decode wave. On a 20-question diagnostic slice, 9 top-1 predictions diffe
 independent reference path, with a maximum candidate-probability difference near 1.0. This produced
 the invalid MMLU figures 27.02% for 0.8B and 28.77% for 2B and mean gold NLL values above 55.
 
-Jet now detects recurrent and hybrid models through llama.cpp and evaluates one candidate group per
-wave. Pure KV-cache models keep the original shared-prefix batching. With the safe schedule, the
-20-question slice had no top-1 differences from reference and a maximum probability difference of
+The correctness fix used for the table above detects recurrent and hybrid models through llama.cpp
+and evaluates one candidate group per wave. Pure KV-cache models retain shared-prefix batching.
+With that safe schedule, the 20-question slice had no top-1 differences from reference and a maximum probability difference of
 `1.12e-7`. The final 2B run was also bit-identical across all 541 responses to a separate
 `--max-sequences 2` safety run. The table above contains only the corrected results; the discarded
 run is recorded here solely to explain the failure mode and the performance change.
 
-Download the pinned Qwen3.5 files and reproduce either run with:
+Download the pinned Qwen3.5 files and run the same accuracy workload with the current implementation:
 
 ```sh
 ./scripts/download-accuracy-models.sh
@@ -112,6 +112,85 @@ JET_MODEL_PATH=models/Qwen3.5-2B-Q8_0.gguf \
 JET_MODEL_ID=qwen/qwen3.5-2b-q8_0 \
 JET_ACCURACY_DIR=tests/accuracy/generated-vulkan-qwen35-2b \
   ./scripts/run-accuracy-eval.sh
+```
+
+## Vulkan serial-prefix reuse benchmark
+
+On 2026-09-22, the same 541 requests were rerun after implementing serial hybrid prefix reuse,
+metadata-only cache resets, and opt-in stage timings. The old `ac0477b` release binary was preserved
+before rebuilding. Both binaries used the same Intel Arc A770, pinned Q8_0 weights, disabled
+thinking, and default batch settings: 8 requests, 9 sequence slots, 2048 context tokens per logical
+sequence, token batch 2048, microbatch 512, output-row limit 256, and automatic CPU thread count.
+The prefill chunk limit and sequence-count defaults were not tuned in this comparison.
+
+The old binary ran once per model and the new binary twice per model, with the second new round
+reversing model order. Each measurement starts a new CLI process and includes loading, Vulkan
+initialization, evaluation, and shutdown. There was no explicit warm-up; OS file caches and shader
+caches could already be warm. New runs enabled `--timings`; old runs had no stage instrumentation.
+These are end-to-end measurements on this machine, not a steady-state latency distribution or an
+ablation of the individual changes.
+
+| Model | Before | After, two runs | After mean | Speedup | Correct, unchanged |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Qwen3.5-0.8B Q8_0 | 242.54 s | 108.06 / 109.10 s | 108.58 s | 2.23x | 280/541 |
+| Qwen3.5-2B Q8_0 | 313.34 s | 143.41 / 143.44 s | 143.43 s | 2.18x | 343/541 |
+
+All 541 response objects, including candidate probabilities and `usage`, were exactly equal to
+the fresh old-binary baseline in both new runs for each model. There were no errors or top-1
+changes, the maximum probability difference was zero, and accuracy and mean gold NLL were
+unchanged. The fresh baselines also matched the historical corrected results exactly.
+
+Both models now execute **541 prompt prefills / 128,583 prefill tokens**, plus 9,795 candidate
+continuation tokens, across 2,369 decoder calls and 68 scorer batches. The old per-candidate
+schedule implied 1,652 prefills / 378,526 prefill tokens for this input, so repeated prompt work
+fell by **66.03%**. The new counts are measured by the engine; old physical counts are derived
+from the old schedule and the same tokenized workloads. Public `usage` remains 128,583 input
+tokens and 11,447 output tokens because it counts logical prompts and all scored candidate tokens.
+
+Mean stage timings from the two new runs:
+
+| Stage | Qwen3.5-0.8B | Qwen3.5-2B |
+| --- | ---: | ---: |
+| Load | 0.533 s | 0.911 s |
+| Native prompt preparation | 6.667 s | 6.685 s |
+| Prompt prefill | 64.691 s | 83.163 s |
+| Candidate continuations | 36.387 s | 52.397 s |
+| Explicit cache management | 0.205 s | 0.179 s |
+| Complete scorer batches | 107.966 s | 142.439 s |
+
+`Complete scorer batches` encloses the other scoring phases and must not be added to them.
+Thinking time is zero in these runs. Cache time measures the explicit metadata/copy API calls;
+deferred recurrent-state copying executes within decoding and is included in prefill or candidate
+time. Stage timings exclude outer Tera rendering, JSONL I/O, response normalization, and shutdown.
+See [development.md](development.md#stage-timings) for the full field definitions.
+
+Correctness checks also exercise both Qwen3.5 models against independent per-candidate execution,
+using two sequence slots, more candidates than slots, dynamic first-token gather growth,
+single-token answers, long continuations across chunks, candidate reordering, and subsequent
+requests after a rejected oversized prompt. Qwen3 CPU, Vulkan, bounded-thinking, and CLI golden
+regressions passed as well. Runtime cache resets no longer zero whole GPU buffers; native context
+allocation still performs its normal initial buffer initialization.
+
+Local raw runs, full command lines, binary hashes, responses, accuracy reports, and timings are
+preserved in the Git-ignored directory
+`tests/accuracy/generated/vulkan-prefix-benchmark-20260922/`. To reproduce a new 2B run after
+building the release Vulkan binary:
+
+```sh
+run_dir=tests/accuracy/generated/vulkan-prefix-rerun
+mkdir -p "$run_dir"
+time target/release/jet judge \
+  --backend vulkan \
+  --model-path models/Qwen3.5-2B-Q8_0.gguf \
+  --model-id qwen/qwen3.5-2b-q8_0 \
+  --thinking disabled \
+  --input tests/accuracy/generated/requests.jsonl \
+  --output "$run_dir/responses.jsonl" \
+  --timings "$run_dir/stages.json"
+python3 scripts/evaluate-accuracy.py \
+  --gold tests/accuracy/generated/gold.jsonl \
+  --responses "$run_dir/responses.jsonl" \
+  --report "$run_dir/report.json"
 ```
 
 ## 256-token bounded-thinking comparison

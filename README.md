@@ -50,6 +50,11 @@ Model loading fails with a clear error if `--backend vulkan` is used without the
 a usable Vulkan GPU. A successful run logs the selected `Vulkan0` device and the number of model
 layers offloaded before emitting JSONL results.
 
+For hybrid models such as Qwen3.5, batched execution prefills each question once and reuses its
+unchanged prefix while scoring candidate continuations serially. Two sequence slots are sufficient
+for this path (`--max-sequences 2`). Cache cleanup resets sequence metadata without synchronously
+zeroing the full KV and recurrent-state buffers.
+
 ## CLI
 
 ```sh
@@ -80,6 +85,12 @@ With the Vulkan backend, bounded thinking uses a separate single-sequence contex
 logits row to the CPU sampler. The model weights and transformer compute remain on the GPU. Once
 thinking closes, batched candidate scoring runs in the main Vulkan context, including
 full-vocabulary softmax and target-token gathering on the GPU.
+
+Add `--timings /tmp/jet-timings.json` to write cumulative engine stage timings and workload counters
+to a separate JSON file. The path must differ from the input and output paths; `-` is not supported.
+This leaves response JSONL and `usage` unchanged. Collection is disabled by default. See the
+[timing definitions](docs/development.md#stage-timings) when comparing model loading, prefill,
+candidate scoring, and total scorer time.
 
 Each non-empty input line is one request. The request deliberately has no `model` field:
 

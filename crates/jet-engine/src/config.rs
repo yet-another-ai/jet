@@ -58,6 +58,8 @@ pub struct EngineConfig {
     pub threads: i32,
     pub execution_mode: ExecutionMode,
     pub thinking: ThinkingConfig,
+    /// Collect cumulative stage timings and workload counters.
+    pub collect_timings: bool,
 }
 
 impl EngineConfig {
@@ -76,6 +78,7 @@ impl EngineConfig {
                 .unwrap_or(1),
             execution_mode: ExecutionMode::Batched,
             thinking: ThinkingConfig::default(),
+            collect_timings: false,
         }
     }
 

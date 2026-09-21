@@ -2,8 +2,10 @@ mod config;
 mod evaluator;
 mod llama;
 mod prompt;
+mod timing;
 
 pub use config::{Backend, EngineConfig, ExecutionMode, ThinkingConfig, ThinkingMode};
+pub use timing::EngineTimings;
 
 use jet_core::{DecisionRequest, DecisionResponse, JetError, Result};
 
@@ -33,5 +35,10 @@ impl Engine {
 
     pub fn decide_batch(&mut self, requests: &[DecisionRequest]) -> Vec<Result<DecisionResponse>> {
         decide_batch(&mut self.scorer, &self.model_id, requests)
+    }
+
+    /// Return cumulative stage timings, or zeros if collection is disabled.
+    pub fn timings(&self) -> &EngineTimings {
+        self.scorer.timings()
     }
 }

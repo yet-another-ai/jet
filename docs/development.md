@@ -45,6 +45,16 @@ JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
   qwen_vulkan_smoke -- --ignored --nocapture
 ```
 
+The Qwen3.5 regression test compares serial prefix reuse against independent reference scoring,
+including candidate reordering, mixed continuation lengths, gather-width growth, and reuse across
+questions with only two sequence slots:
+
+```sh
+JET_QWEN35_MODEL_PATH="$PWD/models/Qwen3.5-0.8B-Q8_0.gguf" \
+  mise exec -- cargo test -p jet-engine --features vulkan \
+  qwen35_hybrid_batch_matches_reference -- --ignored --nocapture
+```
+
 On NixOS, `nix shell` puts `glslc` on `PATH`, but CMake also needs the split header and loader
 outputs. This self-contained invocation supplies them:
 
@@ -63,3 +73,63 @@ JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
 
 On NixOS, the upstream prebuilt LLVM archive expects the host's zlib shared library. Regeneration
 therefore needs a shell that exposes zlib in `LD_LIBRARY_PATH`. Regular builds do not need this.
+
+## Stage timings
+
+The CLI accepts `--timings PATH` to write one JSON document after processing its input, including
+when individual request lines return errors. It preserves the response JSONL format. Use a
+separate file path: `-` and paths identical to `--input` or `--output` are rejected. The Rust API
+enables the same collection with `EngineConfig::collect_timings = true` and exposes cumulative
+totals through `Engine::timings()`. Collection is disabled by default.
+
+For example, after preparing the accuracy dataset and building a Vulkan release binary:
+
+```sh
+./target/release/jet judge \
+  --backend vulkan \
+  --model-path models/Qwen3.5-0.8B-Q8_0.gguf \
+  --model-id qwen/qwen3.5-0.8b-q8_0 \
+  --max-sequences 2 \
+  --thinking disabled \
+  --input tests/accuracy/generated/requests.jsonl \
+  --output /tmp/jet-responses.jsonl \
+  --timings /tmp/jet-timings.json
+```
+
+All duration fields are cumulative wall-clock milliseconds measured inside the native scorer.
+They include host work and backend waits, rather than individual GPU kernel durations:
+
+| Field | Scope |
+| --- | --- |
+| `load_ms` | Backend initialization, model loading, and inference-context setup. |
+| `prepare_ms` | Native chat-template rendering, prompt/candidate tokenization, and scorer validation; excludes thinking and its cache resets. |
+| `thinking_ms` | Bounded reasoning generation, including its prompt decode and sampling; excludes explicit cache resets. |
+| `prefill_ms` | Scoring-prompt decoding and reading the final prompt output, which scores candidate first tokens. |
+| `candidate_ms` | Decoding and scoring candidate continuations after the prompt. |
+| `cache_ms` | Explicit sequence reset, removal, and prefix-copy API calls. |
+| `batch_ms` | Complete scorer-batch processing, including preparation, thinking, cache management, scoring, and bookkeeping; excludes loading. |
+
+`batch_ms` is an enclosing total, so do not add it to the other scoring phases. Its phase subtotals
+can be smaller because scheduling and other bookkeeping are included only in the total. Deferred
+recurrent-state copies execute during decoding and are charged to that decode phase, rather than
+to `cache_ms`. Timing collection relies on the synchronization already needed to read scoring
+outputs; it does not add a wait between prompt chunks.
+
+These measurements exclude JSONL parsing and writing, outer Tera question rendering, and response
+normalization. Measure process wall time separately when startup and complete request handling
+matter; `load_ms + batch_ms` is not a replacement for it.
+
+The document also contains these cumulative counters:
+
+- `batches`: calls into the native scoring batch; input chunks without scoring jobs do not count.
+- `jobs`: questions submitted to the scorer, including those that fail scorer validation.
+- `prefill_count`: scoring prompt prefills, counting repeated prefills in reference mode or split waves.
+- `prefill_tokens`: physical scoring-prompt tokens submitted for decoding, including frozen reasoning when enabled and repeated prefixes when needed.
+- `candidate_tokens`: continuation tokens submitted for decoding. A successful candidate of length `N` requires `N - 1` such tokens because its first token is scored by the final prompt output.
+- `decode_calls`: calls to llama.cpp decode across scoring and thinking.
+
+The two token counters exclude thinking-generation decoding; that work is measured by
+`thinking_ms` and contributes to `decode_calls`. These workload counters are separate from response
+`usage`, which continues to count one original prompt per question, every scored candidate token,
+and generated thinking tokens. Use identical input, model, execution mode, and batching settings
+when comparing performance.

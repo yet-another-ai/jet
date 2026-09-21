@@ -13,6 +13,7 @@ fn jsonl_order_shape_and_error_exit_are_stable() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(&directory)?;
     let input_path = directory.join("input.jsonl");
     let output_path = directory.join("output.jsonl");
+    let timings_path = directory.join("timings.json");
     fs::write(
         &input_path,
         concat!(
@@ -33,6 +34,8 @@ fn jsonl_order_shape_and_error_exit_are_stable() -> Result<(), Box<dyn Error>> {
             &input_path.to_string_lossy(),
             "--output",
             &output_path.to_string_lossy(),
+            "--timings",
+            &timings_path.to_string_lossy(),
             "--context-tokens",
             "256",
             "--token-batch",
@@ -69,6 +72,11 @@ fn jsonl_order_shape_and_error_exit_are_stable() -> Result<(), Box<dyn Error>> {
         keys,
         std::collections::BTreeSet::from(["answers", "model", "usage"])
     );
+
+    let timings: Value = serde_json::from_str(&fs::read_to_string(&timings_path)?)?;
+    assert!(timings["load_ms"].as_f64().is_some_and(|ms| ms > 0.0));
+    assert!(timings["batch_ms"].as_f64().is_some_and(|ms| ms > 0.0));
+    assert!(timings["prefill_tokens"].as_u64().is_some_and(|n| n > 0));
 
     fs::remove_dir_all(directory)?;
     Ok(())
