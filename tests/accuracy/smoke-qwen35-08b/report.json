@@ -1,0 +1,803 @@
+{
+  "overall": {
+    "examples": 59,
+    "correct": 14,
+    "accuracy": 0.23728813559322035,
+    "mean_gold_nll": 43.95965097337569,
+    "mean_confidence": 0.8216611290720847,
+    "gold_counts": {
+      "a": 12,
+      "b": 16,
+      "c": 13,
+      "d": 16,
+      "false": 1,
+      "true": 1
+    },
+    "prediction_counts": {
+      "a": 20,
+      "b": 13,
+      "c": 15,
+      "d": 9,
+      "false": 2
+    }
+  },
+  "datasets": {
+    "boolq": {
+      "examples": 2,
+      "correct": 1,
+      "accuracy": 0.5,
+      "mean_gold_nll": 0.6809800793803025,
+      "mean_confidence": 0.5995118974529177,
+      "gold_counts": {
+        "false": 1,
+        "true": 1
+      },
+      "prediction_counts": {
+        "false": 2
+      }
+    },
+    "mmlu": {
+      "examples": 57,
+      "correct": 13,
+      "accuracy": 0.22807017543859648,
+      "mean_gold_nll": 45.47820082930535,
+      "mean_confidence": 0.8294558389534589,
+      "gold_counts": {
+        "a": 12,
+        "b": 16,
+        "c": 13,
+        "d": 16
+      },
+      "prediction_counts": {
+        "a": 20,
+        "b": 13,
+        "c": 15,
+        "d": 9
+      }
+    }
+  },
+  "mmlu_by_subject": {
+    "abstract_algebra": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 1.3090874716031484,
+      "mean_confidence": 0.30240416745366555,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "anatomy": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 52.83909000479849,
+      "mean_confidence": 0.6041454179140489,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "astronomy": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 60.187779347392905,
+      "mean_confidence": 0.9999999998461266,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "business_ethics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 21.810374142250986,
+      "mean_confidence": 0.5749521340315954,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "clinical_knowledge": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 1.0255321584885353e-07,
+      "mean_confidence": 0.9999998974467894,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "college_biology": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 7.753990785794596e-10,
+      "mean_confidence": 0.9999999992246009,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "college_chemistry": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 1.09531470911056,
+      "mean_confidence": 0.3344343408514265,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "college_computer_science": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 140.68064992165995,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "college_mathematics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 25.689520426101502,
+      "mean_confidence": 0.9999999999930309,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "college_medicine": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 1.2752472868320028,
+      "mean_confidence": 0.7206381228101335,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "college_physics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 14.215836333566982,
+      "mean_confidence": 0.4268774568463483,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "computer_security": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 23.060864143759083,
+      "mean_confidence": 0.5840219428733904,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "conceptual_physics": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 4.3029491118960115e-08,
+      "mean_confidence": 0.9999999569705098,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "econometrics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 25.935736708627687,
+      "mean_confidence": 0.9999999997692317,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "electrical_engineering": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 46.231451316955294,
+      "mean_confidence": 0.799737084140006,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "elementary_mathematics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 67.10146443596913,
+      "mean_confidence": 0.999999999992454,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "formal_logic": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 2.3284555808109473,
+      "mean_confidence": 0.4106752434796609,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "global_facts": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 3.598046258520444,
+      "mean_confidence": 0.5301020176656525,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "high_school_biology": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 25.06810720783255,
+      "mean_confidence": 0.6775487208287969,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "high_school_chemistry": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 16.016410904374762,
+      "mean_confidence": 0.5177021578357492,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "high_school_computer_science": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 1.7092956794234975,
+      "mean_confidence": 0.5482604173852734,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "high_school_european_history": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 21.247735185496982,
+      "mean_confidence": 0.7025341919678774,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "high_school_geography": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 23.172802069358955,
+      "mean_confidence": 0.9999999999136664,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "high_school_government_and_politics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 50.52434263414197,
+      "mean_confidence": 0.9999999961930381,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "high_school_macroeconomics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 2.858962461202614,
+      "mean_confidence": 0.46218578306430397,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "high_school_mathematics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 16.334012263134536,
+      "mean_confidence": 0.999999410327284,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "high_school_microeconomics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 34.388094471156876,
+      "mean_confidence": 0.7514489318820323,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "high_school_physics": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 0.9279791989355658,
+      "mean_confidence": 0.39535183107948163,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "high_school_psychology": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 0.48322684956360185,
+      "mean_confidence": 0.6167898889849698,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "high_school_statistics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 139.98854629787456,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "high_school_us_history": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 66.90913334820644,
+      "mean_confidence": 0.9999999999683604,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "high_school_world_history": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 1.1950567938531598,
+      "mean_confidence": 0.6973132370535989,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "human_aging": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 108.12707600115664,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "human_sexuality": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 13.136521381818667,
+      "mean_confidence": 0.9999977675952942,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "international_law": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 245.9194778488927,
+      "mean_confidence": 0.8725295065223126,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "jurisprudence": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 90.49148477781273,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "logical_fallacies": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 2.1773249869975756e-11,
+      "mean_confidence": 0.9999999999782268,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "machine_learning": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 207.30631306875148,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "management": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 2.905009566238404e-12,
+      "mean_confidence": 0.999999999997095,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "marketing": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 0.17168367542106025,
+      "mean_confidence": 0.8422455540051103,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "medical_genetics": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 178.4878736884216,
+      "mean_confidence": 0.7464825672129062,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "miscellaneous": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 2.628989678488807,
+      "mean_confidence": 0.9236435729431893,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "moral_disputes": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 0.0,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "moral_scenarios": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 23.029200209257006,
+      "mean_confidence": 0.6613936402804119,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "nutrition": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 16.454676501558374,
+      "mean_confidence": 0.9999999241882123,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "philosophy": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 148.29279716279564,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "prehistory": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 19.063319664030576,
+      "mean_confidence": 0.9999999947409721,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "professional_accounting": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 1.6363667026135858e-06,
+      "mean_confidence": 0.9999983636346362,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "professional_law": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 108.3415754659481,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "professional_medicine": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 188.2709962379904,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "professional_psychology": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 0.06364494264495565,
+      "mean_confidence": 0.9383381042370198,
+      "gold_counts": {
+        "a": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "public_relations": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 24.05020419660864,
+      "mean_confidence": 0.999999999557835,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "c": 1
+      }
+    },
+    "security_studies": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 228.9545642828587,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "sociology": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 26.750765642563476,
+      "mean_confidence": 0.9999999999729312,
+      "gold_counts": {
+        "d": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    },
+    "us_foreign_policy": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 72.48901627779105,
+      "mean_confidence": 1.0,
+      "gold_counts": {
+        "c": 1
+      },
+      "prediction_counts": {
+        "d": 1
+      }
+    },
+    "virology": {
+      "examples": 1,
+      "correct": 1,
+      "accuracy": 1.0,
+      "mean_gold_nll": 1.904946868729636e-09,
+      "mean_confidence": 0.9999999980950531,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "b": 1
+      }
+    },
+    "world_religions": {
+      "examples": 1,
+      "correct": 0,
+      "accuracy": 0.0,
+      "mean_gold_nll": 2.044641328424957,
+      "mean_confidence": 0.6372314795928457,
+      "gold_counts": {
+        "b": 1
+      },
+      "prediction_counts": {
+        "a": 1
+      }
+    }
+  },
+  "failures": []
+}

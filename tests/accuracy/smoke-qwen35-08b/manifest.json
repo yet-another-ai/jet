@@ -1,0 +1,28 @@
+{
+  "seed": 20260921,
+  "sources": {
+    "boolq": {
+      "rows_endpoint": "https://datasets-server.huggingface.co/rows",
+      "split": "validation",
+      "normalized_sha256": "0477ed7c7519c25ad2633c53581ed370f3bd1857dfac177af559b658969b0577"
+    },
+    "mmlu": {
+      "url": "https://people.eecs.berkeley.edu/~hendrycks/data.tar",
+      "archive_sha256": "bec563ba4bac1d6aaf04141cd7d1605d7a5ca833e38f994051e818489592989b"
+    },
+    "boolq_repository": "google-research-datasets/boolean-questions@90af34107399cc7a446b373dc4ee35b8001da7c2",
+    "boolq_huggingface": "google/boolq@35b264d03638db9f4ce671b711558bf7ff0f80d5",
+    "mmlu_repository": "hendrycks/test@4450500f923c49f1fb1dd3d99108a0bd9717b660"
+  },
+  "selection": {
+    "boolq": {
+      "examples": 2,
+      "stratified_by": "answer"
+    },
+    "mmlu": {
+      "examples": 57,
+      "subjects": 57,
+      "per_subject": 1
+    }
+  }
+}
