@@ -49,6 +49,15 @@ struct JudgeArgs {
     threads: Option<i32>,
     #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
     backend: BackendArg,
+    /// Number of model layers to place on GPU; Vulkan defaults to all layers.
+    #[arg(long)]
+    gpu_layers: Option<u32>,
+    /// Keep routed MoE experts in the first N layers on CPU (Vulkan only).
+    #[arg(long, default_value_t = 0)]
+    cpu_moe_layers: u32,
+    /// Load weights into allocated memory instead of mapping the model file.
+    #[arg(long)]
+    no_mmap: bool,
     #[arg(long, value_enum, default_value_t = ExecutionArg::Batched)]
     execution: ExecutionArg,
     #[arg(long, value_enum, default_value_t = ThinkingArg::Disabled)]
@@ -135,6 +144,9 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         BackendArg::Cpu => EngineConfig::cpu(&args.model_path, args.model_id),
         BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, args.model_id),
     };
+    config.gpu_layers = args.gpu_layers;
+    config.cpu_moe_layers = args.cpu_moe_layers;
+    config.use_mmap = !args.no_mmap;
     config.context_tokens_per_sequence = args.context_tokens;
     config.token_batch = args.token_batch;
     config.micro_batch = args.micro_batch;
@@ -320,6 +332,33 @@ fn error_envelope(error: JetError) -> ErrorEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offload_options_accept_explicit_counts_and_reject_negative_values()
+    -> std::result::Result<(), clap::Error> {
+        let cli = Cli::try_parse_from([
+            "jet",
+            "judge",
+            "--model-path",
+            "model.gguf",
+            "--backend",
+            "vulkan",
+            "--gpu-layers",
+            "12",
+            "--cpu-moe-layers",
+            "30",
+        ])?;
+        let Command::Judge(args) = cli.command;
+        assert_eq!(args.gpu_layers, Some(12));
+        assert_eq!(args.cpu_moe_layers, 30);
+        for option in ["--gpu-layers", "--cpu-moe-layers"] {
+            assert!(
+                Cli::try_parse_from(["jet", "judge", "--model-path", "model.gguf", option, "-1",])
+                    .is_err()
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn serializes_machine_readable_error() -> Result<()> {

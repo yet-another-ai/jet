@@ -10,6 +10,14 @@
 extern "C" {
 #endif
 
+// CPU buffer type used by llama_model_params.tensor_buft_overrides.
+ggml_backend_buffer_type_t jet_cpu_buffer_type(void);
+
+// Persistent CPU workers shared by a scorer's sequential llama contexts.
+// The caller must free all attached contexts before freeing the threadpool.
+ggml_threadpool_t jet_cpu_threadpool_new(int32_t n_threads);
+void jet_cpu_threadpool_free(ggml_threadpool_t threadpool);
+
 // Returns the required JSON byte length, excluding the terminating NUL.
 // Returns -1 on failure and writes a diagnostic into error when provided.
 int32_t jet_chat_render(

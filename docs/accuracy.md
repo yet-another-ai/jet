@@ -193,6 +193,119 @@ python3 scripts/evaluate-accuracy.py \
   --report "$run_dir/report.json"
 ```
 
+## Qwen3.6 Q4 CPU/Vulkan offload
+
+The Qwen3.6-35B-A3B evaluation uses the text-only `Q4_K_M` conversion from
+`ggml-org/Qwen3.6-35B-A3B-GGUF` at revision
+`baec3ebee244827cda0f4557eafa8b28f7545fa6`. The downloaded file is 20,419,565,568 bytes
+(19.02 GiB), verified against SHA-256
+`671e47e0ec53c665d048b98c3ecbfd5236b5ca9c3e02ed19fc8f81f7b85140c7`.
+MTP and vision-projector weights are not included. The routed experts use Q4_K; this mixed
+quantization also retains higher precision for some other tensors.
+
+Placement is configured with `--cpu-moe-layers N`: the first N layers' routed experts execute
+on CPU while attention, shared experts, and the remaining routed experts execute on Vulkan.
+For this specific GGUF, each layer's routed experts occupy exactly 432 MiB. Token embeddings
+occupy another 272.81 MiB on CPU. These are weight sizes; caches, computation buffers, and driver
+allocations require additional memory. The initial proposal to keep about 70% of weights in RAM
+was replaced by measuring how much could remain in VRAM on this machine.
+
+Eight mixed BoolQ/MMLU requests were used for placement and thread-count probes. The table reports
+scorer time divided by eight, excluding model loading; it is not the full accuracy workload.
+All probes used two sequence slots, allocated host memory (`--no-mmap`), and disabled thinking.
+
+| CPU expert layers | CPU threads | Microbatch / output rows | GPU weights | Scorer seconds/request |
+| ---: | ---: | ---: | ---: | ---: |
+| 31 | 32 | 512 / 256 | 5.66 GiB | 3.405 |
+| 31 | 16 | 512 / 256 | 5.66 GiB | 2.388 |
+| 31 | 8 | 512 / 256 | 5.66 GiB | 1.818 |
+| 14 | 8 | 512 / 256 | 12.83 GiB | 1.141 |
+| 13 | 8 | 512 / 256 | 13.26 GiB | 1.118 |
+| 12 | 8 | 256 / 256 | 13.68 GiB | 1.098 |
+| 12 | 8 | 256 / 128 | 13.68 GiB | 1.292 |
+
+Reducing microbatch capacity from 512 to 256 preserves the actual scoring chunks here: Jet
+already limits them to `min(token_batch, max_output_rows)`, or 256 tokens. Reducing output rows
+to 128 also reduces actual prefill chunks and was slower in this probe. More CPU threads were
+slower for these CPU expert operations; the three 31-layer thread-count probes produced identical
+probabilities and usage. Changing CPU/GPU placement can change probabilities through backend
+numerical differences, so correctness is checked against independent reference execution at the
+same placement.
+
+The capacity check then used eight longer requests, including the sample's two longest prompts
+(1,109 and 1,096 tokens). With microbatch/output rows both 256, 12 CPU expert layers took 25.714 s
+of scorer time and 11 layers took 25.126 s. The latter keeps 14.10 GiB of weights on GPU and
+4.91 GiB on CPU, or about 74.18% of tensor bytes on GPU. Its native GPU buffers total approximately
+14.78 GiB including KV cache, recurrent state, and computation buffers. One-second DRM samples
+during the long-input run recorded 14.91 GiB of resident device memory, within 4 MiB of the
+process's allocated device memory; there was no evidence of substantial device-memory eviction.
+This is process memory sampled through i915, not the whole card's instantaneous peak.
+
+The native log's 14,659 MiB free figure comes from the Vulkan memory-budget extension and is not a
+hard physical allocation limit. The larger placement was accepted based on actual residency and
+successful execution. These settings use two sequence slots, 2,048 context tokens per sequence,
+and disabled thinking. Increasing slots/context or enabling the separate thinking context needs
+a new capacity check.
+
+The selected 11-layer placement completed all 541 requests without errors. A fresh Qwen3.5-2B
+Q8_0 control also completed the same workload. Each measurement is one fresh process, includes
+model loading and shutdown, and uses already-cached model files without explicit cache eviction.
+Both runs disable thinking, use two sequence slots, a 2,048-token context per sequence, and
+`--no-mmap`. The 2B control uses full GPU placement, default 32 CPU threads and microbatch 512;
+the 35B MoE uses 8 CPU threads and microbatch 256. Both retain 256 output rows and 8 requests per
+CLI batch. The machine has an Intel Core i9-13900K, 64 GiB RAM, and the 16 GiB Intel Arc A770.
+
+| Model / placement | Wall time | Amortized seconds/request | Overall | BoolQ | MMLU | Mean gold NLL |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen3.5-2B Q8_0, full GPU | 146.85 s | 0.271 | 343/541 (63.40%) | 190/256 (74.22%) | 153/285 (53.68%) | 0.9052 |
+| Qwen3.6-35B-A3B Q4_K_M, 11 CPU expert layers | 647.61 s | 1.197 | 479/541 (88.54%) | 230/256 (89.84%) | 249/285 (87.37%) | 0.3553 |
+
+The larger model gained 136 correct answers (+25.14 percentage points) while taking 4.41 times
+as long. Its 1.197 seconds/request is 2.39 times the 0.5-second budget. Even excluding loading,
+the scorer averaged 1.190 seconds/request. These are amortized workload costs, not single-request
+latency percentiles; accuracy remains specific to Jet's fixed zero-shot sample and scoring
+protocol.
+
+| Stage | Qwen3.5-2B | Qwen3.6-35B-A3B |
+| --- | ---: | ---: |
+| Load | 0.724 s | 3.943 s |
+| Native prompt preparation | 6.738 s | 6.639 s |
+| Prompt prefill | 85.470 s | 442.901 s |
+| Candidate continuations | 53.761 s | 193.959 s |
+| Explicit cache management | 0.084 s | 0.070 s |
+| Complete scorer batches | 146.067 s | 643.588 s |
+
+Prefill accounts for 68.8% of the larger model's scorer time, followed by candidate continuations
+at 30.1%. Cache management is negligible. Both runs execute 541 prefills / 128,583 prompt tokens,
+9,795 candidate continuation tokens, and 2,369 decoder calls in 68 scorer batches. The complete
+scorer time encloses its phases and must not be added to them. The fresh 2B responses are identical
+to the earlier prefix-reuse benchmark.
+
+The full run's 646 one-second DRM samples recorded a maximum of 14.90 GiB resident device memory
+and 5.20 GiB resident system memory in the GPU driver, with at most 4 MiB of allocated device memory
+not resident. Ordinary process memory is additional to those driver figures. Independent
+per-candidate reference execution at the same 11-layer placement matched eight mixed responses
+selected from the full run: no top-1 or usage changes, and maximum probability difference
+`6.37e-8`. This also checks the selected responses after earlier requests and batches have reused
+the same context.
+
+After preparing the standard accuracy inputs and building the release Vulkan binary, reproduce
+the selected placement with:
+
+```sh
+./scripts/download-accuracy-models.sh --qwen36
+python3 scripts/benchmark-model.py \
+  --model-path models/Qwen3.6-35B-A3B-Q4_K_M.gguf \
+  --model-id qwen/qwen3.6-35b-a3b-q4_k_m \
+  --output-dir tests/accuracy/generated/qwen36-q4-cpu11-rerun \
+  --runs 1 \
+  --extra-args --cpu-moe-layers 11 --threads 8 --max-sequences 2 \
+  --micro-batch 256 --max-output-rows 256 --no-mmap --thinking disabled
+```
+
+Raw model provenance, tensor accounting, commands, logs, responses, stage timings, and comparisons
+are retained locally in `tests/accuracy/generated/qwen36-35b-a3b-q4-offload-20260922/`.
+
 ## 256-token bounded-thinking comparison
 
 The same Vulkan target-gather build was also run with `--thinking required --thinking-tokens 256`.

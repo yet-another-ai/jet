@@ -41,6 +41,25 @@ impl Drop for ThinkingSampler {
     }
 }
 
+struct CpuThreadpool(NonNull<sys::ggml_threadpool>);
+
+impl CpuThreadpool {
+    fn new(threads: i32) -> Result<Self> {
+        // SAFETY: configuration validation requires a positive thread count and the
+        // bridge returns an owned threadpool or null after backend initialization.
+        NonNull::new(unsafe { sys::jet_cpu_threadpool_new(threads) })
+            .map(Self)
+            .ok_or_else(|| JetError::NativeRuntime("failed to create CPU threadpool".to_owned()))
+    }
+}
+
+impl Drop for CpuThreadpool {
+    fn drop(&mut self) {
+        // SAFETY: all contexts borrowing this pool have already been freed.
+        unsafe { sys::jet_cpu_threadpool_free(self.0.as_ptr()) };
+    }
+}
+
 #[derive(Clone, Copy)]
 struct GroupSpec {
     job_index: usize,
@@ -97,6 +116,62 @@ struct DecodeItem {
     output: OutputAction,
 }
 
+#[derive(Default)]
+struct TensorBufferOverrides {
+    // Native model parameters retain these pointers, so both allocations outlive the model.
+    _patterns: Vec<CString>,
+    entries: Vec<sys::llama_model_tensor_buft_override>,
+}
+
+impl TensorBufferOverrides {
+    fn cpu_experts(layers: u32) -> Result<Self> {
+        if layers == 0 {
+            return Ok(Self::default());
+        }
+        // SAFETY: backend initialization completed before constructing model overrides.
+        let cpu_buffer = unsafe { sys::jet_cpu_buffer_type() };
+        if cpu_buffer.is_null() {
+            return Err(JetError::NativeRuntime(
+                "CPU buffer type is unavailable for cpu_moe_layers".to_owned(),
+            ));
+        }
+        // This follows llama.cpp's LLM_FFN_EXPS_REGEX, including fused gate/up and
+        // chunked expert tensors, while excluding the router and shared experts.
+        let patterns = (0..layers)
+            .map(|layer| {
+                CString::new(format!(
+                    r"^blk\.{layer}\.ffn_(up|down|gate|gate_up)_(ch|)exps\."
+                ))
+                .map_err(|_| {
+                    JetError::NativeRuntime(
+                        "invalid generated CPU expert tensor pattern".to_owned(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut entries: Vec<_> = patterns
+            .iter()
+            .map(|pattern| sys::llama_model_tensor_buft_override {
+                pattern: pattern.as_ptr(),
+                buft: cpu_buffer,
+            })
+            .collect();
+        entries.push(sys::llama_model_tensor_buft_override::default());
+        Ok(Self {
+            _patterns: patterns,
+            entries,
+        })
+    }
+
+    fn as_ptr(&self) -> *const sys::llama_model_tensor_buft_override {
+        if self.entries.is_empty() {
+            ptr::null()
+        } else {
+            self.entries.as_ptr()
+        }
+    }
+}
+
 pub(crate) struct LlamaScorer {
     model: NonNull<sys::llama_model>,
     context: NonNull<sys::llama_context>,
@@ -110,6 +185,9 @@ pub(crate) struct LlamaScorer {
     candidate_capacity: usize,
     isolate_candidate_groups: bool,
     timings: EngineTimings,
+    // LlamaScorer::drop frees both contexts before this owned pool is dropped.
+    _cpu_threadpool: CpuThreadpool,
+    _tensor_buffer_overrides: TensorBufferOverrides,
     _single_threaded: PhantomData<Rc<()>>,
 }
 
@@ -149,8 +227,16 @@ impl LlamaScorer {
         let mut model_params = unsafe { sys::llama_model_default_params() };
         model_params.n_gpu_layers = match config.backend {
             Backend::Cpu => 0,
-            Backend::Vulkan => -1,
+            Backend::Vulkan => config.gpu_layers.map_or(-1, |layers| layers as i32),
         };
+        if !config.use_mmap {
+            model_params.load_mode = sys::llama_load_mode_LLAMA_LOAD_MODE_NONE;
+        }
+        if config.cpu_moe_layers > 0 {
+            validate_cpu_moe_model(&path, model_params, config.cpu_moe_layers)?;
+        }
+        let tensor_buffer_overrides = TensorBufferOverrides::cpu_experts(config.cpu_moe_layers)?;
+        model_params.tensor_buft_overrides = tensor_buffer_overrides.as_ptr();
         // SAFETY: path is a live NUL-terminated string and model_params came from llama.cpp.
         let model =
             NonNull::new(unsafe { sys::llama_model_load_from_file(path.as_ptr(), model_params) })
@@ -164,6 +250,7 @@ impl LlamaScorer {
         let mut load_result = Self::finish_load(model, config);
         if let Ok(scorer) = &mut load_result {
             scorer.timings.load_ms = elapsed_ms(started);
+            scorer._tensor_buffer_overrides = tensor_buffer_overrides;
         }
         if load_result.is_err() {
             // SAFETY: model was returned by llama_model_load_from_file and no context owns it.
@@ -173,6 +260,11 @@ impl LlamaScorer {
     }
 
     fn finish_load(model: NonNull<sys::llama_model>, config: EngineConfig) -> Result<Self> {
+        // Create the pool before native contexts. Every failure path below frees
+        // its contexts before this local owner drops, and success transfers it to
+        // the scorer. Without an attached pool each CPU graph split starts and
+        // joins a fresh set of worker threads.
+        let cpu_threadpool = CpuThreadpool::new(config.threads)?;
         let device_softmax =
             config.backend == Backend::Vulkan && config.execution_mode == ExecutionMode::Batched;
         let needs_generation_context =
@@ -210,8 +302,11 @@ impl LlamaScorer {
         context_params.n_threads_batch = config.threads;
         context_params.embeddings = false;
         let offload = config.backend == Backend::Vulkan;
+        // Native op_offload can upload CPU weights again for sufficiently large batches.
+        // Explicit placement must keep their computation on CPU, including MoE prefill.
+        let offload_cpu_ops = offload && config.gpu_layers.is_none() && config.cpu_moe_layers == 0;
         context_params.offload_kqv = offload;
-        context_params.op_offload = offload;
+        context_params.op_offload = offload_cpu_ops;
         context_params.kv_unified = true;
 
         let mut score_samplers: Vec<NonNull<sys::llama_sampler>> = Vec::new();
@@ -252,8 +347,16 @@ impl LlamaScorer {
                 "failed to create llama context".to_owned(),
             ));
         };
-        // SAFETY: context is live and exclusively owned here.
-        unsafe { sys::llama_set_causal_attn(context.as_ptr(), true) };
+        // SAFETY: context is live and the pool outlives it. Both normal and
+        // batched CPU evaluation reuse the same workers.
+        unsafe {
+            sys::llama_attach_threadpool(
+                context.as_ptr(),
+                cpu_threadpool.0.as_ptr(),
+                cpu_threadpool.0.as_ptr(),
+            );
+            sys::llama_set_causal_attn(context.as_ptr(), true);
+        };
 
         let generation_context = if needs_generation_context {
             // Keep generation on the Vulkan model backend, but omit the device-side scoring
@@ -272,7 +375,7 @@ impl LlamaScorer {
             generation_params.n_threads_batch = config.threads;
             generation_params.embeddings = false;
             generation_params.offload_kqv = offload;
-            generation_params.op_offload = offload;
+            generation_params.op_offload = offload_cpu_ops;
             generation_params.kv_unified = true;
 
             // SAFETY: model remains live and generation_params contains no borrowed pointers.
@@ -280,8 +383,16 @@ impl LlamaScorer {
                 sys::llama_init_from_model(model.as_ptr(), generation_params)
             }) {
                 Some(generation_context) => {
-                    // SAFETY: context is live and exclusively owned here.
-                    unsafe { sys::llama_set_causal_attn(generation_context.as_ptr(), true) };
+                    // SAFETY: the pool outlives both contexts, and scoring and
+                    // generation never execute concurrently.
+                    unsafe {
+                        sys::llama_attach_threadpool(
+                            generation_context.as_ptr(),
+                            cpu_threadpool.0.as_ptr(),
+                            cpu_threadpool.0.as_ptr(),
+                        );
+                        sys::llama_set_causal_attn(generation_context.as_ptr(), true);
+                    };
                     Some(generation_context)
                 }
                 None => {
@@ -345,6 +456,9 @@ impl LlamaScorer {
             candidate_capacity,
             isolate_candidate_groups: isolates_candidate_forks,
             timings: EngineTimings::default(),
+            _cpu_threadpool: cpu_threadpool,
+            // load() transfers its still-live overrides here immediately on success.
+            _tensor_buffer_overrides: TensorBufferOverrides::default(),
             _single_threaded: PhantomData,
         })
     }
@@ -1545,7 +1659,8 @@ impl SequenceScorer for LlamaScorer {
 
 impl Drop for LlamaScorer {
     fn drop(&mut self) {
-        // SAFETY: context was created from model and must be freed before the model.
+        // SAFETY: contexts must be freed before the model and the shared CPU pool.
+        // The pool remains live until automatic field destruction after this body.
         unsafe {
             if let Some(generation_context) = self.generation_context {
                 sys::llama_free(generation_context.as_ptr());
@@ -1559,7 +1674,118 @@ impl Drop for LlamaScorer {
     }
 }
 
+fn validate_cpu_moe_model(
+    path: &CStr,
+    mut params: sys::llama_model_params,
+    requested_layers: u32,
+) -> Result<()> {
+    // Inspect architecture and layer limits before allocating any model weights.
+    params.vocab_only = true;
+    params.n_gpu_layers = 0;
+    // SAFETY: path is NUL-terminated; parameters contain no tensor overrides yet.
+    let model = NonNull::new(unsafe { sys::llama_model_load_from_file(path.as_ptr(), params) })
+        .ok_or_else(|| {
+            JetError::NativeRuntime("failed to read model metadata for cpu_moe_layers".to_owned())
+        })?;
+    let result = (|| {
+        let architecture = model_metadata(model, c"general.architecture").ok_or_else(|| {
+            JetError::UnsupportedModel(
+                "cpu_moe_layers requires general.architecture model metadata".to_owned(),
+            )
+        })?;
+        let metadata_number = |suffix: &str| -> Result<u32> {
+            let key = CString::new(format!("{architecture}.{suffix}")).map_err(|_| {
+                JetError::UnsupportedModel("model architecture contains NUL".to_owned())
+            })?;
+            model_metadata(model, &key).map_or(Ok(0), |value| {
+                value.parse().map_err(|_| {
+                    JetError::UnsupportedModel(format!(
+                        "invalid model metadata {architecture}.{suffix}: {value}"
+                    ))
+                })
+            })
+        };
+        let experts = metadata_number("expert_count")?;
+        let leading_dense_layers = metadata_number("leading_dense_block_count")?;
+        // vocab_only populates GGUF metadata but deliberately skips non-vocabulary
+        // hparams, so llama_model_n_layer() is unavailable in this preflight.
+        let total_layers = metadata_number("block_count")?;
+        let mtp_layers = metadata_number("nextn_predict_layers")?;
+        let layers = total_layers.checked_sub(mtp_layers).ok_or_else(|| {
+            JetError::UnsupportedModel("model nextn_predict_layers exceeds block_count".to_owned())
+        })?;
+        validate_cpu_moe_layout(requested_layers, layers, experts, leading_dense_layers)
+    })();
+    // SAFETY: this vocabulary-only model is owned here and never created a context.
+    unsafe { sys::llama_model_free(model.as_ptr()) };
+    result
+}
+
+fn model_metadata(model: NonNull<sys::llama_model>, key: &CStr) -> Option<String> {
+    // SAFETY: model and key are live; zero capacity allows a null output buffer.
+    let length =
+        unsafe { sys::llama_model_meta_val_str(model.as_ptr(), key.as_ptr(), ptr::null_mut(), 0) };
+    if length < 0 {
+        return None;
+    }
+    let mut value = vec![0_i8; length as usize + 1];
+    // SAFETY: the mutable buffer has space for the advertised bytes plus terminating NUL.
+    unsafe {
+        sys::llama_model_meta_val_str(
+            model.as_ptr(),
+            key.as_ptr(),
+            value.as_mut_ptr(),
+            value.len(),
+        );
+        Some(
+            CStr::from_ptr(value.as_ptr())
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
+fn validate_cpu_moe_layout(
+    requested_layers: u32,
+    model_layers: u32,
+    experts: u32,
+    leading_dense_layers: u32,
+) -> Result<()> {
+    if experts == 0 {
+        return Err(JetError::UnsupportedModel(
+            "cpu_moe_layers requires a MoE model with routed experts".to_owned(),
+        ));
+    }
+    if model_layers == 0 || requested_layers > model_layers {
+        return Err(JetError::InvalidRequest(format!(
+            "cpu_moe_layers ({requested_layers}) exceeds the model's {model_layers} transformer layers"
+        )));
+    }
+    if requested_layers <= leading_dense_layers {
+        return Err(JetError::InvalidRequest(format!(
+            "cpu_moe_layers ({requested_layers}) selects only the model's leading dense layers and no routed experts"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_config(config: &EngineConfig) -> Result<()> {
+    if config
+        .gpu_layers
+        .is_some_and(|layers| layers > i32::MAX as u32)
+        || config.cpu_moe_layers > i32::MAX as u32
+    {
+        return Err(JetError::InvalidRequest(
+            "gpu_layers and cpu_moe_layers must not exceed i32::MAX".to_owned(),
+        ));
+    }
+    if config.backend == Backend::Cpu
+        && (config.gpu_layers.is_some_and(|layers| layers > 0) || config.cpu_moe_layers > 0)
+    {
+        return Err(JetError::InvalidRequest(
+            "gpu_layers > 0 and cpu_moe_layers > 0 require the Vulkan backend".to_owned(),
+        ));
+    }
     if config.model_id.is_empty() {
         return Err(JetError::InvalidRequest(
             "model_id must not be empty".to_owned(),
@@ -1704,6 +1930,58 @@ fn target_log_probability(logits: &[f32], target: sys::llama_token) -> Result<f6
 mod tests {
     use super::*;
     use jet_core::normalize_log_probabilities;
+
+    #[test]
+    fn rejects_conflicting_and_overflowing_offload_configuration() -> Result<()> {
+        let mut config = EngineConfig::qwen3_cpu("model.gguf");
+        config.gpu_layers = Some(0);
+        validate_config(&config)?;
+        config.gpu_layers = Some(1);
+        assert!(matches!(
+            validate_config(&config),
+            Err(JetError::InvalidRequest(_))
+        ));
+        config.gpu_layers = None;
+        config.cpu_moe_layers = 1;
+        assert!(matches!(
+            validate_config(&config),
+            Err(JetError::InvalidRequest(_))
+        ));
+        config.backend = Backend::Vulkan;
+        validate_config(&config)?;
+        config.gpu_layers = Some(u32::MAX);
+        assert!(matches!(
+            validate_config(&config),
+            Err(JetError::InvalidRequest(_))
+        ));
+        config.gpu_layers = None;
+        config.cpu_moe_layers = u32::MAX;
+        assert!(matches!(
+            validate_config(&config),
+            Err(JetError::InvalidRequest(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn cpu_moe_configuration_must_select_existing_experts() -> Result<()> {
+        validate_cpu_moe_layout(30, 40, 256, 0)?;
+        validate_cpu_moe_layout(40, 40, 256, 0)?;
+        assert!(matches!(
+            validate_cpu_moe_layout(41, 40, 256, 0),
+            Err(JetError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            validate_cpu_moe_layout(1, 24, 0, 0),
+            Err(JetError::UnsupportedModel(_))
+        ));
+        assert!(matches!(
+            validate_cpu_moe_layout(2, 40, 256, 3),
+            Err(JetError::InvalidRequest(_))
+        ));
+        validate_cpu_moe_layout(4, 40, 256, 3)?;
+        Ok(())
+    }
 
     #[test]
     fn computes_target_log_softmax() -> Result<()> {

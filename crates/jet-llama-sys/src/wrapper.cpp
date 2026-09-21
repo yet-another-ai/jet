@@ -11,10 +11,30 @@
 
 #include "chat.h"
 #include "common.h"
+#include "ggml-cpu.h"
 #include "json.h"
 #include "reasoning-budget.h"
 
 using json = common_json;
+
+extern "C" ggml_backend_buffer_type_t jet_cpu_buffer_type(void) {
+    return ggml_backend_cpu_buffer_type();
+}
+
+extern "C" ggml_threadpool_t jet_cpu_threadpool_new(int32_t n_threads) {
+    if (n_threads <= 0) {
+        return nullptr;
+    }
+    auto params = ggml_threadpool_params_default(n_threads);
+    // Hybrid offload alternates CPU and GPU work. Sleep between CPU graph splits
+    // instead of spinning while Vulkan executes, and retain workers for reuse.
+    params.poll = 0;
+    return ggml_threadpool_new(&params);
+}
+
+extern "C" void jet_cpu_threadpool_free(ggml_threadpool_t threadpool) {
+    ggml_threadpool_free(threadpool);
+}
 
 namespace {
 void copy_string(const std::string & value, char * output, size_t capacity) {

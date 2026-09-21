@@ -544,6 +544,15 @@ pub struct ggml_backend_buffer_type {
     _unused: [u8; 0],
 }
 pub type ggml_backend_buffer_type_t = *mut ggml_backend_buffer_type;
+unsafe extern "C" {
+    pub fn jet_cpu_buffer_type() -> ggml_backend_buffer_type_t;
+}
+unsafe extern "C" {
+    pub fn jet_cpu_threadpool_new(n_threads: i32) -> ggml_threadpool_t;
+}
+unsafe extern "C" {
+    pub fn jet_cpu_threadpool_free(threadpool: ggml_threadpool_t);
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ggml_backend_device {

@@ -50,6 +50,16 @@ pub struct EngineConfig {
     pub model_path: PathBuf,
     pub model_id: String,
     pub backend: Backend,
+    /// Transformer/output layers to offload. None selects all layers on Vulkan and none on CPU.
+    /// Values above the model's layer count follow llama.cpp's all-layers behavior.
+    /// Explicit placement disables opportunistic GPU execution of CPU weight operations.
+    pub gpu_layers: Option<u32>,
+    /// Keep routed expert tensors in the first N transformer layers on CPU.
+    /// Requires Vulkan and a MoE model; attention and shared experts retain normal placement.
+    /// Selected expert operations stay on CPU even during large prompt batches.
+    pub cpu_moe_layers: u32,
+    /// Allow llama.cpp to select memory mapping automatically; false disables mapping.
+    pub use_mmap: bool,
     pub context_tokens_per_sequence: u32,
     pub token_batch: u32,
     pub micro_batch: u32,
@@ -68,6 +78,9 @@ impl EngineConfig {
             model_path: model_path.into(),
             model_id: model_id.into(),
             backend: Backend::Cpu,
+            gpu_layers: None,
+            cpu_moe_layers: 0,
+            use_mmap: true,
             context_tokens_per_sequence: 2_048,
             token_batch: 2_048,
             micro_batch: 512,
@@ -113,5 +126,13 @@ mod tests {
             EngineConfig::qwen3_vulkan("model.gguf").max_output_rows,
             256
         );
+        for config in [
+            EngineConfig::qwen3_cpu("model.gguf"),
+            EngineConfig::qwen3_vulkan("model.gguf"),
+        ] {
+            assert_eq!(config.gpu_layers, None);
+            assert_eq!(config.cpu_moe_layers, 0);
+            assert!(config.use_mmap);
+        }
     }
 }

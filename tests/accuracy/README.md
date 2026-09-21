@@ -23,6 +23,22 @@ models with:
 ./scripts/download-accuracy-models.sh
 ```
 
+Download the pinned Qwen3.6-35B-A3B Q4_K_M text model separately (20.42 GB):
+
+```sh
+./scripts/download-accuracy-models.sh --qwen36
+```
+
+This selects the ggml-org conversion without MTP or vision-projector weights and verifies its
+SHA-256 digest. For the development machine's 16 GiB Arc A770, use
+`scripts/benchmark-model.py` with
+`--extra-args --cpu-moe-layers 11 --max-sequences 2 --micro-batch 256 --max-output-rows 256 --threads 8 --no-mmap`.
+For this specific GGUF, GPU weights occupy 14.10 GiB and CPU weights 4.91 GiB before caches and
+compute buffers. The placement was chosen from measured memory residency and performance,
+not a fixed RAM percentage. See the [Qwen3.6 measurements](../../docs/accuracy.md#qwen36-q4-cpuvulkan-offload),
+[placement options](../../README.md#vulkan), and
+[benchmark harness](../../docs/development.md#reproducible-model-benchmarks).
+
 Run the same evaluation through the opt-in Vulkan backend with a separate output directory:
 
 ```sh

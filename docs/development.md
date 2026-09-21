@@ -133,3 +133,40 @@ The two token counters exclude thinking-generation decoding; that work is measur
 `usage`, which continues to count one original prompt per question, every scored candidate token,
 and generated thinking tokens. Use identical input, model, execution mode, and batching settings
 when comparing performance.
+
+## Reproducible model benchmarks
+
+For the Qwen3.6 CPU/Vulkan profile, measured GPU busy time, CPU thread-pool
+diagnosis, and isolated optimization comparisons, see [performance.md](performance.md).
+
+`scripts/benchmark-model.py` runs a built CLI against the prepared accuracy workload and saves
+responses, accuracy reports, stage timings, process wall times, commands, and failure logs. It
+defaults to Vulkan, disabled thinking, eight requests per input batch, and two fresh processes.
+Choose a new output directory for each configuration:
+
+```sh
+python3 scripts/benchmark-model.py \
+  --binary target/release/jet \
+  --model-path models/Qwen3.5-2B-Q8_0.gguf \
+  --model-id qwen/qwen3.5-2b-q8_0 \
+  --output-dir tests/accuracy/generated/benchmark-2b \
+  --runs 2 \
+  --extra-args --max-sequences 2
+```
+
+Use `--limit 8 --runs 1` before `--extra-args` for a short smoke run. The limit selects the same
+first rows from both requests and gold labels. `--input`, `--gold`, `--backend`, and
+`--batch-requests` are explicit script options; other CLI settings follow `--extra-args`, which
+must come last. The script stops after the first failed run and preserves its artifacts.
+
+`provenance.json` records the Git revision and working-tree status, binary and dataset hashes,
+model file sizes and modification times, and relevant environment overrides. A working-tree
+patch, the harness, evaluator, and selected input/gold rows are also archived. Optional
+`--model-provenance download.json` records supplied download metadata without independently
+verifying it or rereading large model files. Split GGUF models must be passed as their first
+shard; metadata for every shard is recorded.
+
+`summary.json` reports whole-run averages and stage time per request. These are amortized costs,
+not individual request latencies or P95: the CLI buffers output, including with
+`--batch-requests 1`. There is no explicit warmup or cache eviction between runs, and wall time
+includes loading and shutdown. Compare models with the same workload and settings.

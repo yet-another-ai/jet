@@ -24,7 +24,9 @@ same trace.
 For Vulkan batched execution, generation and scoring use two contexts over the same model. The
 single-sequence generation context copies its selected logits row to the CPU for the bounded
 thinking sampler. The scoring context performs vocabulary softmax, target-token gather, and log on
-the GPU and returns only a target vector per output row. The vector width is fixed for a decode;
+the model-output backend (GPU with default Vulkan placement) and returns only a target vector per
+output row. Both contexts share the configured GPU layer and CPU expert placement.
+The vector width is fixed for a decode;
 for hybrid and recurrent models, it grows as needed to cover distinct candidate first tokens,
 independently of the number of sequence slots. This avoids changing a live
 sampler graph between thinking and scoring and does not duplicate model weights; the additional
