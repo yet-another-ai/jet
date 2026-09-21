@@ -1,6 +1,13 @@
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Backend {
+    #[default]
+    Cpu,
+    Vulkan,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ExecutionMode {
     Reference,
     #[default]
@@ -42,6 +49,7 @@ impl Default for ThinkingConfig {
 pub struct EngineConfig {
     pub model_path: PathBuf,
     pub model_id: String,
+    pub backend: Backend,
     pub context_tokens_per_sequence: u32,
     pub token_batch: u32,
     pub micro_batch: u32,
@@ -57,6 +65,7 @@ impl EngineConfig {
         Self {
             model_path: model_path.into(),
             model_id: model_id.into(),
+            backend: Backend::Cpu,
             context_tokens_per_sequence: 2_048,
             token_batch: 2_048,
             micro_batch: 512,
@@ -72,5 +81,29 @@ impl EngineConfig {
 
     pub fn qwen3_cpu(model_path: impl Into<PathBuf>) -> Self {
         Self::cpu(model_path, "qwen/qwen3-0.6b-q8_0")
+    }
+
+    pub fn vulkan(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
+        let mut config = Self::cpu(model_path, model_id);
+        config.backend = Backend::Vulkan;
+        config
+    }
+
+    pub fn qwen3_vulkan(model_path: impl Into<PathBuf>) -> Self {
+        Self::vulkan(model_path, "qwen/qwen3-0.6b-q8_0")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constructors_select_the_requested_backend() {
+        assert_eq!(EngineConfig::qwen3_cpu("model.gguf").backend, Backend::Cpu);
+        assert_eq!(
+            EngineConfig::qwen3_vulkan("model.gguf").backend,
+            Backend::Vulkan
+        );
     }
 }

@@ -1,12 +1,12 @@
 # Jet 开发计划
 
-更新日期：2026-09-21
+更新日期：2026-09-22
 
 状态：持续路线图。CPU Decisions Engine、批量候选评分和可选的有界 thinking 核心路径已实现并通过 Qwen3 本地验收；多模型真实权重矩阵、GPU、在线调度、性能优化和发行工程仍未完成，未完成项不视为已经验证。
 
 ## 0. 当前实现快照
 
-截至 2026-09-21，仓库已经完成一个可运行的 CPU-only Decisions Engine 基线，以及可选的有界 thinking 核心路径。它是下文长期路线图的第一轮落地，不代表整个计划已经完成。
+截至 2026-09-22，仓库已经完成一个可运行的 CPU Decisions Engine 基线、Linux Vulkan 后端，以及可选的有界 thinking 核心路径。它是下文长期路线图的第一轮落地，不代表整个计划已经完成。
 
 已完成：
 
@@ -18,13 +18,14 @@
 - 可选的有界 thinking：配置最大 token、temperature、top-k、top-p 和 seed；每题只生成一份 trace，经模板的 `reasoning_content` continuation 转入最终答案区，再把冻结前缀用于候选批量评分。
 - 模板协议不硬编码 `<think>`：复用固定 llama.cpp 的 reasoning 元数据、结束标记和 content continuation，可覆盖 tag 与 channel 类型协议；已移除仅允许 `qwen3` 架构的加载限制。
 - llama.cpp `v0.4.1` / commit `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`。
+- 可选 `vulkan` Cargo feature、`Backend::Vulkan`/`--backend vulkan` 显式选择、全模型与 KV/offload 配置；已在 Linux Intel Arc A770 上通过固定 Qwen3 模型 CLI 与 smoke test 验收。
 - 固定测试模型 `Qwen/Qwen3-0.6B-GGUF` revision `23749fefcc72300e3a2ad315e1317431b06b590a`、`Qwen3-0.6B-Q8_0.gguf`，SHA-256 `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031`。
 - 与固定 llama.cpp commit 匹配的 bindings 已检入；普通构建不加载 libclang。`mise.toml` 通过 `[tools."http:llvm"]` 直接使用 LLVM GitHub release，仅在显式 `generate-bindings` 时需要。
 - format、Clippy、纯单元测试、固定模型集成测试和 CLI golden test 已通过；Qwen3 真实模型测试覆盖 8-token thinking 预算、强制协议收尾、final-answer continuation 和后续共享前缀 batch scoring。
 
 当前尚未完成：
 
-- CUDA、Metal 和其他硬件后端的构建与真实设备验收。
+- CUDA、Metal 和其他硬件后端，以及 Windows/macOS Vulkan 的构建与真实设备验收。
 - DeepSeek、GPT-OSS、Kimi、Gemma 等 reasoning 模型及至少一个普通非 thinking 模型的真实权重/模板验收；当前除 Qwen3 外仅通过 llama.cpp 统一模板协议层接入，不能宣称已经逐模型验证。
 - thinking 生成目前按问题串行执行；跨问题 generation batch、阶段耗时观测和 request/question 级预算覆盖尚未实现，现有配置作用于整个 Engine/CLI 运行。
 - 在线有界队列、最大等待时间、取消、超时、背压和跨请求缓存。
@@ -59,7 +60,7 @@ Jet 是一个 **Judgement Engine**。输入为 `question` 和一组 `options`，
 | 核心任务 | 对给定候选做条件似然评分；候选 scoring 无 sampler，可选 thinking 使用有界 sampler |
 | 推理底座 | Rust + llama.cpp C API/薄 C++ bridge |
 | 模型范围 | 首先验证 llama.cpp 支持的 decoder-only causal Transformer Chat GGUF 模型 |
-| 加速后端 | Linux/Windows NVIDIA CUDA；macOS Apple Silicon Metal；CPU 基线 |
+| 加速后端 | 已实现 Linux Vulkan 与 CPU 基线；后续 Linux/Windows NVIDIA CUDA、macOS Apple Silicon Metal |
 | 原始分数 | 目标 token 的完整词表 log-softmax 之和 |
 | 候选归一化 | 对每个问题内部的原始累计 log-probability 做 softmax |
 | 长度处理 | 默认不除以 token 数，不加 length penalty |
@@ -498,7 +499,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 | Thinking 模式 | 普通非 reasoning fallback、可关闭/必须 reasoning、协议未知、自然结束、预算耗尽、EOG、UTF-8 补全、final continuation |
 | Thinking 复现 | 固定 seed/固定 trace、同一 trace 下 reference/batched/分波一致、候选置换不重新生成 trace、usage token 口径 |
 | 资源边界 | context 超限、sequence 上限、输出内存上限、拆批重试、设备不足、禁止隐式截断 |
-| 跨平台 | 同权重/量化/token 在 CPU、CUDA、Metal 的逐 token/序列/归一化误差 |
+| 跨平台 | 同权重/量化/token 在 CPU、Vulkan、CUDA、Metal 的逐 token/序列/归一化误差 |
 
 当前 Tera prompt 包含完整候选语义，所以候选增删、改写或重排可能改变共同条件及原始分数。候选置换测试应分别验证 key/结果反向映射与稳定顺序；只有渲染后的完整 prompt 和冻结 thinking trace 都相同时，才能把原始分数相等作为 reference/batched 或分波一致性的断言。精确同分时 `best_option_id` 的稳定顺序规则单独测试。
 
@@ -553,7 +554,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 
 ## 13. 构建、CI 与发行
 
-- 按平台提供 CPU、CUDA、Metal 构建配置；CUDA/Metal 使用明确 Cargo features 和原生 CMake 设置。
+- 按平台提供 CPU、Vulkan、CUDA、Metal 构建配置；加速后端使用明确 Cargo features 和原生 CMake 设置。
 - CUDA 构建覆盖声明支持的 GPU 架构，区分构建期 CUDA toolkit、发行包运行库和用户驱动要求。
 - Metal 包含运行所需资源，确认在干净 Apple Silicon 环境可执行。
 - 发布包不能默认只针对构建机 CPU 指令集；明确最低架构要求或提供对应变体。
@@ -589,7 +590,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 - [x] 变长多问题/多候选批处理及同题前缀共享已通过固定 Qwen3 模型的独立 reference 对照。
 - [ ] thinking 的跨模板真实模型矩阵和相同冻结 trace 下的 reference/batched 对照完成。
 - [ ] 内存、队列、sequence 生命周期、取消和失败行为有明确边界。
-- [ ] CPU、CUDA、Metal 的支持状态与真实验证记录一致。
+- [ ] CPU、Vulkan、CUDA、Metal 的支持状态与真实验证记录一致。
 - [ ] 已报告相对 teacher-forcing 基线的性能与评分/判断质量。
 - [ ] Rust API、CLI、构建说明、模型支持矩阵、依赖锁定和许可信息可交付。
 

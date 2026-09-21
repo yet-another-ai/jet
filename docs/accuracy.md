@@ -20,6 +20,38 @@ All 541 requests completed without an engine or input error in both runs. The se
 run took approximately 3 minutes 40 seconds on the development machine; semantic candidates may
 contain more tokens than the old single-letter labels.
 
+## Vulkan backend comparison
+
+On 2026-09-22, the same 541 semantic-answer requests were run once through the release Vulkan
+backend on an Intel Arc A770, with no explicit warm-up. The measurement includes process startup,
+Vulkan initialization, model loading, and evaluation. The CPU timing is the previously recorded
+run on the same development machine, so its value is approximate.
+
+| Backend | Wall time | Requests/s | Overall | BoolQ | MMLU | Mean gold NLL |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| CPU | ~220 s | ~2.46 | 252/541 (46.58%) | 143/256 (55.86%) | 109/285 (38.25%) | 2.0857 |
+| Vulkan | 70.86 s | 7.63 | 255/541 (47.13%) | 142/256 (55.47%) | 113/285 (39.65%) | 2.0978 |
+
+This is about a **3.10x end-to-end speedup** and a **67.8% wall-time reduction** versus the recorded
+CPU run. llama.cpp reported all 29 model layers, the 2,016 MiB KV buffer, and the 298.75 MiB compute
+buffer on `Vulkan0`. Peak host RSS reported for the process was approximately 741 MiB.
+
+The backend results are not bit-identical. Fourteen of 541 top-1 predictions changed: seven moved
+from wrong to correct, four from correct to wrong, and three remained wrong. Across reported
+candidate probabilities, the median absolute difference was 0.0042, the 95th percentile was
+0.0667, and the maximum was 0.2998. Overall top-1 accuracy therefore did not decline in this run,
+but the three-example increase is best treated as backend numerical variation, not as evidence that
+Vulkan improves model quality. BoolQ lost one correct answer while MMLU gained four, and mean gold
+NLL increased slightly.
+
+Reproduce the Vulkan run with:
+
+```sh
+JET_BACKEND=vulkan \
+JET_ACCURACY_DIR=tests/accuracy/generated-vulkan \
+  ./scripts/run-accuracy-eval.sh
+```
+
 The legacy results revealed a fatal output-label prior: every BoolQ example was predicted `true`,
 while MMLU predicted `A` 283 times and `D` twice. After scoring the answer meanings and mapping them
 back to API keys, MMLU predictions were distributed across `A/B/C/D` as `119/48/57/61` and accuracy

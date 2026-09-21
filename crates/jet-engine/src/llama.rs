@@ -9,7 +9,7 @@ use jet_core::{JetError, Result};
 use jet_llama_sys as sys;
 use serde::Deserialize;
 
-use crate::config::{EngineConfig, ExecutionMode, ThinkingMode};
+use crate::config::{Backend, EngineConfig, ExecutionMode, ThinkingMode};
 use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
 
 static BACKEND_INIT: Once = Once::new();
@@ -85,6 +85,21 @@ impl LlamaScorer {
             // SAFETY: llama.cpp requires one process-wide initialization before any model calls.
             unsafe { sys::llama_backend_init() };
         });
+        if config.backend == Backend::Vulkan {
+            if !cfg!(feature = "vulkan") {
+                return Err(JetError::NativeRuntime(
+                    "Vulkan was requested, but this build does not include the `vulkan` feature"
+                        .to_owned(),
+                ));
+            }
+            // SAFETY: llama.cpp's process-wide backend initialization completed above.
+            if !unsafe { sys::llama_supports_gpu_offload() } {
+                return Err(JetError::NativeRuntime(
+                    "Vulkan was requested, but llama.cpp found no GPU device available for offload"
+                        .to_owned(),
+                ));
+            }
+        }
 
         let path = config
             .model_path
@@ -96,7 +111,10 @@ impl LlamaScorer {
 
         // SAFETY: default parameter structs are returned by value and remain valid for this call.
         let mut model_params = unsafe { sys::llama_model_default_params() };
-        model_params.n_gpu_layers = 0;
+        model_params.n_gpu_layers = match config.backend {
+            Backend::Cpu => 0,
+            Backend::Vulkan => -1,
+        };
         // SAFETY: path is a live NUL-terminated string and model_params came from llama.cpp.
         let model =
             NonNull::new(unsafe { sys::llama_model_load_from_file(path.as_ptr(), model_params) })
@@ -133,8 +151,9 @@ impl LlamaScorer {
         context_params.n_threads = config.threads;
         context_params.n_threads_batch = config.threads;
         context_params.embeddings = false;
-        context_params.offload_kqv = false;
-        context_params.op_offload = false;
+        let offload = config.backend == Backend::Vulkan;
+        context_params.offload_kqv = offload;
+        context_params.op_offload = offload;
         context_params.kv_unified = true;
 
         // SAFETY: model remains owned by the scorer and parameters are initialized.
@@ -1291,6 +1310,39 @@ mod tests {
         assert!(matches!(isolated.get(1), Some(Ok(_))));
         let reused = scorer.score_batch(&[compact]);
         assert!(matches!(reused.first(), Some(Ok(_))));
+        Ok(())
+    }
+
+    #[cfg(feature = "vulkan")]
+    #[test]
+    #[ignore = "requires JET_MODEL_PATH and a working Vulkan device"]
+    fn qwen_vulkan_smoke() -> Result<()> {
+        let model_path = std::env::var_os("JET_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::qwen3_vulkan(model_path);
+        config.context_tokens_per_sequence = 512;
+        config.token_batch = 512;
+        config.micro_batch = 128;
+        config.max_sequences = 2;
+        config.max_output_rows = 512;
+        config.threads = 2;
+        let mut scorer = LlamaScorer::load(config)?;
+        let job = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"Vulkan smoke test"}"#.to_owned(),
+            targets: vec!["false".to_owned(), "true".to_owned()],
+        };
+
+        let scores = collect_scores(scorer.score_batch(&[job]))?;
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores[0].log_probabilities.len(), 2);
+        assert!(
+            scores[0]
+                .log_probabilities
+                .iter()
+                .all(|value| value.is_finite())
+        );
         Ok(())
     }
 

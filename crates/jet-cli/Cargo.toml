@@ -10,6 +10,10 @@ repository.workspace = true
 name = "jet"
 path = "src/main.rs"
 
+[features]
+default = []
+vulkan = ["jet-engine/vulkan"]
+
 [dependencies]
 clap.workspace = true
 jet-core.workspace = true
@@ -21,4 +25,3 @@ tracing-subscriber.workspace = true
 
 [lints]
 workspace = true
-

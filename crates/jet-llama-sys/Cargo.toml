@@ -10,7 +10,9 @@ build = "build.rs"
 publish = false
 
 [features]
+default = []
 generate-bindings = ["dep:bindgen"]
+vulkan = []
 
 [build-dependencies]
 bindgen = { version = "0.72", optional = true }

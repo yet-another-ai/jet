@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use jet_core::{DecisionRequest, ErrorCode, JetError, Result};
-use jet_engine::{Engine, EngineConfig, ExecutionMode, ThinkingMode};
+use jet_engine::{Backend, Engine, EngineConfig, ExecutionMode, ThinkingMode};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -44,6 +44,8 @@ struct JudgeArgs {
     max_output_rows: u32,
     #[arg(long)]
     threads: Option<i32>,
+    #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
+    backend: BackendArg,
     #[arg(long, value_enum, default_value_t = ExecutionArg::Batched)]
     execution: ExecutionArg,
     #[arg(long, value_enum, default_value_t = ThinkingArg::Disabled)]
@@ -64,6 +66,12 @@ struct JudgeArgs {
 enum ExecutionArg {
     Reference,
     Batched,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum BackendArg {
+    Cpu,
+    Vulkan,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -126,6 +134,10 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
     if let Some(threads) = args.threads {
         config.threads = threads;
     }
+    config.backend = match args.backend {
+        BackendArg::Cpu => Backend::Cpu,
+        BackendArg::Vulkan => Backend::Vulkan,
+    };
     config.execution_mode = match args.execution {
         ExecutionArg::Reference => ExecutionMode::Reference,
         ExecutionArg::Batched => ExecutionMode::Batched,

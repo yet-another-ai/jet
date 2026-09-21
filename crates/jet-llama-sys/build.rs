@@ -65,8 +65,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", wrapper_header.display());
     println!("cargo:rerun-if-changed={}", checked_bindings.display());
     println!("cargo:rerun-if-env-changed=LLAMA_CPP_SRC");
+    println!("cargo:rerun-if-env-changed=VULKAN_SDK");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let vulkan = env::var_os("CARGO_FEATURE_VULKAN").is_some();
     let mut config = cmake::Config::new(&source_dir);
     config
         .profile("Release")
@@ -85,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("GGML_CUDA", "OFF")
         .define("GGML_METAL", "OFF")
         .define("GGML_RPC", "OFF")
-        .define("GGML_VULKAN", "OFF")
+        .define("GGML_VULKAN", if vulkan { "ON" } else { "OFF" })
         .define("GGML_HIP", "OFF")
         .define("GGML_SYCL", "OFF");
 
@@ -102,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .warnings(false)
         .compile("jet_llama_wrapper");
 
-    for path in [
+    let mut link_paths = vec![
         dst.join("build/common"),
         dst.join("build/src"),
         dst.join("build/ggml/src"),
@@ -110,7 +113,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         dst.join("build/vendor/cpp-httplib"),
         dst.join("lib"),
         dst.join("lib64"),
-    ] {
+    ];
+    if vulkan {
+        link_paths.push(dst.join("build/ggml/src/ggml-vulkan"));
+        emit_vulkan_sdk_search_paths(&target_os);
+    }
+    for path in link_paths {
         println!("cargo:rustc-link-search=native={}", path.display());
     }
     for library in [
@@ -124,14 +132,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ] {
         println!("cargo:rustc-link-lib=static={library}");
     }
+    if vulkan {
+        println!("cargo:rustc-link-lib=static=ggml-vulkan");
+    }
     match target_os.as_str() {
         "linux" | "android" => {
             println!("cargo:rustc-link-lib=stdc++");
             println!("cargo:rustc-link-lib=dl");
             println!("cargo:rustc-link-lib=m");
             println!("cargo:rustc-link-lib=pthread");
+            if vulkan {
+                println!("cargo:rustc-link-lib=vulkan");
+            }
         }
-        "macos" | "ios" => println!("cargo:rustc-link-lib=c++"),
+        "macos" | "ios" => {
+            println!("cargo:rustc-link-lib=c++");
+            if vulkan {
+                println!("cargo:rustc-link-lib=vulkan");
+            }
+        }
+        "windows" if vulkan => {
+            let library = if target_env == "msvc" {
+                "vulkan-1"
+            } else {
+                "vulkan"
+            };
+            println!("cargo:rustc-link-lib={library}");
+        }
         _ => {}
     }
 
@@ -160,4 +187,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::copy(checked_bindings, out_bindings)?;
     }
     Ok(())
+}
+
+fn emit_vulkan_sdk_search_paths(target_os: &str) {
+    let Some(sdk) = env::var_os("VULKAN_SDK").map(PathBuf::from) else {
+        return;
+    };
+    let candidates: &[&str] = match target_os {
+        "windows" => &["Lib"],
+        "macos" | "ios" => &["lib", "macOS/lib", "Lib"],
+        _ => &["lib", "Lib"],
+    };
+    for candidate in candidates {
+        let path = sdk.join(candidate);
+        if path.is_dir() {
+            println!("cargo:rustc-link-search=native={}", path.display());
+        }
+    }
 }

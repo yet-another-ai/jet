@@ -1,10 +1,11 @@
 # Jet
 
-Jet is a local CPU decisions engine. It scores a fixed set of structured candidates with
-teacher forcing instead of generating free-form text.
+Jet is a local decisions engine. It scores a fixed set of structured candidates with teacher
+forcing instead of generating free-form text. CPU execution is the default; an optional Vulkan
+backend offloads the model, KV cache, and supported operations to a local GPU.
 
 Jet supports `noul`, `choice`, and zero-based `score` questions through a Rust API and a JSONL
-command-line interface. It does not provide HTTP serving, GPU/NPU execution, or general free-text
+command-line interface. It does not provide HTTP serving, NPU execution, or general free-text
 generation. An optional bounded thinking stage can run before candidate scoring when the model's
 embedded chat template exposes a supported reasoning protocol.
 
@@ -30,6 +31,24 @@ Download the pinned Qwen3 test model:
 ```sh
 ./scripts/download-test-model.sh
 ```
+
+### Vulkan
+
+Vulkan is opt-in so ordinary CPU builds keep their existing dependencies. Install a Vulkan loader
+and development headers, SPIR-V headers, and `glslc` (from shaderc or the Vulkan SDK), then build
+with the `vulkan` feature and select the backend explicitly:
+
+```sh
+mise exec -- cargo run -p jet-cli --features vulkan -- judge \
+  --backend vulkan \
+  --model-path models/Qwen3-0.6B-Q8_0.gguf \
+  --input tests/fixtures/decisions.jsonl \
+  --output -
+```
+
+Model loading fails with a clear error if `--backend vulkan` is used without the feature or without
+a usable Vulkan GPU. A successful run logs the selected `Vulkan0` device and the number of model
+layers offloaded before emitting JSONL results.
 
 ## CLI
 

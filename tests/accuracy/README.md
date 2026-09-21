@@ -16,6 +16,17 @@ Run the reproducible default sample (256 balanced BoolQ examples and 5 examples 
 ./scripts/run-accuracy-eval.sh
 ```
 
+Run the same evaluation through the opt-in Vulkan backend with a separate output directory:
+
+```sh
+JET_BACKEND=vulkan \
+JET_ACCURACY_DIR=tests/accuracy/generated-vulkan \
+  ./scripts/run-accuracy-eval.sh
+```
+
+This requires the Vulkan build dependencies described in
+[the development guide](../../docs/development.md). `JET_BACKEND` defaults to `cpu`.
+
 Override sample sizes with `JET_BOOLQ_LIMIT` and `JET_MMLU_PER_SUBJECT`. For example, the complete
 MMLU test set has unequal subject sizes, so use the preparation script directly if a sampling rule
 other than a fixed count per subject is needed.

@@ -1,8 +1,9 @@
 # Development
 
 Jet pins llama.cpp as a Git submodule at commit
-`b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` (the v0.4.1 line). The build is CPU-only and disables
-OpenMP, BLAS, CUDA, Metal, Vulkan, HIP, SYCL, and RPC.
+`b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` (the v0.4.1 line). The default build is CPU-only and
+disables OpenMP, BLAS, CUDA, Metal, Vulkan, HIP, SYCL, and RPC. The opt-in `vulkan` Cargo feature
+enables only llama.cpp's Vulkan backend in addition to CPU fallback support.
 
 Bindings matching that commit are checked into `jet-llama-sys`. Normal builds do not load
 libclang. To deliberately regenerate them after changing the pin:
@@ -33,6 +34,31 @@ After downloading the model, run ignored model and CLI tests:
 ```sh
 JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
   mise exec -- cargo test --workspace -- --ignored --test-threads=1
+```
+
+To compile and run the Vulkan smoke test, install the Vulkan loader and development headers,
+SPIR-V headers, and `glslc`, then run:
+
+```sh
+JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
+  mise exec -- cargo test -p jet-engine --features vulkan \
+  qwen_vulkan_smoke -- --ignored --nocapture
+```
+
+On NixOS, `nix shell` puts `glslc` on `PATH`, but CMake also needs the split header and loader
+outputs. This self-contained invocation supplies them:
+
+```sh
+vulkan_headers="$(nix build --no-link --print-out-paths nixpkgs#vulkan-headers)"
+vulkan_loader="$(nix build --no-link --print-out-paths nixpkgs#vulkan-loader)"
+spirv_headers="$(nix build --no-link --print-out-paths nixpkgs#spirv-headers)"
+CMAKE_PREFIX_PATH="$vulkan_headers:$vulkan_loader:$spirv_headers" \
+CXXFLAGS="-I$spirv_headers/include" \
+JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
+  nix shell nixpkgs#shaderc nixpkgs#vulkan-headers nixpkgs#vulkan-loader \
+    nixpkgs#spirv-headers --command \
+  mise exec -- cargo test -p jet-engine --features vulkan \
+    qwen_vulkan_smoke -- --ignored --nocapture
 ```
 
 On NixOS, the upstream prebuilt LLVM archive expects the host's zlib shared library. Regeneration
