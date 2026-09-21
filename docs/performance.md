@@ -104,6 +104,45 @@ it was about 20% slower overall and was not selected. This experiment changes
 both backend transitions and computation placement, so their effects are not isolated.
 The eight-case timings are not directly comparable with the separate 32-case set.
 
+## Full 541-request validation
+
+The final production binary was rebuilt with sleeping persistent workers and
+without native profiling patches. The same full accuracy workload and placement
+completed successfully:
+
+| Measurement | Original workers | Persistent workers |
+| --- | ---: | ---: |
+| Complete process wall time | 647.607 s | 599.949 s |
+| Amortized wall seconds/request | 1.1971 | 1.1090 |
+| Scorer seconds/request, excluding loading | 1.1896 | 1.1014 |
+| Total prefill time | 442.901 s | 400.351 s |
+| Total candidate continuation time | 193.959 s | 188.811 s |
+| Correct answers | 479/541 (88.54%) | 479/541 (88.54%) |
+
+Wall time fell 7.36%; scorer time fell 7.42%. Prefill improved by 9.61% and
+candidate evaluation by 2.65%. These are one full run per version, supported by
+the separate controlled 32-case comparison, not latency percentiles or repeated
+confidence intervals. The result still exceeds the 0.5-second/request budget.
+
+The complete response files are byte-identical, including all probabilities and
+usage values. BoolQ remains 230/256 (89.84%), MMLU 249/285 (87.37%), and mean gold
+NLL 0.35531. Both versions process 128,583 prompt tokens and 9,795 candidate
+tokens with 2,369 decodes. Response SHA-256 is
+`d2a818c399c39fb09d913b5912376d87b26bb55ca05477c9fa66de74c6c94b96`.
+
+The final run's 2,926 inference snapshots show 66.08% GPU engine busy and
+2.128 process CPU seconds per elapsed second. Peak sampled device residency is
+14.90 GiB; GPU frequency has a 2,400 MHz median and temperature peaks at 68 C.
+The full workload differs from the 32-case probe, so the 62.18% to 67.14%
+before/after busy comparison should use that matched probe.
+
+CPU and Vulkan workspace tests and Clippy passed, as did model-backed CPU
+reference/prefix recovery, Vulkan hybrid/reference equivalence, and a two-batch
+mixed CPU/Vulkan thinking-context smoke test. The vendor tree is unchanged.
+Full-run artifacts are in `full-pool541/`, comparison details in
+`baseline-pool-full541-comparison.json`, and validation commands/results in
+`verification-summary.json` under the profile artifact directory.
+
 ## GPU operation hotspots
 
 A separate eight-request diagnostic uses the native Vulkan performance logger.
@@ -141,7 +180,41 @@ chunks. Native `ggml_vk_use_mul_mat_vec_id` uses the vector path through eight
 tokens and the matrix path above eight. The diagnostic averages 2.120/2.222 ms
 for 15/17 tokens, versus 1.617 ms for 158 tokens. The logger's `_VEC` label is
 only applied to one-token entries, so it does not reliably identify this switch.
-A warmed, uninstrumented shape benchmark is needed before changing thresholds.
+
+A follow-up standalone benchmark confirms a sharp crossover without the logger.
+It uses Q4_K weights `[512,2048,256]` (144 MiB), eight unique routed experts per
+token, and F32 activations `[512,8,n]` matching the expert-down layout. Each shape
+has ten warm-up and thirty measured synchronous graph evaluations, with all
+tensors already on the GPU. Two separate runs record these medians:
+
+| Tokens | First run, ms | Repeat, ms |
+| --- | ---: | ---: |
+| 8 | 0.518 | 0.518 |
+| 9 | 2.881 | 2.815 |
+| 15 | 4.144 | 4.160 |
+| 17 | 4.632 | 4.611 |
+| 32 | 7.365 | 7.246 |
+| 158 | 2.598 | 2.586 |
+| 256 | 2.650 | 2.635 |
+
+The 8-to-9-token transition costs 5.56x and 5.43x in these runs. Broadcast
+activations `[512,1,n]` reproduce the discontinuity in two further runs. Source
+inspection finds a dispatch heuristic rather than an eight-token shader capacity
+limit: the vector path allocates descriptors dynamically and submits one dispatch
+per token. Raising the threshold would also increase CPU submission work, and
+the shared dispatch helper controls fusion eligibility. The non-monotonic costs
+above eight tokens also warrant investigation of matrix tile selection; they
+cannot all be attributed to the vector/matrix switch.
+
+These standalone times include CPU submission, internal conversions, and GPU
+completion synchronization. Repeated expert contents, fixed random routing, warm
+caches, and isolated operation submission differ from full-model execution; the
+5.5x discontinuity is **not a model speedup estimate**. The experiment checks
+finite outputs but does not validate a new computation path. No dispatch threshold
+or shader change is retained. Before selecting a threshold, compare vector and
+matrix alternatives on the same shapes, verify their numerical results, then
+measure complete requests. Source, build instructions, four raw result files, and
+analysis are saved as the local `moe-dispatch-*` artifacts.
 
 The A770's `matrix cores: none` initialization message is intentional in this
 native revision: cooperative-matrix shader support is compiled in, but the device
@@ -150,7 +223,7 @@ regressions. Enabling it needs its own correctness and performance experiment.
 
 ## Next optimization targets
 
-1. Validate and tune short-chunk Q4_K expert dispatch, followed by the large Q8_0
+1. Tune the confirmed short-chunk Q4_K expert dispatch crossover, followed by the large Q8_0
    projections. These account for most recorded GPU operation time. Compare
    warmed standalone shapes first, then full requests with numerical checks.
 2. Separate recurrent and chunked-prefill Gated Delta Net measurements. The

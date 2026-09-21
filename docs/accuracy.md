@@ -247,7 +247,8 @@ successful execution. These settings use two sequence slots, 2,048 context token
 and disabled thinking. Increasing slots/context or enabling the separate thinking context needs
 a new capacity check.
 
-The selected 11-layer placement completed all 541 requests without errors. A fresh Qwen3.5-2B
+The original offload benchmark, before the persistent CPU threadpool improvement below,
+completed all 541 requests at the selected 11-layer placement without errors. A fresh Qwen3.5-2B
 Q8_0 control also completed the same workload. Each measurement is one fresh process, includes
 model loading and shutdown, and uses already-cached model files without explicit cache eviction.
 Both runs disable thinking, use two sequence slots, a 2,048-token context per sequence, and
@@ -305,6 +306,24 @@ python3 scripts/benchmark-model.py \
 
 Raw model provenance, tensor accounting, commands, logs, responses, stage timings, and comparisons
 are retained locally in `tests/accuracy/generated/qwen36-35b-a3b-q4-offload-20260922/`.
+
+### Persistent CPU worker follow-up
+
+Profiling found that every CPU expert graph created and joined temporary workers.
+The scorer now owns one persistent sleeping threadpool, shared by its sequential
+scoring and thinking contexts. With the same Q4_K_M model and 11-layer expert
+placement, the full 541-request rerun takes **599.95 seconds**, or **1.109
+seconds/request**, a **7.36%** wall-time reduction. Scoring alone averages 1.101
+seconds/request; prefill falls to 400.351 seconds and candidate evaluation to
+188.811 seconds.
+
+All 541 response lines are byte-identical to the original run. Accuracy remains
+479/541 (88.54%), with BoolQ 230/256 and MMLU 249/285. This improves performance
+without changing quantization, placement, probabilities, or token usage, but
+remains above the 0.5-second/request target. See the [profiling report](performance.md)
+for GPU busy measurements, isolated experiments, operation hotspots, and further
+optimization candidates. The new full run is retained at
+`tests/accuracy/generated/qwen36-profile-20260922/full-pool541/`.
 
 ## 256-token bounded-thinking comparison
 
