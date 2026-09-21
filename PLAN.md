@@ -2,11 +2,11 @@
 
 更新日期：2026-09-21
 
-状态：持续路线图。首轮 CPU Decisions Engine 已实现并通过本地验收；GPU、在线调度、性能优化和发行工程等后续工作仍保留在本文中，未完成项不视为已经验证。
+状态：持续路线图。CPU Decisions Engine、批量候选评分和可选的有界 thinking 核心路径已实现并通过 Qwen3 本地验收；多模型真实权重矩阵、GPU、在线调度、性能优化和发行工程仍未完成，未完成项不视为已经验证。
 
 ## 0. 当前实现快照
 
-截至 2026-09-21，仓库已经完成一个可运行的 CPU-only Decisions Engine 基线。它是下文长期路线图的第一轮落地，不代表整个计划已经完成。
+截至 2026-09-21，仓库已经完成一个可运行的 CPU-only Decisions Engine 基线，以及可选的有界 thinking 核心路径。它是下文长期路线图的第一轮落地，不代表整个计划已经完成。
 
 已完成：
 
@@ -14,15 +14,19 @@
 - Decisions 风格的 `noul`、`choice`、`score` 请求/响应；请求明确不接受 `model` 字段。
 - `Engine::load`、`Engine::decide`、`Engine::decide_batch` Rust API 和 `jet judge` JSONL CLI。
 - continuation-only teacher-forced scoring、逐候选 reference path、原生多序列 batch、同题 prompt 前缀复用和按 sequence/output 预算分波。
-- GGUF 内置 Jinja chat template，固定 `enable_thinking=false`；不支持 thinking 内容或自由文本生成。
+- GGUF 内置 Jinja chat template；普通非 thinking 模型可直接评分，reasoning 模板支持 `Disabled`、`Auto`、`Required` 三种模式。
+- 可选的有界 thinking：配置最大 token、temperature、top-k、top-p 和 seed；每题只生成一份 trace，经模板的 `reasoning_content` continuation 转入最终答案区，再把冻结前缀用于候选批量评分。
+- 模板协议不硬编码 `<think>`：复用固定 llama.cpp 的 reasoning 元数据、结束标记和 content continuation，可覆盖 tag 与 channel 类型协议；已移除仅允许 `qwen3` 架构的加载限制。
 - llama.cpp `v0.4.1` / commit `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`。
 - 固定测试模型 `Qwen/Qwen3-0.6B-GGUF` revision `23749fefcc72300e3a2ad315e1317431b06b590a`、`Qwen3-0.6B-Q8_0.gguf`，SHA-256 `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031`。
 - 与固定 llama.cpp commit 匹配的 bindings 已检入；普通构建不加载 libclang。`mise.toml` 通过 `[tools."http:llvm"]` 直接使用 LLVM GitHub release，仅在显式 `generate-bindings` 时需要。
-- format、Clippy、纯单元测试、固定模型集成测试和 CLI golden test 已通过；清空 `LIBCLANG_PATH`、`LD_LIBRARY_PATH` 后原始 CLI 命令可直接运行。
+- format、Clippy、纯单元测试、固定模型集成测试和 CLI golden test 已通过；Qwen3 真实模型测试覆盖 8-token thinking 预算、强制协议收尾、final-answer continuation 和后续共享前缀 batch scoring。
 
 当前尚未完成：
 
 - CUDA、Metal 和其他硬件后端的构建与真实设备验收。
+- DeepSeek、GPT-OSS、Kimi、Gemma 等 reasoning 模型及至少一个普通非 thinking 模型的真实权重/模板验收；当前除 Qwen3 外仅通过 llama.cpp 统一模板协议层接入，不能宣称已经逐模型验证。
+- thinking 生成目前按问题串行执行；跨问题 generation batch、阶段耗时观测和 request/question 级预算覆盖尚未实现，现有配置作用于整个 Engine/CLI 运行。
 - 在线有界队列、最大等待时间、取消、超时、背压和跨请求缓存。
 - 设备端 logits 归约、候选 trie 复用和基于 profile 的吞吐优化。
 - 完整 CI、发行包、跨平台支持矩阵、性能基准和任务准确率/校准评估。
@@ -32,7 +36,7 @@
 
 ## 1. 项目定位与目标
 
-Jet 是一个 **Judgement Engine**。输入为 `question` 和一组 `options`，复用现有自回归 Chat 模型，在不采样、不生成自由文本的情况下，计算每个候选答案的条件对数似然，并在该问题的候选集合内归一化。
+Jet 是一个 **Judgement Engine**。输入为 `question` 和一组 `options`，复用现有自回归 Chat 模型，通过 teacher forcing 计算每个候选答案的条件对数似然，并在该问题的候选集合内归一化。候选评分本身不采样；模型和模板支持时，可先生成一份有界 thinking trace，再在该固定 trace 条件下评分所有候选。
 
 核心工作负载是 **teacher-forced sequence scoring**：候选 token 全部已知，通过批量前向计算取得每个目标 token 的条件概率。优化重点是多问题/多候选批处理、共同前缀复用，以及 logits 的高效归约。
 
@@ -44,7 +48,7 @@ Jet 是一个 **Judgement Engine**。输入为 `question` 和一组 `options`，
 - 返回可解释、可复现的候选评分；明确其与答案正确率之间的区别。
 - 在有足够请求时提高持续评分吞吐，同时保持有界内存和可配置的等待时间。
 
-本阶段不包含浏览器/WASM、TTS、聊天 UI、自由文本生成、Agent 工具循环、模型训练和云模型聚合。HTTP 服务、其他推理后端、多 GPU、跨机器执行可在核心引擎稳定后独立评估。
+本阶段不包含浏览器/WASM、TTS、聊天 UI、通用自由文本生成、Agent 工具循环、模型训练和云模型聚合。有界 thinking 是候选评分的可选准备阶段，不扩展为通用 completion API。HTTP 服务、其他推理后端、多 GPU、跨机器执行可在核心引擎稳定后独立评估。
 
 `xlai` 是原生构建和模型封装的参考，不是需要复制的产品架构。Jet 不依赖其聊天运行时；不修改同级 `xlai` 项目。
 
@@ -52,14 +56,14 @@ Jet 是一个 **Judgement Engine**。输入为 `question` 和一组 `options`，
 
 | 项目 | 首版约定 |
 | --- | --- |
-| 核心任务 | 对给定候选做条件似然评分，无 sampler |
+| 核心任务 | 对给定候选做条件似然评分；候选 scoring 无 sampler，可选 thinking 使用有界 sampler |
 | 推理底座 | Rust + llama.cpp C API/薄 C++ bridge |
 | 模型范围 | 首先验证 llama.cpp 支持的 decoder-only causal Transformer Chat GGUF 模型 |
 | 加速后端 | Linux/Windows NVIDIA CUDA；macOS Apple Silicon Metal；CPU 基线 |
 | 原始分数 | 目标 token 的完整词表 log-softmax 之和 |
 | 候选归一化 | 对每个问题内部的原始累计 log-probability 做 softmax |
 | 长度处理 | 默认不除以 token 数，不加 length penalty |
-| 温度与采样变换 | 使用原始模型分布，温度固定为 1，不应用 top-k/top-p、重复惩罚、grammar mask |
+| 温度与采样变换 | 候选评分使用原始 logits，不应用 temperature、top-k/top-p 或 grammar mask；thinking 单独配置采样参数和 token 预算 |
 | 终止策略 | 默认 `continuation`；可显式选择经过验证的 `assistant_turn` |
 | 调度方式 | 常驻模型、受控 context/sequence 生命周期、按 token 和内存预算组批 |
 | 第一优先级 | 正确的原始分数，其次是批处理收益，再进行内核级优化 |
@@ -72,7 +76,7 @@ Jet 是一个 **Judgement Engine**。输入为 `question` 和一组 `options`，
 
 ### 3.1 共同条件与目标 token
 
-设 `x` 为该问题所有候选共同使用的 prompt token 序列；候选 `i` 的实际计分序列为 `y_i = [y_i,1, ..., y_i,L_i]`。
+设 `x` 为该问题所有候选共同使用的 prompt token 序列；thinking 关闭时它是直接答案前缀，thinking 开启时它还包含本题唯一一次生成并冻结的 reasoning trace 及模板生成的 final-answer transition。候选 `i` 的实际计分序列为 `y_i = [y_i,1, ..., y_i,L_i]`。
 
 ```text
 token_logprob[i, t]
@@ -117,20 +121,23 @@ normalized_probability[i]
 - `mean_token_log_probability` 可以作为诊断信息返回，不参与首版默认归一化。
 - 后续若提供平均分、length penalty、先验校正或校准温度，应使用独立的 `ranking_score`/评分模式，不能覆盖原始分数或冒充原始概率。
 - 使用已有 Chat 模型不保证每类判断任务都有足够准确率；应有与目标应用相匹配的标注集验收。
-- 对会先输出思考过程的模型，固定支持的非思考/直接回答模式。直接答案似然不等于对所有可能推理路径边缘化后的答案概率。
+- thinking 关闭时，使用模板提供且经过验证的非思考/直接回答路径；普通非 thinking 模型不因缺少开关而被拒绝。
+- thinking 开启时，返回的是给定本次随机或固定 seed 生成的 trace 后的候选条件概率，不是对所有可能推理路径边缘化后的答案概率。
 
 ## 4. Prompt、分词和终止契约
 
 ### 4.1 Prompt 构造
 
-首版默认行为：
+当前 Decisions prompt 行为：
 
-1. 将 `question` 放入 user 消息，可配置一个固定 system 指令。
-2. 用经过验证的模型 chat template 生成 assistant 回答开始前的共同前缀。
-3. 将各 option 作为该 assistant 消息的候选续写。
-4. 默认不把整个 options 列表写入 user prompt。这样增删其他选项只改变归一化分母，不改变保留选项的原始条件分数。
+1. 固定 system 指令要求只返回 `allowed_labels` 中的一个 JSON scalar。
+2. user 消息是 canonical JSON，包含 `state`、`question.instructions`、全部 `criteria` 和 `allowed_labels`；对象 key 排序，数组保留原顺序。
+3. 用经过验证的模型 chat template 生成 assistant 回答开始前的共同前缀。
+4. 将 `noul` 的 `false`/`true`、`choice` key 的 JSON string 或 `score` 的零基整数作为 assistant 候选续写。
 
-需要“看完所有选项再选答案”的任务可后续增加显式 prompt 模式；这种模式会改变共同条件，应单独版本化和评估。
+启用 thinking 时，模板首先渲染 reasoning 起点；引擎在 token 预算内生成一份 reasoning，使用同一模板的 `reasoning_content` continuation 进入最终答案区，然后把所得完整 token 前缀作为所有候选的共同条件。不同模型的起止 tag、channel 和 final transition 必须来自模板协议，不能统一拼接 `<think>`/`</think>`。
+
+由于当前 prompt 包含全部 criteria 和 allowed labels，增删或改写候选会改变共同条件，原有候选的原始分数也可能变化；这与仅改变 softmax 分母的 closed-set 后处理不同，必须在评分语义和测试中明确保留。
 
 记录模板内容哈希、system 指令/配置标识、tokenizer/模型标识、评分契约版本及终止策略。禁止使用字符串拼接模拟所有模型的 chat template。
 
@@ -145,7 +152,19 @@ normalized_probability[i]
 - 如果某模板存在无法可靠分离的跨边界 token，先明确其 token 级条件定义并验证；首版无法支持时应拒绝该模板，不静默使用错误的 target mask。
 - 前缀复用以实际相同的 token 和模型状态配置为准，不能只比较可见字符串。
 
-### 4.3 终止策略
+### 4.3 Thinking 模式与预算
+
+| 模式 | 行为 |
+| --- | --- |
+| `Disabled`（默认） | 使用经过验证的直接答案路径；模板无法可靠关闭 thinking 时返回不支持错误 |
+| `Auto` | 模板暴露完整 reasoning 结束标记与 final continuation 时启用 thinking，否则普通非 reasoning 模型回退到直接评分 |
+| `Required` | 必须完成 thinking 协议；缺少结束标记或 final continuation 时返回不支持错误 |
+
+当前 `ThinkingConfig` 属于 Engine 配置，CLI 对应 `--thinking`、`--thinking-tokens`、`--thinking-temperature`、`--thinking-top-k`、`--thinking-top-p` 和 `--thinking-seed`。`max_tokens` 限制 reasoning block 内生成 token；预算耗尽时 sampler 可能先补完整 UTF-8，再附加协议结束 token，因此 closure token 可使实际输出数略高于预算。
+
+每题 thinking 只生成一次。分波、reference/batched 对照和候选顺序变化必须复用同一份冻结 trace，不能重新采样后把结果当成同一条件下的评分。候选 log-probability 始终从未经 thinking sampler 修改的原始 logits 计算。
+
+### 4.4 终止策略
 
 | 策略 | 计分目标 | 解释 |
 | --- | --- | --- |
@@ -156,13 +175,14 @@ normalized_probability[i]
 
 结果分别报告 `option_token_count` 和 `scored_token_count`，后者包含实际计分的结束 token。
 
-### 4.4 输入边界与异常
+### 4.5 输入边界与异常
 
 - 空 question、空 options 列表、空字符串 option、tokenization 后无内容 token 的 option：首版明确拒绝。
 - 单个有效 option 可以评分，归一化权重为 1；这不表达确信程度。
 - 同一问题中，最终计分 token 序列完全相同的重复选项返回重复候选错误，不能重复计入分母。
 - 互为前缀的候选可以按 `continuation` 评分，但返回 `candidate_events_overlap` 等明确诊断。
 - prompt 加目标超出模型/context 限制时返回明确错误；允许分块计算，不允许通过分块绕过最大语义上下文或静默截断。
+- thinking prompt、预算、协议 closure、final transition 和最长候选共同受单序列 context 限制；不能为完成 closure 静默扩大上下文或截断 reasoning。
 - 任一候选失败时该问题整体失败，不对剩余候选悄悄重新归一化；同一批的其他问题可独立完成。
 
 ## 5. 批量前向评分算法
@@ -195,6 +215,8 @@ forward(inputs, causal_attention=true)
 
 ### 5.3 同问题共享前缀
 
+thinking 开启时，先完成并冻结该问题的 reasoning 和 final-answer transition；以下算法中的 prompt 指该完整公共前缀。当前实现会为 scoring 重新 prefill 该前缀，不复用 generation 阶段的临时 KV，但同一题的所有候选仍共享一次 scoring prefill。
+
 1. prompt 只 prefill 一次，只请求必要的输出位置。
 2. 从 prompt 末尾分布提取每个候选首 token 的 log-probability。
 3. 将相同前缀状态关联到各候选 sequence，后续候选各自拥有独立状态。
@@ -212,6 +234,7 @@ forward(inputs, causal_attention=true)
 ### 5.4 多问题批处理
 
 - 引擎接收 `judge_batch`，将问题展开为共享前缀组与候选分支。
+- 当前候选 scoring 可跨问题合批；thinking generation 仍按问题串行执行，后续应单独评估 generation continuous batching，不能把候选 batch 能力等同于 thinking 已合批。
 - 按实际 token 工作量、输出 logits 行数、活跃 sequence 数和内存预算组批，不只按问题数限流。
 - 支持不等长序列、最后不足一批、候选数不同和超大问题独立拆批。
 - 维护 request、option、输入 token、原生 logits 输出行之间的显式映射。
@@ -254,6 +277,8 @@ jet/
 首版 llama 适配层需要：
 
 - 模型加载、元数据、tokenizer、经过验证的 chat template 和 vocab 大小。
+- 模板 capability 探测：普通非 reasoning、可关闭 reasoning、必须 reasoning 和协议未知路径；返回 thinking start/end 与 final-answer continuation，而不是依赖单个 `supports_thinking` 布尔值。
+- reasoning-budget sampler：监测自然结束、预算耗尽后强制协议 closure、避免未完成 reasoning 时接受 EOG，并确保候选 scoring 不继承 grammar/采样变换。
 - context 创建及独立的 `n_batch`、`n_ubatch`、`n_seq_max` 等容量设置。
 - 多序列 batch 构造：token、position、sequence IDs、是否请求 logits。
 - 指定位置 logits 读取，或等价的目标 token log-probability 提取。
@@ -269,7 +294,7 @@ jet/
 
 ### 8.1 显式预算
 
-预算至少包括：模型权重、活跃前缀和候选状态、计算缓冲区、原生输出 logits、CPU 侧结果缓冲，以及系统/其他进程预留空间。
+预算至少包括：模型权重、thinking generation 临时状态、冻结的 reasoning/final 前缀、活跃候选状态、计算缓冲区、原生输出 logits、CPU 侧结果缓冲，以及系统/其他进程预留空间。
 
 - NVIDIA 使用独立显存预算；Apple Silicon 考虑系统共享的统一内存压力。
 - 同一问题前缀共享后，仍需为所有活跃候选 suffix 预留状态容量。
@@ -277,6 +302,7 @@ jet/
 - 不能假设减小 microbatch 就限制了整次调用返回的 logits；必要时拆分逻辑 decode 调用并及时归约。
 - 发生资源不足时有界拆批/降低活跃序列数；无法容纳单个有效请求时明确报错。
 - 重试需要回滚分数和状态，防止 token 被重复计分；禁止静默更换量化模型、终止策略或上下文长度。
+- thinking 的 `max_tokens` 不包含强制 closure 的全部开销；context 预算必须为 UTF-8 补全、结束标记和 final transition 留出空间。
 
 ### 8.2 Logits 输出与归约
 
@@ -298,7 +324,22 @@ jet/
 
 ## 9. 对外接口草案
 
-以下为接口形状，不作为已发布 ABI/API 承诺。
+当前已发布形状是 `EngineConfig` + Decisions `DecisionRequest`，thinking 通过 `EngineConfig::thinking` 和 CLI 参数配置。以下较早的通用 Judgement 接口仍是长期草案，不作为已发布 ABI/API 承诺。
+
+当前 thinking 配置：
+
+```text
+ThinkingConfig {
+  mode: Disabled | Auto | Required,
+  max_tokens,
+  temperature,
+  top_k,
+  top_p,
+  seed
+}
+```
+
+现阶段同一 Engine 实例内的所有问题共享该配置；若增加 request/question 级覆盖，需要定义 batch 中不同预算、seed 和采样配置的调度与复现语义。
 
 ```text
 Engine::load(model_config, execution_config)
@@ -338,7 +379,7 @@ JudgementResult:
 
 - `judge_batch` 的返回顺序与输入一致；候选结果也保留输入顺序。
 - `best_option_id` 按原始累计分数取最大值；精确同分时按输入顺序稳定返回，并保留全部分数供调用方判断。
-- options 之间不共享采样状态，因为不存在 sampler。
+- options 之间不存在采样状态；可选 sampler 只用于每题一次的 thinking，完成后所有 options 共享冻结 trace 并独立 teacher forcing。
 - 调试模式可返回逐 token log-probability、耗时拆分与计分 token IDs；默认不保存完整 logits 或用户文本到日志。
 - execution 配置包含设备、context 预算、token batch、microbatch、sequence 上限、队列容量与组批等待上限。
 - 模型加载/预热是引擎生命周期操作，不在每个请求中重复执行。
@@ -358,7 +399,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 
 ### P0：冻结评分契约与参考数据（部分完成）
 
-- [x] 将首轮已实现的评分语义细化为 `docs/scoring.md`，固定 prompt、continuation 终止和错误策略。
+- [x] 将已实现的评分语义细化为 `docs/scoring.md`，固定 prompt、continuation、thinking 条件概率、usage 和错误策略。
 - [x] 选择 Qwen3-0.6B Q8_0 作为 CPU/开发 fixture；较大 GPU 性能模型仍待选择。
 - [x] 记录 CPU fixture 的来源、revision、文件哈希、量化和下载方式；权重不提交 Git。
 - [x] 固定 llama.cpp commit，并核对首轮 CPU 路径所需 C API；CUDA/Metal 能力仍待验收。
@@ -374,7 +415,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 - [ ] 完成可手算归约、首 token 对齐、结束符、重复/重叠候选等测试。
 - [ ] 在条件允许时用独立参考实现核对同模型同 token 序列；量化不同的结果只能做质量对照，不能当作严格相等的 oracle。
 
-完成条件：本地 CPU 可完成端到端 judge；原始 token 分数和聚合分数有可追踪验证；无需 sampling 或自由文本生成。
+完成条件：本地 CPU 可完成端到端 judge；原始 token 分数和聚合分数有可追踪验证；候选评分无需 sampling 或自由文本生成。
 
 ### P2：多序列批量评分（核心路径完成）
 
@@ -389,12 +430,28 @@ jet bench --model <model.gguf> --workload <workload.json>
 ### P3：共同前缀复用与调度（前缀复用完成，在线调度未开始）
 
 - [x] 在候选可放入单组 sequence 预算时实现每问题 prompt 一次 prefill，以及安全的候选状态分叉。
+- [x] thinking 开启时每题只生成一次 trace，并将 reasoning + final transition 组成的冻结前缀交给同一套共享/分波 scoring 路径。
 - [x] 正确保存并立即归约首目标 token 所需的前缀末尾 logits。
 - [ ] 增加有界队列、按预算组批、在线最大等待时间和离线连续处理。
 - [x] 实现 sequence/output 预算下的可恢复分波，不截断输入；候选失败时所属请求失败。
 - [ ] 加入前缀处理计数、缓存/共享情况和阶段耗时等观测。
 
 完成条件：与无共享 P2 的每个候选原始分数一致；共享前缀实际计算次数可验证；取消和请求复用无旧 KV 残留。
+
+### P3-T：有界 thinking 与多模板协议（核心路径完成，支持矩阵待验收）
+
+- [x] 增加 `Disabled`、`Auto`、`Required` 模式及公开 `ThinkingConfig`，CLI 支持 token budget、temperature、top-k、top-p 和 seed。
+- [x] 普通非 reasoning 模板可直接评分；不再因没有 `enable_thinking` 开关而一律拒绝模型。
+- [x] 通过 llama.cpp 模板解析结果取得 reasoning 起止信息，并用 `reasoning_content` continuation 构造 final-answer 前缀；未硬编码单一 `<think>` 协议。
+- [x] 接入 reasoning-budget sampler，支持自然结束、预算耗尽强制 closure、未完成 reasoning 时拦截 EOG，以及最终候选 raw-logits scoring。
+- [x] 用固定 Qwen3-0.6B Q8_0 真实模型验证 8-token 预算、closure、final continuation、thinking token 计数和后续 batched prefix sharing。
+- [x] 增加 tag/channel 协议状态判断单元测试，并验证 format、Clippy、常规测试和固定模型 ignored integration test。
+- [ ] 用真实 GGUF 分别验收 DeepSeek、GPT-OSS、Kimi、Gemma 系列及至少一个普通非 thinking 模型；记录模板版本、协议 marker、开关行为和 context 开销。
+- [ ] 增加固定 trace 注入或可观测 fixture，使 reference/batched、分波、候选置换和错误恢复能在完全相同 reasoning 条件下逐分数对照。
+- [ ] 评估并实现跨问题 thinking generation batching；在此之前分别记录串行 generation 和 batched scoring 的耗时。
+- [ ] 决定是否增加 request/question 级 thinking override；若增加，定义 seed、复现、usage 和混合预算调度语义。
+
+完成条件：支持矩阵中的每种模板都由真实模型或可复现 tokenizer/template fixture 验证；`Auto` 不会误入 reasoning 区，`Disabled` 不会在无法关闭时静默评分，`Required` 能稳定完成 closure 和 final transition；同一冻结 trace 下 reference/batched 原始分数一致。
 
 ### P4：CUDA 与 Metal 跨平台验收
 
@@ -418,6 +475,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 
 ### P6：首版交付与可维护性
 
+- [x] 当前 Decisions API、thinking 配置、conditional-on-trace 评分语义和 usage 口径已写入 README 与评分文档。
 - [ ] 完成公共 API、CLI 文档、评分含义说明、模型支持矩阵和可复现示例。
 - [ ] 完成 CI、可控的模型 fixture 获取和各目标发行包。
 - [ ] 建立原生依赖升级流程：固定版本 → 正确性矩阵 → 性能回归 → 更新锁定版本。
@@ -437,10 +495,12 @@ jet bench --model <model.gguf> --workload <workload.json>
 | 批处理 | 独立执行/合批一致、不等长、不同候选数、不同 batch/ubatch、跨分块、尾批 |
 | 状态隔离 | 候选顺序置换、问题顺序置换、请求取消、错误后继续、ID 重用、重复运行 |
 | 前缀共享 | 开关共享结果一致、仅 prompt 计算一次、首 token 分数不因后续 decode 覆盖而丢失 |
+| Thinking 模式 | 普通非 reasoning fallback、可关闭/必须 reasoning、协议未知、自然结束、预算耗尽、EOG、UTF-8 补全、final continuation |
+| Thinking 复现 | 固定 seed/固定 trace、同一 trace 下 reference/batched/分波一致、候选置换不重新生成 trace、usage token 口径 |
 | 资源边界 | context 超限、sequence 上限、输出内存上限、拆批重试、设备不足、禁止隐式截断 |
 | 跨平台 | 同权重/量化/token 在 CPU、CUDA、Metal 的逐 token/序列/归一化误差 |
 
-候选置换测试应按 option ID 对齐比较原始分数；在默认 prompt 模式下，增加不重复候选不应改变原有候选的原始分数。精确同分时 `best_option_id` 的稳定顺序规则单独测试。
+当前 prompt 包含完整候选定义和 `allowed_labels`，所以候选增删、改写或重排可能改变共同条件及原始分数。候选置换测试应分别验证 ID/结果映射与稳定顺序；只有序列化后的完整 prompt 和冻结 thinking trace 都相同时，才能把原始分数相等作为 reference/batched 或分波一致性的断言。精确同分时 `best_option_id` 的稳定顺序规则单独测试。
 
 数值验收：
 
@@ -457,7 +517,8 @@ jet bench --model <model.gguf> --workload <workload.json>
 1. P1：逐问题、逐候选、独立上下文的 teacher forcing。
 2. P2：多序列 batch，重复处理各候选前缀。
 3. P3：多序列 batch + 同问题前缀共享。
-4. P5：上述路径 + 单独启用的进一步优化。
+4. P3-T：生成一次有界 thinking + 冻结 reasoning/final 前缀 + P3 候选评分。
+5. P5：上述路径 + 单独启用的进一步优化。
 
 主要对照是正确的 teacher-forcing 实现。自由生成/逐 token sampling 不是公平的唯一性能基线；官方 perplexity/multiple-choice 工具可作为额外参考，需确保模板、计分范围和长度归一化一致。
 
@@ -469,6 +530,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 - 每题候选数：2、4、8、32。
 - 候选长度：1、8、32、128 tokens；增加混合长度批次。
 - 问题批量：从 1 递增至吞吐饱和或预算上限。
+- thinking：Disabled/Auto/Required，预算 0 边界、8/64/256/1K tokens，自然结束与强制 closure；支持与不支持 reasoning 的模板分开测量。
 - 缓存状态：模型冷启动、模型热启动、同题前缀共享；跨请求缓存若引入则另列。
 - 资源情形：长 prompt/短候选、短 prompt/多长候选、小词表/大词表、接近内存预算。
 
@@ -481,6 +543,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 - 实际执行的 prompt/suffix token 数、前缀复用节省量；与逻辑计分 token 数分开。
 - 端到端延迟 p50/p95/p99，在线排队与执行时间分别记录。
 - 分词/模板、prefill、候选前向、logits 传输/归约阶段耗时；有异步重叠时说明计时口径。
+- thinking template render、逐 token generation、closure/final transition、scoring 重新 prefill 分别计时；串行 generation 与 batched scoring 不合并成一个误导性 tokens/s。
 - GPU 显存/统一内存和进程 RSS 峰值；设备利用率作为辅助指标。
 - 拆批、重试、取消、失败率，以及同数据集的判断准确率和分数差异。
 
@@ -507,6 +570,9 @@ jet bench --model <model.gguf> --workload <workload.json>
 | 返回概率被误认为正确率 | 固定术语，保留原始分数，文档说明候选集合依赖，校准独立评估 |
 | 长度/措辞影响判断 | 默认保留原始语义；使用真实标注集测量，其他排名策略独立版本化 |
 | 模板/分词边界不一致 | 逐模板 fixture、记录 token 范围、支持矩阵、无法验证时明确拒绝 |
+| 模板声称支持 thinking 但开关或 marker 不完整 | 比较开启/关闭渲染结果，要求可验证的 end marker 和 final continuation；`Required` 报错，`Auto` 仅对确认的普通模板回退 |
+| 有界 thinking 改变概率复现性 | 每题只生成一次并冻结 trace，记录 seed/采样配置；正确性对照使用相同 trace，不把不同采样结果直接比较 |
+| thinking closure 超出 token/context 预算 | 区分 reasoning credits 与 UTF-8/协议 closure 开销，预留 final transition 和候选空间，超限明确失败 |
 | Off-by-one 或 logits 行映射错误 | 可手算测试、逐候选 oracle、跨 batch/顺序置换对照 |
 | 共享 KV 泄漏或新模型不支持共享 | sequence 生命周期检查、独立状态回退、逐模型架构验收 |
 | Logits 吞吐/内存成为瓶颈 | 输出位置筛选、逻辑分块、及时归约，必要时设备端融合 |
@@ -518,9 +584,10 @@ jet bench --model <model.gguf> --workload <workload.json>
 ## 15. 首版完成定义
 
 - [ ] `judge` 和 `judge_batch` 能对本地支持模型返回每个选项的原始与归一化分数。
-- [ ] 全流程无 sampling，自由文本生成不是评分所需步骤。
+- [x] 候选评分全流程无 sampling；可选 thinking sampling 有明确 token 预算、协议 closure、模式开关和冻结 trace。
 - [ ] 默认概率定义、终止策略、长度处理和 prompt 构造都有文档与测试。
-- [ ] 变长多问题/多候选批处理及同题前缀共享已通过独立参考对照。
+- [x] 变长多问题/多候选批处理及同题前缀共享已通过固定 Qwen3 模型的独立 reference 对照。
+- [ ] thinking 的跨模板真实模型矩阵和相同冻结 trace 下的 reference/batched 对照完成。
 - [ ] 内存、队列、sequence 生命周期、取消和失败行为有明确边界。
 - [ ] CPU、CUDA、Metal 的支持状态与真实验证记录一致。
 - [ ] 已报告相对 teacher-forcing 基线的性能与评分/判断质量。
