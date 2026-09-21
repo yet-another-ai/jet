@@ -1,0 +1,951 @@
+use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
+use std::ptr::{self, NonNull};
+use std::rc::Rc;
+use std::slice;
+use std::sync::Once;
+
+use jet_core::{JetError, Result};
+use jet_llama_sys as sys;
+
+use crate::config::{EngineConfig, ExecutionMode};
+use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
+
+static BACKEND_INIT: Once = Once::new();
+
+struct TokenizedJob {
+    prompt: Vec<sys::llama_token>,
+    targets: Vec<Vec<sys::llama_token>>,
+}
+
+#[derive(Clone, Copy)]
+struct GroupSpec {
+    job_index: usize,
+    candidate_start: usize,
+    candidate_end: usize,
+}
+
+struct ActiveGroup {
+    spec: GroupSpec,
+    prefix_sequence: sys::llama_seq_id,
+    candidate_sequences: Vec<sys::llama_seq_id>,
+}
+
+enum OutputAction {
+    None,
+    Prefix(usize),
+    Target {
+        job_index: usize,
+        candidate_index: usize,
+        target: sys::llama_token,
+    },
+}
+
+struct DecodeItem {
+    token: sys::llama_token,
+    position: sys::llama_pos,
+    sequence: sys::llama_seq_id,
+    output: OutputAction,
+}
+
+pub(crate) struct LlamaScorer {
+    model: NonNull<sys::llama_model>,
+    context: NonNull<sys::llama_context>,
+    vocab: NonNull<sys::llama_vocab>,
+    config: EngineConfig,
+    vocab_size: usize,
+    _single_threaded: PhantomData<Rc<()>>,
+}
+
+impl LlamaScorer {
+    pub(crate) fn load(config: EngineConfig) -> Result<Self> {
+        validate_config(&config)?;
+        BACKEND_INIT.call_once(|| {
+            // SAFETY: llama.cpp requires one process-wide initialization before any model calls.
+            unsafe { sys::llama_backend_init() };
+        });
+
+        let path = config
+            .model_path
+            .to_str()
+            .ok_or_else(|| JetError::InvalidRequest("model_path must be valid UTF-8".to_owned()))?;
+        let path = CString::new(path).map_err(|_| {
+            JetError::InvalidRequest("model_path contains an interior NUL byte".to_owned())
+        })?;
+
+        // SAFETY: default parameter structs are returned by value and remain valid for this call.
+        let mut model_params = unsafe { sys::llama_model_default_params() };
+        model_params.n_gpu_layers = 0;
+        // SAFETY: path is a live NUL-terminated string and model_params came from llama.cpp.
+        let model =
+            NonNull::new(unsafe { sys::llama_model_load_from_file(path.as_ptr(), model_params) })
+                .ok_or_else(|| {
+                JetError::NativeRuntime(format!(
+                    "failed to load GGUF model from {}",
+                    config.model_path.display()
+                ))
+            })?;
+
+        let load_result = Self::finish_load(model, config);
+        if load_result.is_err() {
+            // SAFETY: model was returned by llama_model_load_from_file and no context owns it.
+            unsafe { sys::llama_model_free(model.as_ptr()) };
+        }
+        load_result
+    }
+
+    fn finish_load(model: NonNull<sys::llama_model>, config: EngineConfig) -> Result<Self> {
+        let architecture = model_metadata(model, "general.architecture")?;
+        if architecture != "qwen3" {
+            return Err(JetError::UnsupportedModel(format!(
+                "first release supports qwen3 only, found {architecture:?}"
+            )));
+        }
+
+        let total_context = config
+            .context_tokens_per_sequence
+            .checked_mul(config.max_sequences)
+            .ok_or_else(|| {
+                JetError::InvalidRequest("context configuration overflows u32".to_owned())
+            })?;
+        // SAFETY: default parameter struct is initialized by llama.cpp.
+        let mut context_params = unsafe { sys::llama_context_default_params() };
+        context_params.n_ctx = total_context;
+        context_params.n_batch = config.token_batch;
+        context_params.n_ubatch = config.micro_batch;
+        context_params.n_seq_max = config.max_sequences;
+        context_params.n_outputs_max = config.max_output_rows;
+        context_params.n_outputs_max_per_seq = config.max_output_rows;
+        context_params.n_threads = config.threads;
+        context_params.n_threads_batch = config.threads;
+        context_params.embeddings = false;
+        context_params.offload_kqv = false;
+        context_params.op_offload = false;
+        context_params.kv_unified = true;
+
+        // SAFETY: model remains owned by the scorer and parameters are initialized.
+        let context =
+            NonNull::new(unsafe { sys::llama_init_from_model(model.as_ptr(), context_params) })
+                .ok_or_else(|| {
+                    JetError::NativeRuntime("failed to create llama context".to_owned())
+                })?;
+        // SAFETY: context is live and exclusively owned here.
+        unsafe { sys::llama_set_causal_attn(context.as_ptr(), true) };
+
+        let vocabulary = (|| {
+            // SAFETY: the model is live; its vocab remains valid for the model lifetime.
+            let vocab = NonNull::new(unsafe {
+                sys::llama_model_get_vocab(model.as_ptr()) as *mut sys::llama_vocab
+            })
+            .ok_or_else(|| {
+                JetError::NativeRuntime("model does not expose a vocabulary".to_owned())
+            })?;
+            // SAFETY: vocab is live.
+            let vocab_size_i32 = unsafe { sys::llama_vocab_n_tokens(vocab.as_ptr()) };
+            let vocab_size = usize::try_from(vocab_size_i32).map_err(|_| {
+                JetError::NativeRuntime(format!("invalid vocabulary size {vocab_size_i32}"))
+            })?;
+            Ok::<_, JetError>((vocab, vocab_size))
+        })();
+        let (vocab, vocab_size) = match vocabulary {
+            Ok(value) => value,
+            Err(error) => {
+                // SAFETY: context was successfully created and has not been transferred.
+                unsafe { sys::llama_free(context.as_ptr()) };
+                return Err(error);
+            }
+        };
+
+        Ok(Self {
+            model,
+            context,
+            vocab,
+            config,
+            vocab_size,
+            _single_threaded: PhantomData,
+        })
+    }
+
+    fn tokenize_jobs(&self, jobs: &[ScoreJob]) -> Result<Vec<TokenizedJob>> {
+        jobs.iter()
+            .map(|job| {
+                let prompt_text = self.render_prompt(job)?;
+                let prompt = self.tokenize(&prompt_text)?;
+                if prompt.is_empty() {
+                    return Err(JetError::UnsupportedModel(
+                        "chat template produced an empty prompt".to_owned(),
+                    ));
+                }
+                let mut targets = Vec::with_capacity(job.targets.len());
+                for target in &job.targets {
+                    let combined = self.tokenize(&format!("{prompt_text}{target}"))?;
+                    if !combined.starts_with(&prompt) {
+                        return Err(JetError::UnsupportedModel(format!(
+                            "tokenizer boundary is unstable for candidate {target:?}"
+                        )));
+                    }
+                    let target_tokens = combined[prompt.len()..].to_vec();
+                    if target_tokens.is_empty() {
+                        return Err(JetError::InvalidRequest(format!(
+                            "candidate {target:?} has no scoreable tokens"
+                        )));
+                    }
+                    let required = prompt.len().saturating_add(target_tokens.len());
+                    let limit = self.config.context_tokens_per_sequence as usize;
+                    if required > limit {
+                        return Err(JetError::ContextExceeded { required, limit });
+                    }
+                    targets.push(target_tokens);
+                }
+                Ok(TokenizedJob { prompt, targets })
+            })
+            .collect()
+    }
+
+    fn render_prompt(&self, job: &ScoreJob) -> Result<String> {
+        let system = CString::new(job.system_content).map_err(|_| {
+            JetError::InvalidRequest("system content contains an interior NUL byte".to_owned())
+        })?;
+        let user = CString::new(job.user_content.as_str()).map_err(|_| {
+            JetError::InvalidRequest("user content contains an interior NUL byte".to_owned())
+        })?;
+        let mut error = vec![0_i8; 1_024];
+        // SAFETY: all pointers are live for the duration of the call; null output requests size.
+        let required = unsafe {
+            sys::jet_chat_apply_non_thinking(
+                self.model.as_ptr(),
+                system.as_ptr(),
+                user.as_ptr(),
+                ptr::null_mut(),
+                0,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if required < 0 {
+            return Err(template_error(&error));
+        }
+        let required = usize::try_from(required)
+            .map_err(|_| JetError::NativeRuntime("chat template length overflow".to_owned()))?;
+        let mut output = vec![0_i8; required.saturating_add(1)];
+        // SAFETY: output and error buffers are writable and model/messages remain live.
+        let written = unsafe {
+            sys::jet_chat_apply_non_thinking(
+                self.model.as_ptr(),
+                system.as_ptr(),
+                user.as_ptr(),
+                output.as_mut_ptr(),
+                output.len(),
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if written < 0 {
+            return Err(template_error(&error));
+        }
+        let written = usize::try_from(written)
+            .map_err(|_| JetError::NativeRuntime("chat template length overflow".to_owned()))?;
+        let bytes = output
+            .get(..written)
+            .ok_or_else(|| {
+                JetError::NativeRuntime("chat template overflowed its buffer".to_owned())
+            })?
+            .iter()
+            .map(|byte| *byte as u8)
+            .collect::<Vec<_>>();
+        String::from_utf8(bytes).map_err(|error| {
+            JetError::NativeRuntime(format!("chat template emitted invalid UTF-8: {error}"))
+        })
+    }
+
+    fn tokenize(&self, text: &str) -> Result<Vec<sys::llama_token>> {
+        let text_len = i32::try_from(text.len()).map_err(|_| {
+            JetError::InvalidRequest("text is too large for llama.cpp tokenization".to_owned())
+        })?;
+        // SAFETY: text bytes are valid for text_len; null output with zero capacity queries size.
+        let count = unsafe {
+            sys::llama_tokenize(
+                self.vocab.as_ptr(),
+                text.as_ptr().cast(),
+                text_len,
+                ptr::null_mut(),
+                0,
+                true,
+                true,
+            )
+        };
+        if count == i32::MIN {
+            return Err(JetError::NativeRuntime(
+                "tokenization length overflow".to_owned(),
+            ));
+        }
+        let capacity = if count < 0 { -count } else { count };
+        let capacity = usize::try_from(capacity)
+            .map_err(|_| JetError::NativeRuntime("invalid tokenizer size response".to_owned()))?;
+        let mut tokens = vec![0; capacity];
+        // SAFETY: tokens has capacity elements and text/vocab remain valid.
+        let written = unsafe {
+            sys::llama_tokenize(
+                self.vocab.as_ptr(),
+                text.as_ptr().cast(),
+                text_len,
+                tokens.as_mut_ptr(),
+                i32::try_from(tokens.len()).unwrap_or(i32::MAX),
+                true,
+                true,
+            )
+        };
+        if written < 0 {
+            return Err(JetError::NativeRuntime(format!(
+                "tokenizer buffer was unexpectedly too small: needs {} tokens",
+                -written
+            )));
+        }
+        tokens.truncate(usize::try_from(written).unwrap_or(0));
+        Ok(tokens)
+    }
+
+    fn score_batched(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
+        let candidate_capacity = (self.config.max_sequences as usize).saturating_sub(1);
+        let mut groups = Vec::new();
+        for (job_index, job) in jobs.iter().enumerate() {
+            for candidate_start in (0..job.targets.len()).step_by(candidate_capacity) {
+                groups.push(GroupSpec {
+                    job_index,
+                    candidate_start,
+                    candidate_end: (candidate_start + candidate_capacity).min(job.targets.len()),
+                });
+            }
+        }
+
+        let mut waves: Vec<Vec<GroupSpec>> = Vec::new();
+        let mut current = Vec::new();
+        let mut sequences_used = 0_usize;
+        for group in groups {
+            let needed = 1 + group.candidate_end - group.candidate_start;
+            if sequences_used + needed > self.config.max_sequences as usize && !current.is_empty() {
+                waves.push(std::mem::take(&mut current));
+                sequences_used = 0;
+            }
+            current.push(group);
+            sequences_used += needed;
+        }
+        if !current.is_empty() {
+            waves.push(current);
+        }
+
+        let mut accumulated: Vec<Vec<f64>> = jobs
+            .iter()
+            .map(|job| vec![0.0; job.targets.len()])
+            .collect();
+        let mut prefill_counts = vec![0_usize; jobs.len()];
+        for wave in waves {
+            self.process_wave(jobs, &wave, &mut accumulated, &mut prefill_counts)?;
+        }
+
+        Ok(jobs
+            .iter()
+            .enumerate()
+            .map(|(index, job)| ScoreResult {
+                log_probabilities: accumulated[index].clone(),
+                prompt_tokens: job.prompt.len(),
+                target_token_counts: job.targets.iter().map(Vec::len).collect(),
+                prefill_count: prefill_counts[index],
+            })
+            .collect())
+    }
+
+    fn process_wave(
+        &mut self,
+        jobs: &[TokenizedJob],
+        specs: &[GroupSpec],
+        accumulated: &mut [Vec<f64>],
+        prefill_counts: &mut [usize],
+    ) -> Result<()> {
+        self.clear_memory();
+        let result = (|| {
+            let mut next_sequence: sys::llama_seq_id = 0;
+            let mut groups = Vec::with_capacity(specs.len());
+            #[allow(clippy::explicit_counter_loop)]
+            for spec in specs {
+                let prefix_sequence = next_sequence;
+                next_sequence += 1;
+                let candidate_sequences = (spec.candidate_start..spec.candidate_end)
+                    .map(|_| {
+                        let sequence = next_sequence;
+                        next_sequence += 1;
+                        sequence
+                    })
+                    .collect();
+                groups.push(ActiveGroup {
+                    spec: *spec,
+                    prefix_sequence,
+                    candidate_sequences,
+                });
+                prefill_counts[spec.job_index] += 1;
+            }
+
+            let mut prefix_items = Vec::new();
+            for (group_index, group) in groups.iter().enumerate() {
+                let prompt = &jobs[group.spec.job_index].prompt;
+                for (index, token) in prompt.iter().copied().enumerate() {
+                    prefix_items.push(DecodeItem {
+                        token,
+                        position: position(index)?,
+                        sequence: group.prefix_sequence,
+                        output: if index + 1 == prompt.len() {
+                            OutputAction::Prefix(group_index)
+                        } else {
+                            OutputAction::None
+                        },
+                    });
+                }
+            }
+            self.decode_items(&prefix_items, jobs, &groups, accumulated)?;
+
+            // SAFETY: memory belongs to the live context and sequence IDs are within n_seq_max.
+            let memory = unsafe { sys::llama_get_memory(self.context.as_ptr()) };
+            for group in &groups {
+                for sequence in &group.candidate_sequences {
+                    // SAFETY: copying the complete live prefix to a fresh sequence is supported by llama.cpp.
+                    unsafe {
+                        sys::llama_memory_seq_cp(memory, group.prefix_sequence, *sequence, -1, -1)
+                    };
+                }
+            }
+
+            let mut suffix_items = Vec::new();
+            for group in &groups {
+                let job = &jobs[group.spec.job_index];
+                for (offset, candidate_index) in
+                    (group.spec.candidate_start..group.spec.candidate_end).enumerate()
+                {
+                    let tokens = &job.targets[candidate_index];
+                    for target_index in 0..tokens.len().saturating_sub(1) {
+                        suffix_items.push(DecodeItem {
+                            token: tokens[target_index],
+                            position: position(job.prompt.len() + target_index)?,
+                            sequence: group.candidate_sequences[offset],
+                            output: OutputAction::Target {
+                                job_index: group.spec.job_index,
+                                candidate_index,
+                                target: tokens[target_index + 1],
+                            },
+                        });
+                    }
+                }
+            }
+            self.decode_items(&suffix_items, jobs, &groups, accumulated)
+        })();
+        self.clear_memory();
+        result
+    }
+
+    fn decode_items(
+        &mut self,
+        items: &[DecodeItem],
+        jobs: &[TokenizedJob],
+        groups: &[ActiveGroup],
+        accumulated: &mut [Vec<f64>],
+    ) -> Result<()> {
+        let chunk_size = self.config.token_batch.min(self.config.max_output_rows) as usize;
+        for chunk in items.chunks(chunk_size) {
+            if chunk.is_empty() {
+                continue;
+            }
+            // SAFETY: llama_batch_init allocates arrays sized for chunk.len() entries.
+            let mut batch = unsafe {
+                sys::llama_batch_init(i32::try_from(chunk.len()).unwrap_or(i32::MAX), 0, 1)
+            };
+            let decode_result = (|| {
+                if batch.token.is_null()
+                    || batch.pos.is_null()
+                    || batch.n_seq_id.is_null()
+                    || batch.seq_id.is_null()
+                    || batch.logits.is_null()
+                {
+                    return Err(JetError::NativeRuntime(
+                        "llama_batch_init returned incomplete storage".to_owned(),
+                    ));
+                }
+                batch.n_tokens = i32::try_from(chunk.len()).map_err(|_| {
+                    JetError::NativeRuntime("native batch length overflow".to_owned())
+                })?;
+                for (index, item) in chunk.iter().enumerate() {
+                    // SAFETY: every batch array was allocated for at least chunk.len() entries.
+                    unsafe {
+                        *batch.token.add(index) = item.token;
+                        *batch.pos.add(index) = item.position;
+                        *batch.n_seq_id.add(index) = 1;
+                        let ids = *batch.seq_id.add(index);
+                        if ids.is_null() {
+                            return Err(JetError::NativeRuntime(
+                                "native batch sequence storage is null".to_owned(),
+                            ));
+                        }
+                        *ids = item.sequence;
+                        *batch.logits.add(index) =
+                            i8::from(!matches!(item.output, OutputAction::None));
+                    }
+                }
+
+                // SAFETY: context and batch are live; all positions and sequence IDs were initialized.
+                let status = unsafe { sys::llama_decode(self.context.as_ptr(), batch) };
+                if status != 0 {
+                    return Err(JetError::NativeRuntime(format!(
+                        "llama_decode failed with status {status}"
+                    )));
+                }
+                // SAFETY: llama_decode succeeded; selected output rows remain valid until the next decode.
+                let logits = unsafe { sys::llama_get_logits(self.context.as_ptr()) };
+                if logits.is_null()
+                    && chunk
+                        .iter()
+                        .any(|item| !matches!(item.output, OutputAction::None))
+                {
+                    return Err(JetError::NativeRuntime(
+                        "llama_decode did not expose requested logits".to_owned(),
+                    ));
+                }
+
+                let mut output_row = 0_usize;
+                for item in chunk {
+                    match item.output {
+                        OutputAction::None => {}
+                        OutputAction::Prefix(group_index) => {
+                            let row = self.logits_row(logits, output_row);
+                            let group = groups.get(group_index).ok_or_else(|| {
+                                JetError::NativeRuntime("missing active prefix group".to_owned())
+                            })?;
+                            let job = &jobs[group.spec.job_index];
+                            let range = group.spec.candidate_start..group.spec.candidate_end;
+                            for (target, total) in job.targets[range.clone()]
+                                .iter()
+                                .zip(&mut accumulated[group.spec.job_index][range])
+                            {
+                                *total += target_log_probability(row, target[0])?;
+                            }
+                            output_row += 1;
+                        }
+                        OutputAction::Target {
+                            job_index,
+                            candidate_index,
+                            target,
+                        } => {
+                            let row = self.logits_row(logits, output_row);
+                            accumulated[job_index][candidate_index] +=
+                                target_log_probability(row, target)?;
+                            output_row += 1;
+                        }
+                    }
+                }
+                Ok(())
+            })();
+            // SAFETY: batch was allocated by llama_batch_init and is freed exactly once.
+            unsafe { sys::llama_batch_free(batch) };
+            decode_result?;
+        }
+        Ok(())
+    }
+
+    fn logits_row(&self, logits: *mut f32, row: usize) -> &[f32] {
+        // SAFETY: caller only requests rows selected in the most recent successful decode.
+        unsafe { slice::from_raw_parts(logits.add(row * self.vocab_size), self.vocab_size) }
+    }
+
+    fn score_reference(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
+        let mut results = Vec::with_capacity(jobs.len());
+        for job in jobs {
+            let mut log_probabilities = Vec::with_capacity(job.targets.len());
+            for target in &job.targets {
+                self.clear_memory();
+                let result = (|| {
+                    let mut prompt_items = Vec::with_capacity(job.prompt.len());
+                    for (index, token) in job.prompt.iter().copied().enumerate() {
+                        prompt_items.push(DecodeItem {
+                            token,
+                            position: position(index)?,
+                            sequence: 0,
+                            output: if index + 1 == job.prompt.len() {
+                                OutputAction::Prefix(0)
+                            } else {
+                                OutputAction::None
+                            },
+                        });
+                    }
+                    let reference_job = TokenizedJob {
+                        prompt: job.prompt.clone(),
+                        targets: vec![target.clone()],
+                    };
+                    let groups = [ActiveGroup {
+                        spec: GroupSpec {
+                            job_index: 0,
+                            candidate_start: 0,
+                            candidate_end: 1,
+                        },
+                        prefix_sequence: 0,
+                        candidate_sequences: Vec::new(),
+                    }];
+                    let mut accumulated = vec![vec![0.0]];
+                    self.decode_items(
+                        &prompt_items,
+                        std::slice::from_ref(&reference_job),
+                        &groups,
+                        &mut accumulated,
+                    )?;
+
+                    let mut suffix_items = Vec::with_capacity(target.len().saturating_sub(1));
+                    for target_index in 0..target.len().saturating_sub(1) {
+                        suffix_items.push(DecodeItem {
+                            token: target[target_index],
+                            position: position(job.prompt.len() + target_index)?,
+                            sequence: 0,
+                            output: OutputAction::Target {
+                                job_index: 0,
+                                candidate_index: 0,
+                                target: target[target_index + 1],
+                            },
+                        });
+                    }
+                    self.decode_items(&suffix_items, &[reference_job], &groups, &mut accumulated)?;
+                    Ok::<_, JetError>(accumulated[0][0])
+                })();
+                self.clear_memory();
+                log_probabilities.push(result?);
+            }
+            results.push(ScoreResult {
+                log_probabilities,
+                prompt_tokens: job.prompt.len(),
+                target_token_counts: job.targets.iter().map(Vec::len).collect(),
+                prefill_count: job.targets.len(),
+            });
+        }
+        Ok(results)
+    }
+
+    fn clear_memory(&self) {
+        // SAFETY: memory belongs to the live context; no decode is running concurrently.
+        unsafe { sys::llama_memory_clear(sys::llama_get_memory(self.context.as_ptr()), true) };
+    }
+}
+
+impl SequenceScorer for LlamaScorer {
+    fn score_batch(&mut self, jobs: &[ScoreJob]) -> Vec<Result<ScoreResult>> {
+        let mut slots: Vec<Option<Result<ScoreResult>>> = (0..jobs.len()).map(|_| None).collect();
+        let mut tokenized = Vec::new();
+        let mut valid_indices = Vec::new();
+        for (index, job) in jobs.iter().enumerate() {
+            match self.tokenize_jobs(std::slice::from_ref(job)) {
+                Ok(mut value) => {
+                    if let Some(value) = value.pop() {
+                        valid_indices.push(index);
+                        tokenized.push(value);
+                    } else {
+                        slots[index] = Some(Err(JetError::NativeRuntime(
+                            "tokenizer omitted a scoring job".to_owned(),
+                        )));
+                    }
+                }
+                Err(error) => slots[index] = Some(Err(error)),
+            }
+        }
+
+        let scored = match self.config.execution_mode {
+            ExecutionMode::Reference => self.score_reference(&tokenized),
+            ExecutionMode::Batched => self.score_batched(&tokenized),
+        };
+        match scored {
+            Ok(results) if results.len() == valid_indices.len() => {
+                for (index, result) in valid_indices.into_iter().zip(results) {
+                    slots[index] = Some(Ok(result));
+                }
+            }
+            Ok(results) => {
+                let message = format!(
+                    "native scorer returned {} results for {} jobs",
+                    results.len(),
+                    valid_indices.len()
+                );
+                for index in valid_indices {
+                    slots[index] = Some(Err(JetError::NativeRuntime(message.clone())));
+                }
+            }
+            Err(error) => {
+                let message = error.to_string();
+                for index in valid_indices {
+                    slots[index] = Some(Err(JetError::NativeRuntime(message.clone())));
+                }
+            }
+        }
+
+        slots
+            .into_iter()
+            .map(|slot| {
+                slot.unwrap_or_else(|| {
+                    Err(JetError::NativeRuntime(
+                        "scoring job was not completed".to_owned(),
+                    ))
+                })
+            })
+            .collect()
+    }
+}
+
+impl Drop for LlamaScorer {
+    fn drop(&mut self) {
+        // SAFETY: context was created from model and must be freed before the model.
+        unsafe {
+            sys::llama_free(self.context.as_ptr());
+            sys::llama_model_free(self.model.as_ptr());
+        }
+    }
+}
+
+fn validate_config(config: &EngineConfig) -> Result<()> {
+    if config.model_id.is_empty() {
+        return Err(JetError::InvalidRequest(
+            "model_id must not be empty".to_owned(),
+        ));
+    }
+    if config.context_tokens_per_sequence == 0
+        || config.token_batch == 0
+        || config.micro_batch == 0
+        || config.max_output_rows == 0
+    {
+        return Err(JetError::InvalidRequest(
+            "context and batch limits must be positive".to_owned(),
+        ));
+    }
+    if config.max_sequences < 2 {
+        return Err(JetError::InvalidRequest(
+            "max_sequences must be at least 2".to_owned(),
+        ));
+    }
+    if config.micro_batch > config.token_batch {
+        return Err(JetError::InvalidRequest(
+            "micro_batch must not exceed token_batch".to_owned(),
+        ));
+    }
+    if config.threads <= 0 {
+        return Err(JetError::InvalidRequest(
+            "threads must be positive".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn model_metadata(model: NonNull<sys::llama_model>, key: &str) -> Result<String> {
+    let key = CString::new(key).map_err(|_| {
+        JetError::NativeRuntime("metadata key contains an interior NUL byte".to_owned())
+    })?;
+    let mut output = vec![0_i8; 256];
+    // SAFETY: model/key/output are live for this call.
+    let written = unsafe {
+        sys::llama_model_meta_val_str(
+            model.as_ptr(),
+            key.as_ptr(),
+            output.as_mut_ptr(),
+            output.len(),
+        )
+    };
+    if written < 0 {
+        return Err(JetError::UnsupportedModel(format!(
+            "model metadata is missing {key:?}"
+        )));
+    }
+    // SAFETY: llama.cpp promises NUL termination when the call succeeds.
+    Ok(unsafe { CStr::from_ptr(output.as_ptr()) }
+        .to_string_lossy()
+        .into_owned())
+}
+
+fn template_error(error: &[i8]) -> JetError {
+    let message = if error.first().copied().unwrap_or_default() == 0 {
+        "unknown chat template error".to_owned()
+    } else {
+        // SAFETY: wrapper always NUL-terminates the provided error buffer.
+        unsafe { CStr::from_ptr(error.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    JetError::UnsupportedModel(message)
+}
+
+fn position(value: usize) -> Result<sys::llama_pos> {
+    i32::try_from(value)
+        .map_err(|_| JetError::InvalidRequest("token position exceeds llama.cpp limits".to_owned()))
+}
+
+fn target_log_probability(logits: &[f32], target: sys::llama_token) -> Result<f64> {
+    let target = usize::try_from(target)
+        .map_err(|_| JetError::NativeRuntime(format!("target token ID {target} is negative")))?;
+    let target_logit = logits.get(target).copied().ok_or_else(|| {
+        JetError::NativeRuntime(format!("target token ID {target} exceeds the vocabulary"))
+    })? as f64;
+    let max = logits
+        .iter()
+        .copied()
+        .map(f64::from)
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !max.is_finite() || !target_logit.is_finite() {
+        return Err(JetError::NonFiniteScore(
+            "logits contain a non-finite value".to_owned(),
+        ));
+    }
+    let sum_exp: f64 = logits
+        .iter()
+        .map(|value| (f64::from(*value) - max).exp())
+        .sum();
+    if !sum_exp.is_finite() || sum_exp <= 0.0 {
+        return Err(JetError::NonFiniteScore(
+            "logsumexp normalization failed".to_owned(),
+        ));
+    }
+    Ok(target_logit - (max + sum_exp.ln()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jet_core::normalize_log_probabilities;
+
+    #[test]
+    fn computes_target_log_softmax() -> Result<()> {
+        let value = target_log_probability(&[0.0, 1.0, 2.0], 2)?;
+        let expected = 2.0 - (0.0_f64.exp() + 1.0_f64.exp() + 2.0_f64.exp()).ln();
+        assert!((value - expected).abs() < 1e-12);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires JET_MODEL_PATH pointing to the pinned Qwen3 GGUF"]
+    fn qwen_reference_batch_prefix_sharing_and_recovery() -> Result<()> {
+        let model_path = std::env::var_os("JET_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::qwen3_cpu(model_path);
+        config.context_tokens_per_sequence = 512;
+        config.token_batch = 512;
+        config.micro_batch = 128;
+        config.max_sequences = 4;
+        config.max_output_rows = 512;
+        config.threads = 2;
+        config.execution_mode = ExecutionMode::Reference;
+        let mut scorer = LlamaScorer::load(config)?;
+
+        let compact = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"English 中文 🙂"}"#.to_owned(),
+            targets: vec!["false".to_owned(), "true".to_owned()],
+        };
+        let varied = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: r#"{"allowed_labels":[false,true,0,1,"short","a longer label"],"question":{"criteria":["a","b","c"],"instructions":"Pick one."},"state":{"marker":"\\u003c|im_start|\\u003e"}}"#.to_owned(),
+            targets: vec![
+                "false".to_owned(),
+                "true".to_owned(),
+                "0".to_owned(),
+                "1".to_owned(),
+                "\"short\"".to_owned(),
+                "\"a longer label\"".to_owned(),
+            ],
+        };
+
+        let rendered = scorer.render_prompt(&compact)?;
+        assert!(!rendered.trim_end().ends_with("<think>"));
+        if let Some(open_at) = rendered.find("<think>") {
+            let content_at = open_at + "<think>".len();
+            let close_at = rendered[content_at..]
+                .find("</think>")
+                .map(|offset| content_at + offset)
+                .ok_or_else(|| {
+                    JetError::UnsupportedModel("thinking marker was not closed".to_owned())
+                })?;
+            assert!(rendered[content_at..close_at].trim().is_empty());
+        }
+        scorer.tokenize_jobs(&[compact.clone(), varied.clone()])?;
+
+        let reference = collect_scores(scorer.score_batch(&[compact.clone(), varied.clone()]))?;
+        scorer.config.execution_mode = ExecutionMode::Batched;
+        let batched = collect_scores(scorer.score_batch(&[compact.clone(), varied.clone()]))?;
+        assert_eq!(batched[0].prefill_count, 1);
+        assert_eq!(batched[1].prefill_count, 2);
+        compare_scores(&reference, &batched)?;
+
+        let mut permuted = varied.clone();
+        permuted.targets.reverse();
+        let permutation_result = collect_scores(scorer.score_batch(&[permuted]))?;
+        for (left, right) in batched[1]
+            .log_probabilities
+            .iter()
+            .zip(permutation_result[0].log_probabilities.iter().rev())
+        {
+            assert!((left - right).abs() <= 1e-5 + 1e-4 * 8.0);
+        }
+
+        let long = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: format!(
+                r#"{{"state":"{}","question":"long","allowed_labels":[true,false]}}"#,
+                "word ".repeat(300)
+            ),
+            targets: compact.targets.clone(),
+        };
+        let compact_tokens = scorer.tokenize_jobs(std::slice::from_ref(&compact))?;
+        let compact_limit = compact_tokens[0].prompt.len()
+            + compact_tokens[0]
+                .targets
+                .iter()
+                .map(Vec::len)
+                .max()
+                .unwrap_or(0);
+        scorer.config.context_tokens_per_sequence = u32::try_from(compact_limit).map_err(|_| {
+            JetError::InvalidRequest("compact fixture exceeds u32 context".to_owned())
+        })?;
+        let isolated = scorer.score_batch(&[long, compact.clone()]);
+        assert!(matches!(
+            isolated.first(),
+            Some(Err(JetError::ContextExceeded { .. }))
+        ));
+        assert!(matches!(isolated.get(1), Some(Ok(_))));
+        let reused = scorer.score_batch(&[compact]);
+        assert!(matches!(reused.first(), Some(Ok(_))));
+        Ok(())
+    }
+
+    fn collect_scores(results: Vec<Result<ScoreResult>>) -> Result<Vec<ScoreResult>> {
+        results.into_iter().collect()
+    }
+
+    fn compare_scores(reference: &[ScoreResult], batched: &[ScoreResult]) -> Result<()> {
+        if reference.len() != batched.len() {
+            return Err(JetError::NativeRuntime(
+                "reference and batched result lengths differ".to_owned(),
+            ));
+        }
+        for (reference, batched) in reference.iter().zip(batched) {
+            for ((reference_logp, batched_logp), token_count) in reference
+                .log_probabilities
+                .iter()
+                .zip(&batched.log_probabilities)
+                .zip(&reference.target_token_counts)
+            {
+                let tolerance = 1e-5 + 1e-4 * *token_count as f64;
+                assert!(
+                    (reference_logp - batched_logp).abs() <= tolerance,
+                    "reference={reference_logp}, batched={batched_logp}, tokens={token_count}, tolerance={tolerance}"
+                );
+            }
+            let reference_probabilities =
+                normalize_log_probabilities(&reference.log_probabilities)?;
+            let batched_probabilities = normalize_log_probabilities(&batched.log_probabilities)?;
+            for (reference, batched) in reference_probabilities.iter().zip(batched_probabilities) {
+                assert!(
+                    (reference.normalized_probability - batched.normalized_probability).abs()
+                        <= 1e-5
+                );
+            }
+        }
+        Ok(())
+    }
+}

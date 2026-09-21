@@ -1,0 +1,2 @@
+{"state":{"ticket":"Login fails for all users","locale":"中文"},"questions":{"urgent":{"type":"noul","instructions":"Is this urgent?"},"owner":{"type":"choice","instructions":"Choose the owner","criteria":{"app":"Application team","infra":"Infrastructure team"}},"severity":{"type":"score","instructions":"Rate severity","criteria":["low","medium","high"]}}}
+{"state":["alpha","βeta","🙂"],"questions":{"pick":{"type":"choice","instructions":{"task":"Choose one"},"criteria":{"a":"first","long-label":"second"}}}}

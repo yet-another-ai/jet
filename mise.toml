@@ -1,0 +1,21 @@
+[tools]
+cmake = "latest"
+node = "24"
+pnpm = "latest"
+rust = { version = "1.98", channel = "stable", components = "rustfmt,clippy" }
+apm = "latest"
+lefthook = "latest"
+glab = "latest"
+
+[tools."http:llvm"]
+version = "22.1.8"
+os = ["linux", "windows"]
+strip_components = 1
+
+[tools."http:llvm".platforms]
+linux-x64 = { url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-Linux-X64.tar.xz", checksum = "sha256:df0e1ecf16caf3489a272a5eea4eec9b0d82878f6477fa309504f918a0006384" }
+linux-arm64 = { url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-Linux-ARM64.tar.xz", checksum = "sha256:805efad2bb91cb4967fa569e0881d10c0f69c04461cf671cccbae19f547acc34" }
+windows-x64 = { url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz", checksum = "sha256:d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234" }
+
+[settings]
+lockfile = true

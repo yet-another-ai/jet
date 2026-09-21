@@ -1,0 +1,21 @@
+[package]
+name = "jet-llama-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+links = "jet_llama"
+build = "build.rs"
+publish = false
+
+[features]
+generate-bindings = ["dep:bindgen"]
+
+[build-dependencies]
+bindgen = { version = "0.72", optional = true }
+cc = "1"
+cmake = "0.1"
+
+[lints]
+workspace = true
