@@ -45,7 +45,28 @@ The target-gather run produced no top-1 changes relative to the full-row GPU sof
 541 examples. The maximum absolute candidate-probability difference was `7.1e-8` and the mean was
 `4.5e-9`.
 
-The backend results are not bit-identical. Fourteen of 541 top-1 predictions changed: seven moved
+## 256-token bounded-thinking comparison
+
+The same Vulkan target-gather build was also run with `--thinking required --thinking-tokens 256`.
+The quota is an upper bound: measured as additional output tokens relative to the disabled run,
+reasoning plus protocol closure averaged 127.7 tokens, had a median of 129, and ranged from 64 to
+129. The model therefore closed its reasoning naturally before reaching the configured maximum on
+every example.
+
+| Thinking | Wall time | Requests/s | Overall | BoolQ | MMLU | Mean gold NLL |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Disabled | 69.51 s | 7.78 | 255/541 (47.13%) | 142/256 (55.47%) | 113/285 (39.65%) | 2.0977 |
+| Required, quota 256 | 644.23 s | 0.84 | 273/541 (50.46%) | 167/256 (65.23%) | 106/285 (37.19%) | 2.2883 |
+
+Thinking improved overall accuracy by 18 examples, or 3.33 percentage points, but the effect was
+not uniform. BoolQ gained 25 correct answers (+9.77 points), while MMLU lost 7 (-2.46 points).
+Among 118 changed top-1 predictions, 58 moved from wrong to correct and 40 from correct to wrong;
+the dataset splits were 39/14 for BoolQ and 19/26 for MMLU. Mean gold NLL worsened on both datasets
+and mean confidence increased from 0.8033 to 0.8737, indicating stronger but less well-calibrated
+predictions. End-to-end wall time increased by 9.27x.
+
+The disabled-thinking CPU and Vulkan backend results are not bit-identical. Fourteen of 541 top-1
+predictions changed: seven moved
 from wrong to correct, four from correct to wrong, and three remained wrong. Across reported
 candidate probabilities, the median absolute difference was 0.0042, the 95th percentile was
 0.0667, and the maximum was 0.2998. Overall top-1 accuracy therefore did not decline in this run,
