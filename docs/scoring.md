@@ -21,20 +21,32 @@ exhausted. Thinking uses configurable temperature, top-k, top-p, and seed values
 trace is generated once per question and then frozen; all candidate scores are conditional on that
 same trace.
 
-The user message is canonical JSON containing `state`, `question.instructions`, every criterion,
-and `allowed_labels`. Object keys are sorted, array order is retained, and text that resembles a
-special token is JSON-escaped before tokenization.
+The JSONL request is only Jet's external API. Before tokenization, Jet uses Tera to render each
+question as a human-readable user message with explicit `Context`, `Instruction`, and `Candidate
+answers` sections. Structured objects are rendered with sorted keys, arrays retain their input
+order, and text that resembles a special token is escaped before it reaches the model template.
+The system and user messages define the same concise output contract: return one quoted candidate
+exactly as listed, with no explanation, whitespace, or extra text. The user message does not append
+an `Answer:` completion cue; the model's embedded chat template supplies the only assistant boundary.
 
 Candidates are scored as continuations of the rendered assistant prefix:
 
-- `noul`: the JSON scalars `false` and `true`;
-- `choice`: each choice key encoded as a JSON string;
-- `score`: zero-based JSON integer indices.
+- `noul`: the semantic false/true descriptions, defaulting to `"No"` and `"Yes"`;
+- `choice`: each criterion's semantic value;
+- `score`: each score level's semantic description.
+
+Each semantic candidate is encoded as a quoted JSON string for an unambiguous answer boundary.
+After scoring, Jet maps the winning semantic continuation back to the public API representation:
+`false`/`true`, the original choice key, or the zero-based score index. Two candidates that render
+to the same semantic continuation are rejected instead of being counted twice.
 
 The score is the sum of each candidate token's log-probability. The first release does not score
 an end-of-turn token and does not apply length normalization, temperature, or sampling. Therefore,
 candidate token length affects raw sequence likelihood. Returned probabilities are normalized only
 within the question's candidate set; they are not calibrated correctness probabilities.
+The explicit output contract reduces probability mass assigned to unrelated chat continuations,
+but cannot eliminate it. Jet's normalized result remains conditional on the configured candidate
+set and must not be interpreted as the candidate's absolute probability over the full vocabulary.
 
 The optimized executor prefills a question prefix, including its frozen reasoning when enabled,
 once when all its candidates fit the configured sequence budget, copies that sequence's memory, and

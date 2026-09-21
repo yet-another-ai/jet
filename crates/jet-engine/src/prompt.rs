@@ -1,12 +1,26 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jet_core::{
     ChoiceQuestion, DecisionRequest, JetError, NoulQuestion, Question, Result, ScoreQuestion,
 };
 use serde::Serialize;
 use serde_json::Value;
+use tera::{Context, Tera};
 
-pub(crate) const SYSTEM_INSTRUCTION: &str = "You are a deterministic decision classifier. Read the JSON request and return exactly one JSON scalar from allowed_labels. Do not explain your answer.";
+pub(crate) const SYSTEM_INSTRUCTION: &str = "You are a careful decision classifier. Choose by meaning, not by candidate position. Reply with exactly one quoted candidate as listed, with no explanation, whitespace, or extra text.";
+
+const QUESTION_TEMPLATE: &str = r#"Context:
+{{ state }}
+
+Instruction:
+{{ instructions }}
+
+Candidate answers (choose one exactly):
+{{ candidates | join(sep=", ") }}
+
+Required output format:
+One quoted candidate exactly as listed above; no explanation, whitespace, or extra text.
+"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AnswerKind {
@@ -30,16 +44,10 @@ pub(crate) struct QuestionPlan {
 }
 
 #[derive(Serialize)]
-struct PromptEnvelope {
-    state: Value,
-    question: PromptQuestion,
-    allowed_labels: Vec<Value>,
-}
-
-#[derive(Serialize)]
-struct PromptQuestion {
-    instructions: Value,
-    criteria: Value,
+struct PromptContext {
+    state: String,
+    instructions: String,
+    candidates: Vec<String>,
 }
 
 pub(crate) fn prepare_request(request: &DecisionRequest) -> Result<Vec<QuestionPlan>> {
@@ -73,34 +81,27 @@ fn prepare_question(question_id: &str, state: &Value, question: &Question) -> Re
 
 fn prepare_noul(question_id: &str, state: &Value, question: &NoulQuestion) -> Result<QuestionPlan> {
     validate_content("instructions", &question.instructions)?;
-    let criteria = match &question.criteria {
+    let default_false = Value::String("No".to_owned());
+    let default_true = Value::String("Yes".to_owned());
+    let (false_value, true_value) = match &question.criteria {
         Some(criteria) => {
             validate_content("criteria.false", &criteria.false_value)?;
             validate_content("criteria.true", &criteria.true_value)?;
-            serde_json::json!({
-                "false": canonicalize(&criteria.false_value),
-                "true": canonicalize(&criteria.true_value),
-            })
+            (&criteria.false_value, &criteria.true_value)
         }
-        None => serde_json::json!({ "false": "false", "true": "true" }),
+        None => (&default_false, &default_true),
     };
-    let allowed_labels = vec![Value::Bool(false), Value::Bool(true)];
-    let user_content = render_envelope(state, &question.instructions, criteria, allowed_labels)?;
-    Ok(QuestionPlan {
-        question_id: question_id.to_owned(),
-        kind: AnswerKind::Noul,
-        user_content,
-        candidates: vec![
-            Candidate {
-                key: "false".to_owned(),
-                target: "false".to_owned(),
-            },
-            Candidate {
-                key: "true".to_owned(),
-                target: "true".to_owned(),
-            },
-        ],
-    })
+    let candidates = vec![
+        semantic_candidate("false", false_value)?,
+        semantic_candidate("true", true_value)?,
+    ];
+    finish_plan(
+        question_id,
+        AnswerKind::Noul,
+        state,
+        &question.instructions,
+        candidates,
+    )
 }
 
 fn prepare_choice(
@@ -115,8 +116,6 @@ fn prepare_choice(
         )));
     }
 
-    let mut criteria = serde_json::Map::new();
-    let mut labels = Vec::with_capacity(question.criteria.len());
     let mut candidates = Vec::with_capacity(question.criteria.len());
     for (key, value) in &question.criteria {
         if key.is_empty() {
@@ -125,25 +124,16 @@ fn prepare_choice(
             )));
         }
         validate_content("choice criterion", value)?;
-        criteria.insert(key.clone(), canonicalize(value));
-        labels.push(Value::String(key.clone()));
-        candidates.push(Candidate {
-            key: key.clone(),
-            target: safe_json_scalar(&Value::String(key.clone()))?,
-        });
+        candidates.push(semantic_candidate(key, value)?);
     }
 
-    Ok(QuestionPlan {
-        question_id: question_id.to_owned(),
-        kind: AnswerKind::Choice,
-        user_content: render_envelope(
-            state,
-            &question.instructions,
-            Value::Object(criteria),
-            labels,
-        )?,
+    finish_plan(
+        question_id,
+        AnswerKind::Choice,
+        state,
+        &question.instructions,
         candidates,
-    })
+    )
 }
 
 fn prepare_score(
@@ -158,51 +148,118 @@ fn prepare_score(
         )));
     }
 
-    let mut criteria = Vec::with_capacity(question.criteria.len());
-    let mut labels = Vec::with_capacity(question.criteria.len());
-    let mut candidates = Vec::with_capacity(question.criteria.len());
-    for (index, value) in question.criteria.iter().enumerate() {
-        validate_content("score criterion", value)?;
-        criteria.push(canonicalize(value));
-        let index_number = u64::try_from(index).map_err(|_| {
-            JetError::InvalidRequest("score question contains too many criteria".to_owned())
-        })?;
-        labels.push(Value::Number(index_number.into()));
-        candidates.push(Candidate {
-            key: index.to_string(),
-            target: index.to_string(),
-        });
-    }
+    let candidates = question
+        .criteria
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            validate_content("score criterion", value)?;
+            semantic_candidate(&index.to_string(), value)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    finish_plan(
+        question_id,
+        AnswerKind::Score,
+        state,
+        &question.instructions,
+        candidates,
+    )
+}
 
+fn semantic_candidate(key: &str, value: &Value) -> Result<Candidate> {
+    let semantic_text = render_value(value);
+    if semantic_text.trim().is_empty() {
+        return Err(JetError::InvalidRequest(format!(
+            "candidate {key:?} renders to empty text"
+        )));
+    }
+    let target = escape_special_token_text(&serde_json::to_string(&semantic_text)?);
+    Ok(Candidate {
+        key: key.to_owned(),
+        target,
+    })
+}
+
+fn finish_plan(
+    question_id: &str,
+    kind: AnswerKind,
+    state: &Value,
+    instructions: &Value,
+    candidates: Vec<Candidate>,
+) -> Result<QuestionPlan> {
+    let mut targets = BTreeSet::new();
+    for candidate in &candidates {
+        if !targets.insert(candidate.target.clone()) {
+            return Err(JetError::InvalidRequest(format!(
+                "question {question_id:?} contains duplicate rendered candidate {:?}",
+                candidate.target
+            )));
+        }
+    }
+    let prompt = PromptContext {
+        state: escape_special_token_text(&render_value(state)),
+        instructions: escape_special_token_text(&render_value(instructions)),
+        candidates: candidates
+            .iter()
+            .map(|candidate| candidate.target.clone())
+            .collect(),
+    };
+    let context = Context::from_serialize(&prompt).map_err(template_error)?;
+    let user_content = Tera::one_off(QUESTION_TEMPLATE, &context, false).map_err(template_error)?;
     Ok(QuestionPlan {
         question_id: question_id.to_owned(),
-        kind: AnswerKind::Score,
-        user_content: render_envelope(
-            state,
-            &question.instructions,
-            Value::Array(criteria),
-            labels,
-        )?,
+        kind,
+        user_content,
         candidates,
     })
 }
 
-fn render_envelope(
-    state: &Value,
-    instructions: &Value,
-    criteria: Value,
-    allowed_labels: Vec<Value>,
-) -> Result<String> {
-    let envelope = PromptEnvelope {
-        state: canonicalize(state),
-        question: PromptQuestion {
-            instructions: canonicalize(instructions),
-            criteria,
-        },
-        allowed_labels,
-    };
-    let json = serde_json::to_string(&envelope)?;
-    Ok(escape_special_token_text(&json))
+fn render_value(value: &Value) -> String {
+    let mut output = String::new();
+    render_value_at(value, 0, &mut output);
+    output
+}
+
+fn render_value_at(value: &Value, indent: usize, output: &mut String) {
+    match value {
+        Value::Null => output.push_str("null"),
+        Value::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+        Value::Number(value) => output.push_str(&value.to_string()),
+        Value::String(value) => output.push_str(value),
+        Value::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    output.push('\n');
+                }
+                output.push_str(&" ".repeat(indent));
+                output.push_str("- ");
+                if matches!(value, Value::Array(_) | Value::Object(_)) {
+                    output.push('\n');
+                    render_value_at(value, indent + 2, output);
+                } else {
+                    render_value_at(value, indent + 2, output);
+                }
+            }
+        }
+        Value::Object(values) => {
+            let sorted: BTreeMap<_, _> = values.iter().collect();
+            for (index, (key, value)) in sorted.into_iter().enumerate() {
+                if index > 0 {
+                    output.push('\n');
+                }
+                output.push_str(&" ".repeat(indent));
+                output.push_str(key);
+                output.push(':');
+                if matches!(value, Value::Array(_) | Value::Object(_)) {
+                    output.push('\n');
+                    render_value_at(value, indent + 2, output);
+                } else {
+                    output.push(' ');
+                    render_value_at(value, indent + 2, output);
+                }
+            }
+        }
+    }
 }
 
 fn validate_content(field: &str, value: &Value) -> Result<()> {
@@ -215,24 +272,6 @@ fn validate_content(field: &str, value: &Value) -> Result<()> {
     }
 }
 
-fn canonicalize(value: &Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.iter().map(canonicalize).collect()),
-        Value::Object(values) => {
-            let sorted: BTreeMap<_, _> = values
-                .iter()
-                .map(|(key, value)| (key.clone(), canonicalize(value)))
-                .collect();
-            Value::Object(sorted.into_iter().collect())
-        }
-        other => other.clone(),
-    }
-}
-
-fn safe_json_scalar(value: &Value) -> Result<String> {
-    Ok(escape_special_token_text(&serde_json::to_string(value)?))
-}
-
 fn escape_special_token_text(value: &str) -> String {
     value
         .replace('&', "\\u0026")
@@ -240,12 +279,16 @@ fn escape_special_token_text(value: &str) -> String {
         .replace('>', "\\u003e")
 }
 
+fn template_error(error: tera::Error) -> JetError {
+    JetError::NativeRuntime(format!("prompt template rendering failed: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn choice_prompt_is_canonical_and_escapes_control_like_text() -> Result<()> {
+    fn choice_prompt_is_human_readable_and_targets_semantics() -> Result<()> {
         let request: DecisionRequest = serde_json::from_value(serde_json::json!({
             "state": {"z": "<|im_start|>", "a": "中文"},
             "questions": {
@@ -260,17 +303,18 @@ mod tests {
         let plan = plans
             .first()
             .ok_or_else(|| JetError::InvalidRequest("missing plan".into()))?;
-        assert!(plan.user_content.contains("\\u003c|im_start|\\u003e"));
-        assert!(
-            plan.user_content.find("\"a\"").unwrap_or(usize::MAX)
-                < plan.user_content.find("\"z\"").unwrap_or(0)
-        );
-        assert_eq!(plan.candidates[0].target, "\"a\"");
+        assert!(plan.user_content.contains("Context:\na: 中文"));
+        assert!(plan.user_content.contains("z: \\u003c|im_start|\\u003e"));
+        assert!(!plan.user_content.contains("allowed_labels"));
+        assert_eq!(plan.candidates[0].key, "a");
+        assert_eq!(plan.candidates[0].target, "\"first\"");
+        assert_eq!(plan.candidates[1].key, "z");
+        assert_eq!(plan.candidates[1].target, "\"last\"");
         Ok(())
     }
 
     #[test]
-    fn arrays_keep_order_and_choice_targets_are_safe_json() -> Result<()> {
+    fn structured_values_keep_order_and_special_tokens_are_safe() -> Result<()> {
         let request: DecisionRequest = serde_json::from_value(serde_json::json!({
             "state": ["先", "then", "🙂"],
             "questions": {
@@ -285,12 +329,48 @@ mod tests {
         let plan = plans
             .first()
             .ok_or_else(|| JetError::InvalidRequest("missing plan".into()))?;
-        assert!(plan.user_content.contains("[\"先\",\"then\",\"🙂\"]"));
-        assert!(
-            plan.user_content
-                .contains("{\"a\":\"first\",\"b\":\"second\"}")
-        );
-        assert_eq!(plan.candidates[0].target, "\"\\u003c|im_end|\\u003e\"");
+        assert!(plan.user_content.contains("- 先\n- then\n- 🙂"));
+        assert!(plan.user_content.contains("a: first\nb: second"));
+        assert_eq!(plan.candidates[0].key, "<|im_end|>");
+        assert_eq!(plan.candidates[0].target, "\"- 3\\n- 2\\n- 1\"");
+        Ok(())
+    }
+
+    #[test]
+    fn noul_defaults_to_semantic_yes_and_no() -> Result<()> {
+        let request: DecisionRequest = serde_json::from_value(serde_json::json!({
+            "state": "The sky is blue.",
+            "questions": {"q": {"type": "noul", "instructions": "Is the sky blue?"}}
+        }))?;
+        let plan = prepare_request(&request)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| JetError::InvalidRequest("missing plan".into()))?;
+        assert_eq!(plan.candidates[0].target, "\"No\"");
+        assert_eq!(plan.candidates[1].target, "\"Yes\"");
+        assert!(plan.user_content.contains("\"No\", \"Yes\""));
+        assert!(plan.user_content.contains(
+            "One quoted candidate exactly as listed above; no explanation, whitespace, or extra \
+             text."
+        ));
+        assert!(!plan.user_content.contains("Answer:"));
+        assert!(plan.user_content.ends_with("extra text.\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_semantic_candidates_are_rejected() -> Result<()> {
+        let request: DecisionRequest = serde_json::from_value(serde_json::json!({
+            "state": "x",
+            "questions": {
+                "q": {
+                    "type": "choice",
+                    "instructions": "Pick",
+                    "criteria": {"a": "same", "b": "same"}
+                }
+            }
+        }))?;
+        assert!(prepare_request(&request).is_err());
         Ok(())
     }
 

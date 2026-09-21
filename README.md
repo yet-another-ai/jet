@@ -8,6 +8,10 @@ command-line interface. It does not provide HTTP serving, GPU/NPU execution, or 
 generation. An optional bounded thinking stage can run before candidate scoring when the model's
 embedded chat template exposes a supported reasoning protocol.
 
+JSON is the external API, not the model prompt. Jet renders each question through a Tera template
+into human-readable context, instruction, and semantic candidate sections. It scores those semantic
+answers and maps the winner back to the original boolean, choice key, or score index.
+
 ## Build
 
 Initialize the pinned llama.cpp submodule and install the toolchain:
@@ -64,4 +68,6 @@ Successful lines contain only `model`, `answers`, and `usage`. Failed lines have
 any line fails.
 
 See [docs/scoring.md](docs/scoring.md) for scoring semantics and
-[docs/development.md](docs/development.md) for validation commands.
+[docs/development.md](docs/development.md) for validation commands. The reproducible BoolQ/MMLU
+accuracy workflow is documented in [tests/accuracy/README.md](tests/accuracy/README.md); downloaded
+datasets and derived evaluation files are excluded from Git.

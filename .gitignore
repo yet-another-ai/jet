@@ -1,5 +1,7 @@
 /target/
 /models/
+/tests/accuracy/data/
+/tests/accuracy/generated/
+__pycache__/
 *.gguf
 .DS_Store
-

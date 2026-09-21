@@ -130,14 +130,14 @@ normalized_probability[i]
 
 当前 Decisions prompt 行为：
 
-1. 固定 system 指令要求只返回 `allowed_labels` 中的一个 JSON scalar。
-2. user 消息是 canonical JSON，包含 `state`、`question.instructions`、全部 `criteria` 和 `allowed_labels`；对象 key 排序，数组保留原顺序。
+1. 固定 system instruction 要求按语义选择；完整响应必须是候选列表中一个原样复制的带引号答案，禁止解释、前后空白或额外文本。user prompt 末尾用一行重复同一输出契约，但不手写 `Answer:`；模型内置 chat template 生成唯一的 assistant 边界。
+2. 外部 JSON 只作为 API；Tera 将 `state`、`question.instructions` 和候选语义展开为带 `Context`、`Instruction`、`Candidate answers` 分区的自然语言 user prompt。对象 key 排序，数组保留原顺序。
 3. 用经过验证的模型 chat template 生成 assistant 回答开始前的共同前缀。
-4. 将 `noul` 的 `false`/`true`、`choice` key 的 JSON string 或 `score` 的零基整数作为 assistant 候选续写。
+4. 将 criterion 语义文本（`noul` 缺省为 `No`/`Yes`）作为带引号的 assistant 候选续写，评分完成后反向映射为 `false`/`true`、`choice` key 或 `score` 零基索引。
 
 启用 thinking 时，模板首先渲染 reasoning 起点；引擎在 token 预算内生成一份 reasoning，使用同一模板的 `reasoning_content` continuation 进入最终答案区，然后把所得完整 token 前缀作为所有候选的共同条件。不同模型的起止 tag、channel 和 final transition 必须来自模板协议，不能统一拼接 `<think>`/`</think>`。
 
-由于当前 prompt 包含全部 criteria 和 allowed labels，增删或改写候选会改变共同条件，原有候选的原始分数也可能变化；这与仅改变 softmax 分母的 closed-set 后处理不同，必须在评分语义和测试中明确保留。
+由于当前 prompt 包含全部候选语义，增删或改写候选会改变共同条件，原有候选的原始分数也可能变化；这与仅改变 softmax 分母的 closed-set 后处理不同，必须在评分语义和测试中明确保留。
 
 记录模板内容哈希、system 指令/配置标识、tokenizer/模型标识、评分契约版本及终止策略。禁止使用字符串拼接模拟所有模型的 chat template。
 
@@ -500,7 +500,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 | 资源边界 | context 超限、sequence 上限、输出内存上限、拆批重试、设备不足、禁止隐式截断 |
 | 跨平台 | 同权重/量化/token 在 CPU、CUDA、Metal 的逐 token/序列/归一化误差 |
 
-当前 prompt 包含完整候选定义和 `allowed_labels`，所以候选增删、改写或重排可能改变共同条件及原始分数。候选置换测试应分别验证 ID/结果映射与稳定顺序；只有序列化后的完整 prompt 和冻结 thinking trace 都相同时，才能把原始分数相等作为 reference/batched 或分波一致性的断言。精确同分时 `best_option_id` 的稳定顺序规则单独测试。
+当前 Tera prompt 包含完整候选语义，所以候选增删、改写或重排可能改变共同条件及原始分数。候选置换测试应分别验证 key/结果反向映射与稳定顺序；只有渲染后的完整 prompt 和冻结 thinking trace 都相同时，才能把原始分数相等作为 reference/batched 或分波一致性的断言。精确同分时 `best_option_id` 的稳定顺序规则单独测试。
 
 数值验收：
 
