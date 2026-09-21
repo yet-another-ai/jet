@@ -2,7 +2,33 @@
 
 更新日期：2026-09-21
 
-状态：开发前的实施基线；本文不表示相关功能已经实现或性能已经验证。
+状态：持续路线图。首轮 CPU Decisions Engine 已实现并通过本地验收；GPU、在线调度、性能优化和发行工程等后续工作仍保留在本文中，未完成项不视为已经验证。
+
+## 0. 当前实现快照
+
+截至 2026-09-21，仓库已经完成一个可运行的 CPU-only Decisions Engine 基线。它是下文长期路线图的第一轮落地，不代表整个计划已经完成。
+
+已完成：
+
+- Rust 1.98 / Edition 2024 workspace：`jet-core`、`jet-llama-sys`、`jet-engine`、`jet-cli`。
+- Decisions 风格的 `noul`、`choice`、`score` 请求/响应；请求明确不接受 `model` 字段。
+- `Engine::load`、`Engine::decide`、`Engine::decide_batch` Rust API 和 `jet judge` JSONL CLI。
+- continuation-only teacher-forced scoring、逐候选 reference path、原生多序列 batch、同题 prompt 前缀复用和按 sequence/output 预算分波。
+- GGUF 内置 Jinja chat template，固定 `enable_thinking=false`；不支持 thinking 内容或自由文本生成。
+- llama.cpp `v0.4.1` / commit `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`。
+- 固定测试模型 `Qwen/Qwen3-0.6B-GGUF` revision `23749fefcc72300e3a2ad315e1317431b06b590a`、`Qwen3-0.6B-Q8_0.gguf`，SHA-256 `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031`。
+- 与固定 llama.cpp commit 匹配的 bindings 已检入；普通构建不加载 libclang。`mise.toml` 通过 `[tools."http:llvm"]` 直接使用 LLVM GitHub release，仅在显式 `generate-bindings` 时需要。
+- format、Clippy、纯单元测试、固定模型集成测试和 CLI golden test 已通过；清空 `LIBCLANG_PATH`、`LD_LIBRARY_PATH` 后原始 CLI 命令可直接运行。
+
+当前尚未完成：
+
+- CUDA、Metal 和其他硬件后端的构建与真实设备验收。
+- 在线有界队列、最大等待时间、取消、超时、背压和跨请求缓存。
+- 设备端 logits 归约、候选 trie 复用和基于 profile 的吞吐优化。
+- 完整 CI、发行包、跨平台支持矩阵、性能基准和任务准确率/校准评估。
+- HTTP/gRPC 服务、多 GPU 和分布式执行。
+
+当前已实现的 Decisions API 是首轮对外契约；下文部分较早的通用 `JudgementRequest`/`options` 草案保留为长期设计背景，不表示要覆盖或隐式改变现有接口。后续若统一两者，应通过单独的 API 设计和兼容性评审完成。
 
 ## 1. 项目定位与目标
 
@@ -330,42 +356,42 @@ jet bench --model <model.gguf> --workload <workload.json>
 
 ## 10. 实施阶段与完成条件
 
-### P0：冻结评分契约与参考数据
+### P0：冻结评分契约与参考数据（部分完成）
 
-- [ ] 将第 3–4 节细化为 `docs/scoring.md`，固定默认 prompt、终止和错误策略。
-- [ ] 选择一个允许本地分发/下载的小型 Chat 模型作为 CPU/开发 fixture，再选择一个代表性较大模型用于 GPU 性能验证。
-- [ ] 记录模型来源、revision、文件哈希、量化、tokenizer/template、许可和下载方式；权重不提交 Git。
-- [ ] 固定 llama.cpp commit，核对所需 C API 与三种后端的可用性。
+- [x] 将首轮已实现的评分语义细化为 `docs/scoring.md`，固定 prompt、continuation 终止和错误策略。
+- [x] 选择 Qwen3-0.6B Q8_0 作为 CPU/开发 fixture；较大 GPU 性能模型仍待选择。
+- [x] 记录 CPU fixture 的来源、revision、文件哈希、量化和下载方式；权重不提交 Git。
+- [x] 固定 llama.cpp commit，并核对首轮 CPU 路径所需 C API；CUDA/Metal 能力仍待验收。
 - [ ] 准备小型标注判断集及分词/边界 fixture，分开衡量评分实现正确性与判断任务准确率。
 
 完成条件：任一 fixture 都能明确列出共同 prompt tokens、计分 tokens、结束策略和预期行为；不存在尚未定义的隐式长度处理或候选归一化方式。
 
-### P1：CPU 单候选正确性基线
+### P1：CPU 单候选正确性基线（核心路径完成）
 
-- [ ] 建立 Cargo workspace、模型加载、模板/分词准备和错误类型。
-- [ ] 实现安全 logits 读取、单序列 teacher forcing、数值稳定归约。
-- [ ] 实现逐候选参考执行、逐问题归一化和最小 CLI。
+- [x] 建立 Cargo workspace、模型加载、模板/分词准备和错误类型。
+- [x] 实现安全 logits 读取、单序列 teacher forcing、数值稳定归约。
+- [x] 实现逐候选参考执行、逐问题归一化和最小 CLI。
 - [ ] 完成可手算归约、首 token 对齐、结束符、重复/重叠候选等测试。
 - [ ] 在条件允许时用独立参考实现核对同模型同 token 序列；量化不同的结果只能做质量对照，不能当作严格相等的 oracle。
 
 完成条件：本地 CPU 可完成端到端 judge；原始 token 分数和聚合分数有可追踪验证；无需 sampling 或自由文本生成。
 
-### P2：多序列批量评分
+### P2：多序列批量评分（核心路径完成）
 
-- [ ] 实现原生 batch 的 position/sequence/logits 标志及输出行映射。
-- [ ] 支持一个问题的多候选和多个问题的合批，先不依赖共享前缀优化。
-- [ ] 独立配置 token batch、microbatch、sequence 数和输出内存上限。
+- [x] 实现原生 batch 的 position/sequence/logits 标志及输出行映射。
+- [x] 支持一个问题的多候选和多个问题的合批，并保留独立 reference path 对照。
+- [x] 独立配置 token batch、microbatch、sequence 数和输出内存上限。
 - [ ] 覆盖变长、拆批、尾批、取消/错误清理和稳定结果顺序。
-- [ ] 与 P1 对照原始分数，建立批大小变化的误差报告。
+- [x] 与 P1 reference path 对照原始分数，并固定累计分数与归一化概率容差。
 
 完成条件：不同 batch/分块策略下的分数在规定容差内一致，候选之间无状态泄漏，内存有界。
 
-### P3：共同前缀复用与调度
+### P3：共同前缀复用与调度（前缀复用完成，在线调度未开始）
 
-- [ ] 实现每问题 prompt 一次 prefill，以及安全的候选状态分叉。
-- [ ] 正确保存首目标 token 所需的前缀末尾信息。
+- [x] 在候选可放入单组 sequence 预算时实现每问题 prompt 一次 prefill，以及安全的候选状态分叉。
+- [x] 正确保存并立即归约首目标 token 所需的前缀末尾 logits。
 - [ ] 增加有界队列、按预算组批、在线最大等待时间和离线连续处理。
-- [ ] 实现资源不足时的可恢复拆批，候选失败时整题失败。
+- [x] 实现 sequence/output 预算下的可恢复分波，不截断输入；候选失败时所属请求失败。
 - [ ] 加入前缀处理计数、缓存/共享情况和阶段耗时等观测。
 
 完成条件：与无共享 P2 的每个候选原始分数一致；共享前缀实际计算次数可验证；取消和请求复用无旧 KV 残留。
