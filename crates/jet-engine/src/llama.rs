@@ -105,6 +105,8 @@ pub(crate) struct LlamaScorer {
     score_samplers: Vec<NonNull<sys::llama_sampler>>,
     device_softmax: bool,
     device_target_width: usize,
+    candidate_capacity: usize,
+    isolate_candidate_groups: bool,
     _single_threaded: PhantomData<Rc<()>>,
 }
 
@@ -168,7 +170,21 @@ impl LlamaScorer {
             config.backend == Backend::Vulkan && config.execution_mode == ExecutionMode::Batched;
         let needs_generation_context =
             device_softmax && config.thinking.mode != ThinkingMode::Disabled;
-        let device_target_width = (config.max_sequences as usize).saturating_sub(1);
+        // llama.cpp can copy a hybrid/recurrent prefix to multiple sequence IDs, but advancing
+        // multiple sequence groups in the same decode changes their recurrent results. Keep each
+        // candidate group in its own wave. Pure KV-cache models retain shared-prefix fan-out and
+        // cross-question batching.
+        // SAFETY: model is live for the duration of the scorer.
+        let isolates_candidate_forks = unsafe {
+            sys::llama_model_is_recurrent(model.as_ptr())
+                || sys::llama_model_is_hybrid(model.as_ptr())
+        };
+        let candidate_capacity = if isolates_candidate_forks {
+            1
+        } else {
+            (config.max_sequences as usize).saturating_sub(1)
+        };
+        let device_target_width = candidate_capacity;
         let total_context = config
             .context_tokens_per_sequence
             .checked_mul(config.max_sequences)
@@ -319,6 +335,8 @@ impl LlamaScorer {
             score_samplers,
             device_softmax,
             device_target_width,
+            candidate_capacity,
+            isolate_candidate_groups: isolates_candidate_forks,
             _single_threaded: PhantomData,
         })
     }
@@ -772,7 +790,7 @@ impl LlamaScorer {
     }
 
     fn score_batched(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
-        let candidate_capacity = (self.config.max_sequences as usize).saturating_sub(1);
+        let candidate_capacity = self.candidate_capacity;
         let mut groups = Vec::new();
         for (job_index, job) in jobs.iter().enumerate() {
             for candidate_start in (0..job.targets.len()).step_by(candidate_capacity) {
@@ -788,6 +806,10 @@ impl LlamaScorer {
         let mut current = Vec::new();
         let mut sequences_used = 0_usize;
         for group in groups {
+            if self.isolate_candidate_groups {
+                waves.push(vec![group]);
+                continue;
+            }
             let needed = 1 + group.candidate_end - group.candidate_start;
             if sequences_used + needed > self.config.max_sequences as usize && !current.is_empty() {
                 waves.push(std::mem::take(&mut current));
@@ -1612,6 +1634,42 @@ mod tests {
                 .all(|value| value.is_finite())
         );
         Ok(())
+    }
+
+    #[cfg(feature = "vulkan")]
+    #[test]
+    #[ignore = "requires JET_QWEN35_MODEL_PATH and a working Vulkan device"]
+    fn qwen35_hybrid_batch_matches_reference() -> Result<()> {
+        let model_path = std::env::var_os("JET_QWEN35_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_QWEN35_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::vulkan(model_path, "qwen/qwen3.5");
+        config.context_tokens_per_sequence = 512;
+        config.token_batch = 512;
+        config.micro_batch = 128;
+        config.max_sequences = 5;
+        config.max_output_rows = 128;
+        config.threads = 2;
+        config.execution_mode = ExecutionMode::Reference;
+        let mut scorer = LlamaScorer::load(config)?;
+        assert_eq!(scorer.candidate_capacity, 1);
+
+        let job = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: "State:\nFind the maximum possible order for an element of S_n for n = 10.\n\nTask:\nChoose the single correct answer.\n\nCandidates:\n\"6\", \"12\", \"30\", \"105\"\n\nResponse format:\nOne quoted candidate exactly as listed above; no explanation, whitespace, or extra text.".to_owned(),
+            targets: vec![
+                "\"6\"".to_owned(),
+                "\"12\"".to_owned(),
+                "\"30\"".to_owned(),
+                "\"105\"".to_owned(),
+            ],
+        };
+
+        let reference = collect_scores(scorer.score_batch(std::slice::from_ref(&job)))?;
+        scorer.config.execution_mode = ExecutionMode::Batched;
+        let batched = collect_scores(scorer.score_batch(&[job]))?;
+        assert_eq!(batched[0].prefill_count, 4);
+        compare_scores(&reference, &batched)
     }
 
     #[cfg(feature = "vulkan")]

@@ -235,7 +235,7 @@ thinking 开启时，先完成并冻结该问题的 reasoning 和 final-answer t
 ### 5.4 多问题批处理
 
 - 引擎接收 `judge_batch`，将问题展开为共享前缀组与候选分支。
-- 当前候选 scoring 可跨问题合批；thinking generation 仍按问题串行执行，后续应单独评估 generation continuous batching，不能把候选 batch 能力等同于 thinking 已合批。
+- 纯 KV-cache 模型的候选 scoring 可跨问题合批；hybrid/recurrent 模型因 llama.cpp 多 sequence state 分叉不等价而自动逐候选组执行。thinking generation 仍按问题串行执行，后续应单独评估 generation continuous batching，不能把候选 batch 能力等同于 thinking 已合批。
 - 按实际 token 工作量、输出 logits 行数、活跃 sequence 数和内存预算组批，不只按问题数限流。
 - 支持不等长序列、最后不足一批、候选数不同和超大问题独立拆批。
 - 维护 request、option、输入 token、原生 logits 输出行之间的显式映射。
@@ -587,7 +587,7 @@ jet bench --model <model.gguf> --workload <workload.json>
 - [ ] `judge` 和 `judge_batch` 能对本地支持模型返回每个选项的原始与归一化分数。
 - [x] 候选评分全流程无 sampling；可选 thinking sampling 有明确 token 预算、协议 closure、模式开关和冻结 trace。
 - [ ] 默认概率定义、终止策略、长度处理和 prompt 构造都有文档与测试。
-- [x] 变长多问题/多候选批处理及同题前缀共享已通过固定 Qwen3 模型的独立 reference 对照。
+- [x] 变长多问题/多候选批处理及同题前缀共享已通过固定 Qwen3 模型的独立 reference 对照；Qwen3.5 hybrid/recurrent 路径已验证必须隔离候选组，并加入 reference/batched 回归测试。
 - [ ] thinking 的跨模板真实模型矩阵和相同冻结 trace 下的 reference/batched 对照完成。
 - [ ] 内存、队列、sequence 生命周期、取消和失败行为有明确边界。
 - [ ] CPU、Vulkan、CUDA、Metal 的支持状态与真实验证记录一致。

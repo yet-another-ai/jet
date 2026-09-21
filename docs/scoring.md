@@ -55,11 +55,14 @@ The explicit output contract reduces probability mass assigned to unrelated chat
 but cannot eliminate it. Jet's normalized result remains conditional on the configured candidate
 set and must not be interpreted as the candidate's absolute probability over the full vocabulary.
 
-The optimized executor prefills a question prefix, including its frozen reasoning when enabled,
-once when all its candidates fit the configured sequence budget, copies that sequence's memory, and
-scores candidate suffixes in native batches.
-Oversized work is split into waves without truncating input. The reference execution mode scores
-each candidate independently and exists for correctness comparisons.
+For pure KV-cache models, the optimized executor prefills a question prefix, including its frozen
+reasoning when enabled, once when all candidates fit the configured sequence budget, copies that
+sequence's memory, and scores candidate suffixes in native batches. Hybrid and recurrent models
+cannot safely advance multiple copied states in one llama.cpp decode wave, so Jet automatically
+isolates their candidate groups. This repeats prefix work and reduces throughput but preserves
+reference-equivalent scores. Oversized work is split into waves without truncating input. The
+reference execution mode scores each candidate independently and exists for correctness
+comparisons.
 
 `usage.input_tokens` counts the original rendered question prompt once. `usage.output_tokens`
 includes generated thinking tokens, including protocol closure, plus every candidate token that was

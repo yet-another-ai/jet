@@ -2,6 +2,7 @@
 set -eu
 
 model_path=${JET_MODEL_PATH:-models/Qwen3-0.6B-Q8_0.gguf}
+model_id=${JET_MODEL_ID:-qwen/qwen3-0.6b-q8_0}
 work_dir=${JET_ACCURACY_DIR:-tests/accuracy/generated}
 boolq_limit=${JET_BOOLQ_LIMIT:-256}
 mmlu_per_subject=${JET_MMLU_PER_SUBJECT:-5}
@@ -28,7 +29,7 @@ python3 scripts/prepare-accuracy-data.py \
 mise exec -- "$@" \
   --backend "$backend" \
   --model-path "$model_path" \
-  --model-id qwen/qwen3-0.6b-q8_0 \
+  --model-id "$model_id" \
   --thinking disabled \
   --input "$work_dir/requests.jsonl" \
   --output "$work_dir/responses.jsonl"
