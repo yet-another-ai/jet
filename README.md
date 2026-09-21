@@ -3,9 +3,10 @@
 Jet is a local CPU decisions engine. It scores a fixed set of structured candidates with
 teacher forcing instead of generating free-form text.
 
-The first release supports `noul`, `choice`, and zero-based `score` questions through a Rust API
-and a JSONL command-line interface. It intentionally does not provide HTTP serving, GPU/NPU
-execution, thinking mode, sampling, or free-text generation.
+Jet supports `noul`, `choice`, and zero-based `score` questions through a Rust API and a JSONL
+command-line interface. It does not provide HTTP serving, GPU/NPU execution, or general free-text
+generation. An optional bounded thinking stage can run before candidate scoring when the model's
+embedded chat template exposes a supported reasoning protocol.
 
 ## Build
 
@@ -35,6 +36,22 @@ mise exec -- cargo run -p jet-cli -- judge \
   --input tests/fixtures/decisions.jsonl \
   --output -
 ```
+
+Enable thinking when the model supports it, with at most 256 reasoning-body tokens per question:
+
+```sh
+mise exec -- cargo run -p jet-cli -- judge \
+  --model-path model.gguf \
+  --model-id local/model \
+  --thinking auto \
+  --thinking-tokens 256 \
+  --input tests/fixtures/decisions.jsonl \
+  --output -
+```
+
+`--thinking disabled` uses the template's direct-answer path. `auto` falls back to direct scoring
+for ordinary non-reasoning models. `required` rejects a template that does not expose a usable
+reasoning end marker and final-answer continuation.
 
 Each non-empty input line is one request. The request deliberately has no `model` field:
 

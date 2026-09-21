@@ -7,8 +7,9 @@ use std::sync::Once;
 
 use jet_core::{JetError, Result};
 use jet_llama_sys as sys;
+use serde::Deserialize;
 
-use crate::config::{EngineConfig, ExecutionMode};
+use crate::config::{EngineConfig, ExecutionMode, ThinkingMode};
 use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
 
 static BACKEND_INIT: Once = Once::new();
@@ -16,6 +17,26 @@ static BACKEND_INIT: Once = Once::new();
 struct TokenizedJob {
     prompt: Vec<sys::llama_token>,
     targets: Vec<Vec<sys::llama_token>>,
+    logical_prompt_tokens: usize,
+    thinking_tokens: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatPlan {
+    prompt: String,
+    generation_prompt: String,
+    supports_thinking: bool,
+    thinking_start_tag: String,
+    thinking_end_tags: Vec<String>,
+}
+
+struct ThinkingSampler(NonNull<sys::jet_thinking_sampler>);
+
+impl Drop for ThinkingSampler {
+    fn drop(&mut self) {
+        // SAFETY: the pointer was returned by jet_thinking_sampler_init and is owned here.
+        unsafe { sys::jet_thinking_sampler_free(self.0.as_ptr()) };
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -95,13 +116,6 @@ impl LlamaScorer {
     }
 
     fn finish_load(model: NonNull<sys::llama_model>, config: EngineConfig) -> Result<Self> {
-        let architecture = model_metadata(model, "general.architecture")?;
-        if architecture != "qwen3" {
-            return Err(JetError::UnsupportedModel(format!(
-                "first release supports qwen3 only, found {architecture:?}"
-            )));
-        }
-
         let total_context = config
             .context_tokens_per_sequence
             .checked_mul(config.max_sequences)
@@ -166,10 +180,11 @@ impl LlamaScorer {
         })
     }
 
-    fn tokenize_jobs(&self, jobs: &[ScoreJob]) -> Result<Vec<TokenizedJob>> {
+    fn tokenize_jobs(&mut self, jobs: &[ScoreJob]) -> Result<Vec<TokenizedJob>> {
         jobs.iter()
             .map(|job| {
-                let prompt_text = self.render_prompt(job)?;
+                let (prompt_text, logical_prompt_tokens, thinking_tokens) =
+                    self.prepare_prompt(job)?;
                 let prompt = self.tokenize(&prompt_text)?;
                 if prompt.is_empty() {
                     return Err(JetError::UnsupportedModel(
@@ -197,25 +212,96 @@ impl LlamaScorer {
                     }
                     targets.push(target_tokens);
                 }
-                Ok(TokenizedJob { prompt, targets })
+                Ok(TokenizedJob {
+                    prompt,
+                    targets,
+                    logical_prompt_tokens,
+                    thinking_tokens,
+                })
             })
             .collect()
     }
 
+    #[cfg(test)]
     fn render_prompt(&self, job: &ScoreJob) -> Result<String> {
+        Ok(self.render_chat_plan(job, false, None)?.prompt)
+    }
+
+    fn prepare_prompt(&mut self, job: &ScoreJob) -> Result<(String, usize, usize)> {
+        match self.config.thinking.mode {
+            ThinkingMode::Disabled => {
+                let disabled = self.render_chat_plan(job, false, None)?;
+                let enabled = self.render_chat_plan(job, true, None)?;
+                if thinking_is_open(&disabled)
+                    || (enabled.supports_thinking
+                        && enabled.prompt == disabled.prompt
+                        && enabled.generation_prompt == disabled.generation_prompt)
+                {
+                    return Err(JetError::UnsupportedModel(
+                        "the chat template does not expose a verified non-thinking path".to_owned(),
+                    ));
+                }
+                let prompt_tokens = self.tokenize(&disabled.prompt)?.len();
+                Ok((disabled.prompt, prompt_tokens, 0))
+            }
+            ThinkingMode::Auto | ThinkingMode::Required => {
+                let plan = self.render_chat_plan(job, true, None)?;
+                if !plan.supports_thinking || plan.thinking_end_tags.is_empty() {
+                    if self.config.thinking.mode == ThinkingMode::Required {
+                        return Err(JetError::UnsupportedModel(
+                            "the chat template does not expose a supported thinking protocol"
+                                .to_owned(),
+                        ));
+                    }
+                    let disabled = self.render_chat_plan(job, false, None)?;
+                    let prompt_tokens = self.tokenize(&disabled.prompt)?.len();
+                    return Ok((disabled.prompt, prompt_tokens, 0));
+                }
+
+                let logical_prompt_tokens = self.tokenize(&plan.prompt)?.len();
+                let (reasoning, thinking_tokens) = self.generate_reasoning(&plan)?;
+                let final_plan = self.render_chat_plan(job, true, Some(&reasoning))?;
+                if final_plan.prompt.is_empty()
+                    || final_plan.prompt == plan.prompt
+                    || thinking_is_open(&final_plan)
+                {
+                    return Err(JetError::UnsupportedModel(
+                        "chat template did not produce a verified final-answer continuation"
+                            .to_owned(),
+                    ));
+                }
+                Ok((final_plan.prompt, logical_prompt_tokens, thinking_tokens))
+            }
+        }
+    }
+
+    fn render_chat_plan(
+        &self,
+        job: &ScoreJob,
+        enable_thinking: bool,
+        reasoning: Option<&str>,
+    ) -> Result<ChatPlan> {
         let system = CString::new(job.system_content).map_err(|_| {
             JetError::InvalidRequest("system content contains an interior NUL byte".to_owned())
         })?;
         let user = CString::new(job.user_content.as_str()).map_err(|_| {
             JetError::InvalidRequest("user content contains an interior NUL byte".to_owned())
         })?;
+        let reasoning = reasoning.map(CString::new).transpose().map_err(|_| {
+            JetError::NativeRuntime("generated reasoning contains an interior NUL byte".to_owned())
+        })?;
+        let reasoning_ptr = reasoning
+            .as_ref()
+            .map_or(ptr::null(), |value| value.as_ptr());
         let mut error = vec![0_i8; 1_024];
         // SAFETY: all pointers are live for the duration of the call; null output requests size.
         let required = unsafe {
-            sys::jet_chat_apply_non_thinking(
+            sys::jet_chat_render(
                 self.model.as_ptr(),
                 system.as_ptr(),
                 user.as_ptr(),
+                enable_thinking,
+                reasoning_ptr,
                 ptr::null_mut(),
                 0,
                 error.as_mut_ptr(),
@@ -230,10 +316,12 @@ impl LlamaScorer {
         let mut output = vec![0_i8; required.saturating_add(1)];
         // SAFETY: output and error buffers are writable and model/messages remain live.
         let written = unsafe {
-            sys::jet_chat_apply_non_thinking(
+            sys::jet_chat_render(
                 self.model.as_ptr(),
                 system.as_ptr(),
                 user.as_ptr(),
+                enable_thinking,
+                reasoning_ptr,
                 output.as_mut_ptr(),
                 output.len(),
                 error.as_mut_ptr(),
@@ -253,9 +341,10 @@ impl LlamaScorer {
             .iter()
             .map(|byte| *byte as u8)
             .collect::<Vec<_>>();
-        String::from_utf8(bytes).map_err(|error| {
+        let json = String::from_utf8(bytes).map_err(|error| {
             JetError::NativeRuntime(format!("chat template emitted invalid UTF-8: {error}"))
-        })
+        })?;
+        serde_json::from_str(&json).map_err(JetError::from)
     }
 
     fn tokenize(&self, text: &str) -> Result<Vec<sys::llama_token>> {
@@ -305,6 +394,239 @@ impl LlamaScorer {
         Ok(tokens)
     }
 
+    fn detokenize(&self, tokens: &[sys::llama_token]) -> Result<String> {
+        let token_count = i32::try_from(tokens.len()).map_err(|_| {
+            JetError::NativeRuntime("generated reasoning exceeds tokenizer limits".to_owned())
+        })?;
+        // SAFETY: the vocabulary and token slice are live; a null output queries the size.
+        let required = unsafe {
+            sys::llama_detokenize(
+                self.vocab.as_ptr(),
+                tokens.as_ptr(),
+                token_count,
+                ptr::null_mut(),
+                0,
+                false,
+                true,
+            )
+        };
+        if required == i32::MIN {
+            return Err(JetError::NativeRuntime(
+                "detokenization length overflow".to_owned(),
+            ));
+        }
+        let capacity = if required < 0 { -required } else { required };
+        let mut output = vec![
+            0_i8;
+            usize::try_from(capacity).map_err(|_| {
+                JetError::NativeRuntime("invalid detokenizer size response".to_owned())
+            })?
+        ];
+        // SAFETY: output has the queried capacity and all other pointers remain live.
+        let written = unsafe {
+            sys::llama_detokenize(
+                self.vocab.as_ptr(),
+                tokens.as_ptr(),
+                token_count,
+                output.as_mut_ptr(),
+                i32::try_from(output.len()).unwrap_or(i32::MAX),
+                false,
+                true,
+            )
+        };
+        if written < 0 {
+            return Err(JetError::NativeRuntime(format!(
+                "detokenizer buffer was unexpectedly too small: needs {} bytes",
+                -written
+            )));
+        }
+        output.truncate(usize::try_from(written).unwrap_or(0));
+        let bytes = output.into_iter().map(|byte| byte as u8).collect();
+        String::from_utf8(bytes).map_err(|error| {
+            JetError::NativeRuntime(format!("generated reasoning is invalid UTF-8: {error}"))
+        })
+    }
+
+    fn generate_reasoning(&mut self, plan: &ChatPlan) -> Result<(String, usize)> {
+        let prompt = self.tokenize(&plan.prompt)?;
+        if prompt.is_empty() {
+            return Err(JetError::UnsupportedModel(
+                "thinking template produced an empty prompt".to_owned(),
+            ));
+        }
+        let limit = self.config.context_tokens_per_sequence as usize;
+        let budget = self.config.thinking.max_tokens as usize;
+        if prompt.len().saturating_add(budget) > limit {
+            return Err(JetError::ContextExceeded {
+                required: prompt.len().saturating_add(budget),
+                limit,
+            });
+        }
+
+        let end_tags_json = serde_json::to_string(&plan.thinking_end_tags)?;
+        let end_tags_json = CString::new(end_tags_json).map_err(|_| {
+            JetError::NativeRuntime("thinking end tags contain an interior NUL byte".to_owned())
+        })?;
+        let mut error = vec![0_i8; 1_024];
+        // SAFETY: all arguments are live and the wrapper returns an owned sampler or null.
+        let sampler = NonNull::new(unsafe {
+            sys::jet_thinking_sampler_init(
+                self.vocab.as_ptr(),
+                end_tags_json.as_ptr(),
+                i32::try_from(self.config.thinking.max_tokens).unwrap_or(i32::MAX),
+                self.config.thinking.temperature,
+                self.config.thinking.top_k,
+                self.config.thinking.top_p,
+                self.config.thinking.seed,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        })
+        .ok_or_else(|| template_error(&error))?;
+        let sampler = ThinkingSampler(sampler);
+
+        self.clear_memory();
+        let generation = (|| {
+            let mut logits_index = self.decode_generation_input(&prompt, 0)?;
+            let mut generated = Vec::with_capacity(budget.saturating_add(16));
+            let hard_limit = budget
+                .saturating_add(128)
+                .min(limit.saturating_sub(prompt.len()));
+            while generated.len() < hard_limit {
+                // SAFETY: the sampler and context are live and logits_index was selected by the most recent decode.
+                let mut token = unsafe {
+                    sys::jet_thinking_sampler_sample(
+                        sampler.0.as_ptr(),
+                        self.context.as_ptr(),
+                        logits_index,
+                    )
+                };
+                // Do not place EOG inside an unfinished reasoning block. Ask the budget sampler
+                // to select its protocol-specific close sequence from the same logits instead.
+                if unsafe { sys::llama_vocab_is_eog(self.vocab.as_ptr(), token) }
+                    && !unsafe { sys::jet_thinking_sampler_done(sampler.0.as_ptr()) }
+                {
+                    // SAFETY: the sampler is live and currently owns the active budget state.
+                    if !unsafe { sys::jet_thinking_sampler_force(sampler.0.as_ptr()) } {
+                        return Err(JetError::UnsupportedModel(
+                            "model ended before completing its thinking protocol".to_owned(),
+                        ));
+                    }
+                    // SAFETY: forcing changes only the sampler state; the logits row is still live.
+                    token = unsafe {
+                        sys::jet_thinking_sampler_sample(
+                            sampler.0.as_ptr(),
+                            self.context.as_ptr(),
+                            logits_index,
+                        )
+                    };
+                }
+
+                // SAFETY: the sampler is live and accepts the sampled token exactly once.
+                unsafe { sys::jet_thinking_sampler_accept(sampler.0.as_ptr(), token) };
+                generated.push(token);
+                // SAFETY: the sampler remains live for the duration of generation.
+                if unsafe { sys::jet_thinking_sampler_done(sampler.0.as_ptr()) } {
+                    return Ok(generated);
+                }
+                if prompt.len().saturating_add(generated.len()) >= limit {
+                    return Err(JetError::ContextExceeded {
+                        required: prompt
+                            .len()
+                            .saturating_add(generated.len())
+                            .saturating_add(1),
+                        limit,
+                    });
+                }
+                logits_index = self.decode_generation_input(
+                    std::slice::from_ref(&token),
+                    prompt.len() + generated.len() - 1,
+                )?;
+            }
+            Err(JetError::NativeRuntime(
+                "thinking sampler did not complete its protocol within the bounded closure allowance"
+                    .to_owned(),
+            ))
+        })();
+        self.clear_memory();
+        let generated = generation?;
+        let rendered = self.detokenize(&generated)?;
+        let reasoning =
+            strip_thinking_end(&rendered, &plan.thinking_end_tags).ok_or_else(|| {
+                JetError::UnsupportedModel(
+                    "generated reasoning did not end with a declared template marker".to_owned(),
+                )
+            })?;
+        Ok((reasoning.to_owned(), generated.len()))
+    }
+
+    fn decode_generation_input(
+        &mut self,
+        tokens: &[sys::llama_token],
+        start: usize,
+    ) -> Result<i32> {
+        let chunk_size = self.config.token_batch as usize;
+        let mut logits_index = None;
+        for (chunk_index, chunk) in tokens.chunks(chunk_size).enumerate() {
+            if chunk.is_empty() {
+                continue;
+            }
+            let chunk_start = start + chunk_index * chunk_size;
+            // SAFETY: llama_batch_init allocates storage for chunk.len() entries.
+            let mut batch = unsafe {
+                sys::llama_batch_init(i32::try_from(chunk.len()).unwrap_or(i32::MAX), 0, 1)
+            };
+            let result = (|| {
+                if batch.token.is_null()
+                    || batch.pos.is_null()
+                    || batch.n_seq_id.is_null()
+                    || batch.seq_id.is_null()
+                    || batch.logits.is_null()
+                {
+                    return Err(JetError::NativeRuntime(
+                        "llama_batch_init returned incomplete generation storage".to_owned(),
+                    ));
+                }
+                batch.n_tokens = i32::try_from(chunk.len()).map_err(|_| {
+                    JetError::NativeRuntime("native generation batch length overflow".to_owned())
+                })?;
+                for (index, token) in chunk.iter().copied().enumerate() {
+                    // SAFETY: all arrays were allocated for chunk.len() elements.
+                    unsafe {
+                        *batch.token.add(index) = token;
+                        *batch.pos.add(index) = position(chunk_start + index)?;
+                        *batch.n_seq_id.add(index) = 1;
+                        let ids = *batch.seq_id.add(index);
+                        if ids.is_null() {
+                            return Err(JetError::NativeRuntime(
+                                "native generation sequence storage is null".to_owned(),
+                            ));
+                        }
+                        *ids = 0;
+                        *batch.logits.add(index) = i8::from(index + 1 == chunk.len());
+                    }
+                }
+                // SAFETY: context and initialized batch remain live for the call.
+                let status = unsafe { sys::llama_decode(self.context.as_ptr(), batch) };
+                if status != 0 {
+                    return Err(JetError::NativeRuntime(format!(
+                        "llama_decode failed during thinking with status {status}"
+                    )));
+                }
+                Ok(())
+            })();
+            // SAFETY: batch was allocated above and is freed exactly once.
+            unsafe { sys::llama_batch_free(batch) };
+            result?;
+            logits_index = Some(i32::try_from(chunk.len() - 1).map_err(|_| {
+                JetError::NativeRuntime("generation logits index overflow".to_owned())
+            })?);
+        }
+        logits_index.ok_or_else(|| {
+            JetError::NativeRuntime("cannot decode an empty generation input".to_owned())
+        })
+    }
+
     fn score_batched(&mut self, jobs: &[TokenizedJob]) -> Result<Vec<ScoreResult>> {
         let candidate_capacity = (self.config.max_sequences as usize).saturating_sub(1);
         let mut groups = Vec::new();
@@ -348,7 +670,8 @@ impl LlamaScorer {
             .enumerate()
             .map(|(index, job)| ScoreResult {
                 log_probabilities: accumulated[index].clone(),
-                prompt_tokens: job.prompt.len(),
+                prompt_tokens: job.logical_prompt_tokens,
+                thinking_tokens: job.thinking_tokens,
                 target_token_counts: job.targets.iter().map(Vec::len).collect(),
                 prefill_count: prefill_counts[index],
             })
@@ -576,6 +899,8 @@ impl LlamaScorer {
                     let reference_job = TokenizedJob {
                         prompt: job.prompt.clone(),
                         targets: vec![target.clone()],
+                        logical_prompt_tokens: job.logical_prompt_tokens,
+                        thinking_tokens: job.thinking_tokens,
                     };
                     let groups = [ActiveGroup {
                         spec: GroupSpec {
@@ -615,7 +940,8 @@ impl LlamaScorer {
             }
             results.push(ScoreResult {
                 log_probabilities,
-                prompt_tokens: job.prompt.len(),
+                prompt_tokens: job.logical_prompt_tokens,
+                thinking_tokens: job.thinking_tokens,
                 target_token_counts: job.targets.iter().map(Vec::len).collect(),
                 prefill_count: job.targets.len(),
             });
@@ -731,32 +1057,54 @@ fn validate_config(config: &EngineConfig) -> Result<()> {
             "threads must be positive".to_owned(),
         ));
     }
+    if config.thinking.mode != ThinkingMode::Disabled {
+        if config.thinking.max_tokens == 0 {
+            return Err(JetError::InvalidRequest(
+                "thinking.max_tokens must be positive".to_owned(),
+            ));
+        }
+        if !config.thinking.temperature.is_finite() || config.thinking.temperature <= 0.0 {
+            return Err(JetError::InvalidRequest(
+                "thinking.temperature must be finite and positive".to_owned(),
+            ));
+        }
+        if config.thinking.top_k <= 0 {
+            return Err(JetError::InvalidRequest(
+                "thinking.top_k must be positive".to_owned(),
+            ));
+        }
+        if !config.thinking.top_p.is_finite()
+            || config.thinking.top_p <= 0.0
+            || config.thinking.top_p > 1.0
+        {
+            return Err(JetError::InvalidRequest(
+                "thinking.top_p must be in (0, 1]".to_owned(),
+            ));
+        }
+    }
     Ok(())
 }
 
-fn model_metadata(model: NonNull<sys::llama_model>, key: &str) -> Result<String> {
-    let key = CString::new(key).map_err(|_| {
-        JetError::NativeRuntime("metadata key contains an interior NUL byte".to_owned())
-    })?;
-    let mut output = vec![0_i8; 256];
-    // SAFETY: model/key/output are live for this call.
-    let written = unsafe {
-        sys::llama_model_meta_val_str(
-            model.as_ptr(),
-            key.as_ptr(),
-            output.as_mut_ptr(),
-            output.len(),
-        )
-    };
-    if written < 0 {
-        return Err(JetError::UnsupportedModel(format!(
-            "model metadata is missing {key:?}"
-        )));
+fn thinking_is_open(plan: &ChatPlan) -> bool {
+    if plan.thinking_start_tag.is_empty() {
+        return false;
     }
-    // SAFETY: llama.cpp promises NUL termination when the call succeeds.
-    Ok(unsafe { CStr::from_ptr(output.as_ptr()) }
-        .to_string_lossy()
-        .into_owned())
+    let Some(start) = plan.prompt.rfind(&plan.thinking_start_tag) else {
+        return false;
+    };
+    let last_end = plan
+        .thinking_end_tags
+        .iter()
+        .filter_map(|tag| plan.prompt.rfind(tag))
+        .max();
+    last_end.is_none_or(|end| end < start)
+}
+
+fn strip_thinking_end<'a>(rendered: &'a str, end_tags: &[String]) -> Option<&'a str> {
+    end_tags
+        .iter()
+        .filter_map(|tag| rendered.strip_suffix(tag))
+        .min_by_key(|prefix| prefix.len())
 }
 
 fn template_error(error: &[i8]) -> JetError {
@@ -815,6 +1163,31 @@ mod tests {
         let expected = 2.0 - (0.0_f64.exp() + 1.0_f64.exp() + 2.0_f64.exp()).ln();
         assert!((value - expected).abs() < 1e-12);
         Ok(())
+    }
+
+    #[test]
+    fn detects_open_tag_and_channel_reasoning_protocols() {
+        let tag_plan = ChatPlan {
+            prompt: "assistant:<think>work".to_owned(),
+            generation_prompt: "<think>".to_owned(),
+            supports_thinking: true,
+            thinking_start_tag: "<think>".to_owned(),
+            thinking_end_tags: vec!["</think>".to_owned()],
+        };
+        assert!(thinking_is_open(&tag_plan));
+
+        let channel_plan = ChatPlan {
+            prompt: "<|channel|>analysis<|message|>work<|end|>".to_owned(),
+            generation_prompt: "<|channel|>analysis<|message|>".to_owned(),
+            supports_thinking: true,
+            thinking_start_tag: "<|channel|>analysis<|message|>".to_owned(),
+            thinking_end_tags: vec!["<|end|>".to_owned()],
+        };
+        assert!(!thinking_is_open(&channel_plan));
+        assert_eq!(
+            strip_thinking_end("work<|end|>", &channel_plan.thinking_end_tags),
+            Some("work")
+        );
     }
 
     #[test]
@@ -882,6 +1255,14 @@ mod tests {
         {
             assert!((left - right).abs() <= 1e-5 + 1e-4 * 8.0);
         }
+
+        scorer.config.thinking.mode = ThinkingMode::Required;
+        scorer.config.thinking.max_tokens = 8;
+        let thinking = collect_scores(scorer.score_batch(std::slice::from_ref(&compact)))?;
+        assert!(thinking[0].thinking_tokens > 0);
+        assert!(thinking[0].thinking_tokens <= 12);
+        assert_eq!(thinking[0].prefill_count, 1);
+        scorer.config.thinking.mode = ThinkingMode::Disabled;
 
         let long = ScoreJob {
             system_content: crate::prompt::SYSTEM_INSTRUCTION,

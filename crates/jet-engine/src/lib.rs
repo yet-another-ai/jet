@@ -3,7 +3,7 @@ mod evaluator;
 mod llama;
 mod prompt;
 
-pub use config::{EngineConfig, ExecutionMode};
+pub use config::{EngineConfig, ExecutionMode, ThinkingConfig, ThinkingMode};
 
 use jet_core::{DecisionRequest, DecisionResponse, JetError, Result};
 

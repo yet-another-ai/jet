@@ -2650,15 +2650,57 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    pub fn jet_chat_apply_non_thinking(
+    pub fn jet_chat_render(
         model: *const llama_model,
         system_content: *const ::std::os::raw::c_char,
         user_content: *const ::std::os::raw::c_char,
+        enable_thinking: bool,
+        reasoning_content: *const ::std::os::raw::c_char,
         output: *mut ::std::os::raw::c_char,
         output_capacity: usize,
         error: *mut ::std::os::raw::c_char,
         error_capacity: usize,
     ) -> i32;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct jet_thinking_sampler {
+    _unused: [u8; 0],
+}
+unsafe extern "C" {
+    pub fn jet_thinking_sampler_init(
+        vocab: *const llama_vocab,
+        end_tags_json: *const ::std::os::raw::c_char,
+        max_tokens: i32,
+        temperature: f32,
+        top_k: i32,
+        top_p: f32,
+        seed: u32,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> *mut jet_thinking_sampler;
+}
+unsafe extern "C" {
+    pub fn jet_thinking_sampler_sample(
+        sampler: *mut jet_thinking_sampler,
+        context: *mut llama_context,
+        logits_index: i32,
+    ) -> llama_token;
+}
+unsafe extern "C" {
+    pub fn jet_thinking_sampler_accept(
+        sampler: *mut jet_thinking_sampler,
+        token: llama_token,
+    );
+}
+unsafe extern "C" {
+    pub fn jet_thinking_sampler_done(sampler: *const jet_thinking_sampler) -> bool;
+}
+unsafe extern "C" {
+    pub fn jet_thinking_sampler_force(sampler: *mut jet_thinking_sampler) -> bool;
+}
+unsafe extern "C" {
+    pub fn jet_thinking_sampler_free(sampler: *mut jet_thinking_sampler);
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]

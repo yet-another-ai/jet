@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use jet_core::{DecisionRequest, ErrorCode, JetError, Result};
-use jet_engine::{Engine, EngineConfig, ExecutionMode};
+use jet_engine::{Engine, EngineConfig, ExecutionMode, ThinkingMode};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -46,12 +46,31 @@ struct JudgeArgs {
     threads: Option<i32>,
     #[arg(long, value_enum, default_value_t = ExecutionArg::Batched)]
     execution: ExecutionArg,
+    #[arg(long, value_enum, default_value_t = ThinkingArg::Disabled)]
+    thinking: ThinkingArg,
+    #[arg(long, default_value_t = 256)]
+    thinking_tokens: u32,
+    #[arg(long, default_value_t = 0.6)]
+    thinking_temperature: f32,
+    #[arg(long, default_value_t = 20)]
+    thinking_top_k: i32,
+    #[arg(long, default_value_t = 0.95)]
+    thinking_top_p: f32,
+    #[arg(long, default_value_t = 0)]
+    thinking_seed: u32,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
 enum ExecutionArg {
     Reference,
     Batched,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ThinkingArg {
+    Disabled,
+    Auto,
+    Required,
 }
 
 #[derive(Serialize)]
@@ -98,8 +117,7 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         ));
     }
 
-    let mut config = EngineConfig::qwen3_cpu(&args.model_path);
-    config.model_id = args.model_id;
+    let mut config = EngineConfig::cpu(&args.model_path, args.model_id);
     config.context_tokens_per_sequence = args.context_tokens;
     config.token_batch = args.token_batch;
     config.micro_batch = args.micro_batch;
@@ -112,6 +130,16 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         ExecutionArg::Reference => ExecutionMode::Reference,
         ExecutionArg::Batched => ExecutionMode::Batched,
     };
+    config.thinking.mode = match args.thinking {
+        ThinkingArg::Disabled => ThinkingMode::Disabled,
+        ThinkingArg::Auto => ThinkingMode::Auto,
+        ThinkingArg::Required => ThinkingMode::Required,
+    };
+    config.thinking.max_tokens = args.thinking_tokens;
+    config.thinking.temperature = args.thinking_temperature;
+    config.thinking.top_k = args.thinking_top_k;
+    config.thinking.top_p = args.thinking_top_p;
+    config.thinking.seed = args.thinking_seed;
 
     let mut engine = Engine::load(config)?;
     let input = open_input(&args.input)?;

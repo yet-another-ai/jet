@@ -16,7 +16,9 @@ The test model is `Qwen/Qwen3-0.6B-GGUF` revision
 `23749fefcc72300e3a2ad315e1317431b06b590a`, file `Qwen3-0.6B-Q8_0.gguf`, with SHA-256
 `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031`.
 
-llguidance is disabled because this continuation-only scorer does not compile or execute grammars.
+llguidance remains disabled. Bounded thinking uses llama.cpp's protocol-aware reasoning-budget
+sampler and the model template's declared end markers; candidate scoring itself does not execute a
+grammar.
 
 Run the fast checks:
 

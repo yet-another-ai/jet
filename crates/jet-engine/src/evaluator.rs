@@ -18,6 +18,7 @@ pub(crate) struct ScoreJob {
 pub(crate) struct ScoreResult {
     pub log_probabilities: Vec<f64>,
     pub prompt_tokens: usize,
+    pub thinking_tokens: usize,
     pub target_token_counts: Vec<usize>,
     #[allow(dead_code)]
     pub prefill_count: usize,
@@ -167,11 +168,15 @@ fn build_response(
             .input_tokens
             .saturating_add(u64::try_from(score.prompt_tokens).unwrap_or(u64::MAX));
         usage.output_tokens = usage.output_tokens.saturating_add(
-            score
-                .target_token_counts
-                .iter()
-                .map(|count| u64::try_from(*count).unwrap_or(u64::MAX))
-                .sum(),
+            u64::try_from(score.thinking_tokens)
+                .unwrap_or(u64::MAX)
+                .saturating_add(
+                    score
+                        .target_token_counts
+                        .iter()
+                        .map(|count| u64::try_from(*count).unwrap_or(u64::MAX))
+                        .sum(),
+                ),
         );
         answers.insert(plan.question_id.clone(), answer);
     }
@@ -198,6 +203,7 @@ mod tests {
                             .map(|index| -(index as f64))
                             .collect(),
                         prompt_tokens: 10,
+                        thinking_tokens: 0,
                         target_token_counts: vec![1; job.targets.len()],
                         prefill_count: 1,
                     })
@@ -252,6 +258,7 @@ mod tests {
                         Ok(ScoreResult {
                             log_probabilities: vec![0.0; job.targets.len()],
                             prompt_tokens: 1,
+                            thinking_tokens: 0,
                             target_token_counts: vec![1; job.targets.len()],
                             prefill_count: 1,
                         })
@@ -291,6 +298,7 @@ mod tests {
                             Ok(ScoreResult {
                                 log_probabilities: vec![0.0; job.targets.len()],
                                 prompt_tokens: 2,
+                                thinking_tokens: 0,
                                 target_token_counts: vec![1; job.targets.len()],
                                 prefill_count: 1,
                             })

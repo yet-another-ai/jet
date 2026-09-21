@@ -1,12 +1,25 @@
 # Scoring semantics
 
-Jet renders each question with the GGUF model's embedded Jinja chat template. The renderer sets
-`enable_thinking=false` and rejects a model whose template does not expose a reliable non-thinking
-switch. Jet does not emulate the template with handwritten prompt strings.
+Jet renders each question with the GGUF model's embedded Jinja chat template. Jet does not emulate
+the template with handwritten prompt strings. Ordinary templates without reasoning support are
+valid and use their normal assistant-generation prefix.
 
-Some Qwen3 templates represent disabled thinking with an empty, already-closed
-`<think>\n\n</think>` protocol marker. Jet accepts that marker because candidate scoring starts after
-the close tag; it still rejects an open marker or any thinking content.
+Thinking has three engine modes. `disabled` requests the template's direct-answer path and rejects
+a reasoning template when disabling it cannot be verified. `auto` generates reasoning when the
+template exposes a start/final transition and one or more end markers, otherwise it uses direct
+scoring. `required` reports an unsupported-model error instead of falling back.
+
+Thinking protocols come from llama.cpp's template parser. This covers tag protocols such as Qwen
+and DeepSeek as well as channel protocols used by GPT-OSS, Kimi, and Gemma templates. Jet passes the
+generated text back as `reasoning_content` and asks the same template for its content continuation,
+so an end marker is never assumed to be the final-answer prefix. Unknown templates without enough
+protocol metadata fall back only in `auto` mode.
+
+The thinking token budget counts generated tokens inside the reasoning block. The protocol-aware
+sampler may finish a partial UTF-8 character and add end-marker tokens after the budget is
+exhausted. Thinking uses configurable temperature, top-k, top-p, and seed values. The resulting
+trace is generated once per question and then frozen; all candidate scores are conditional on that
+same trace.
 
 The user message is canonical JSON containing `state`, `question.instructions`, every criterion,
 and `allowed_labels`. Object keys are sorted, array order is retained, and text that resembles a
@@ -23,10 +36,12 @@ an end-of-turn token and does not apply length normalization, temperature, or sa
 candidate token length affects raw sequence likelihood. Returned probabilities are normalized only
 within the question's candidate set; they are not calibrated correctness probabilities.
 
-`usage.input_tokens` counts each question's unique rendered prompt once.
-`usage.output_tokens` counts every candidate token that was scored.
-
-The optimized executor prefills a question prefix once when all its candidates fit the configured
-sequence budget, copies that sequence's memory, and scores candidate suffixes in native batches.
+The optimized executor prefills a question prefix, including its frozen reasoning when enabled,
+once when all its candidates fit the configured sequence budget, copies that sequence's memory, and
+scores candidate suffixes in native batches.
 Oversized work is split into waves without truncating input. The reference execution mode scores
 each candidate independently and exists for correctness comparisons.
+
+`usage.input_tokens` counts the original rendered question prompt once. `usage.output_tokens`
+includes generated thinking tokens, including protocol closure, plus every candidate token that was
+scored.
