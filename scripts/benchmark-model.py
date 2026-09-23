@@ -172,6 +172,7 @@ def run_once(args: argparse.Namespace, output: Path, index: int,
                                             responses_path.read_text(encoding="utf-8").splitlines())
             evaluation_command = [sys.executable, str(output / "evaluate-accuracy.py"),
                                   "--gold", str(output / "gold.jsonl"),
+                                  "--requests", str(output / "requests.jsonl"),
                                   "--responses", str(responses_path),
                                   "--report", str(run_dir / "report.json")]
             result["evaluation_command"] = evaluation_command

@@ -48,8 +48,10 @@ Candidates are scored as continuations of the rendered assistant prefix:
 
 Each semantic candidate is encoded as a quoted JSON string for an unambiguous answer boundary.
 After scoring, Jet maps the winning semantic continuation back to the public API representation:
-`false`/`true`, the original choice key, or the zero-based score index. Two candidates that render
-to the same semantic continuation are rejected instead of being counted twice.
+`false`/`true`, the original choice key, or the zero-based score index. Choice questions may contain
+different keys with identical semantic answers. They remain separate labels with identical model
+continuations and deterministic key tie-breaking; the MMLU evaluator accepts every label whose
+answer text equals the gold answer. Duplicate answers in `noul` and `score` questions are rejected.
 
 The score is the sum of each candidate token's log-probability. The first release does not score
 an end-of-turn token and does not apply length normalization, temperature, or sampling. Therefore,

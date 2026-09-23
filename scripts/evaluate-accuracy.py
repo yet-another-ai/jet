@@ -15,6 +15,8 @@ from typing import Any
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gold", type=Path, required=True)
+    parser.add_argument("--requests", type=Path,
+                        help="Match MMLU labels with identical candidate text")
     parser.add_argument("--responses", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     return parser.parse_args()
@@ -51,15 +53,45 @@ def main() -> int:
     args = parse_args()
     gold = read_jsonl(args.gold)
     responses = read_jsonl(args.responses)
+    requests = read_jsonl(args.requests) if args.requests else [None] * len(gold)
     if len(gold) != len(responses):
         raise RuntimeError(
             f"line count mismatch: {len(gold)} gold labels, {len(responses)} responses"
         )
+    if len(requests) != len(gold):
+        raise RuntimeError(
+            f"line count mismatch: {len(gold)} gold labels, {len(requests)} requests"
+        )
 
     evaluated = []
     failures = []
+    duplicate_candidates = []
     by_subject: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for line_number, (expected, response) in enumerate(zip(gold, responses), 1):
+    for line_number, (expected, response, request) in enumerate(
+        zip(gold, responses, requests), 1
+    ):
+        criteria = None
+        if request is not None:
+            state = request.get("state")
+            if not isinstance(state, dict) or state.get("id") != expected["id"]:
+                raise RuntimeError(f"line {line_number} request/gold ID mismatch")
+            if expected["dataset"] == "mmlu":
+                criteria = request.get("questions", {}).get("answer", {}).get("criteria")
+                if not isinstance(criteria, dict) or not all(
+                    isinstance(value, str) for value in criteria.values()
+                ) or expected["gold"] not in criteria:
+                    raise RuntimeError(f"line {line_number} has malformed MMLU criteria")
+                repeated = {
+                    text: sorted(key for key, value in criteria.items() if value == text)
+                    for text in set(criteria.values())
+                    if sum(value == text for value in criteria.values()) > 1
+                }
+                if repeated:
+                    duplicate_candidates.append({
+                        "line": line_number,
+                        "id": expected["id"],
+                        "equivalent_labels": sorted(repeated.values()),
+                    })
         if "error" in response:
             failures.append(
                 {"line": line_number, "id": expected["id"], "error": response["error"]}
@@ -79,10 +111,20 @@ def main() -> int:
         elif dataset == "mmlu":
             prediction = answer.get("choice")
             probabilities = answer.get("probabilities")
-            if not isinstance(probabilities, dict) or expected["gold"] not in probabilities:
+            if (not isinstance(probabilities, dict)
+                    or expected["gold"] not in probabilities
+                    or prediction not in probabilities
+                    or (criteria is not None and prediction not in criteria)):
                 raise RuntimeError(f"line {line_number} has malformed choice probabilities")
-            probability_gold = probabilities[expected["gold"]]
-            confidence = max(probabilities.values())
+            accepted = ([key for key, value in criteria.items()
+                         if value == criteria[expected["gold"]]]
+                        if criteria is not None else [expected["gold"]])
+            if any(key not in probabilities for key in accepted):
+                raise RuntimeError(f"line {line_number} has missing equivalent probabilities")
+            probability_gold = min(1.0, sum(probabilities[key] for key in accepted))
+            confidence = (min(1.0, sum(probabilities[key] for key, value in criteria.items()
+                                       if value == criteria[prediction]))
+                          if criteria is not None else probabilities[prediction])
         else:
             raise RuntimeError(f"line {line_number} has unknown dataset {dataset!r}")
         probability_gold = max(float(probability_gold), sys.float_info.min)
@@ -91,7 +133,8 @@ def main() -> int:
             "id": expected["id"],
             "gold": expected["gold"],
             "prediction": prediction,
-            "correct": prediction == expected["gold"],
+            "correct": (prediction in accepted if dataset == "mmlu"
+                        else prediction == expected["gold"]),
             "gold_probability": probability_gold,
             "gold_nll": -math.log(probability_gold),
             "confidence": confidence,
@@ -111,6 +154,7 @@ def main() -> int:
             subject: summarize(rows) for subject, rows in sorted(by_subject.items())
         },
         "failures": failures,
+        "duplicate_candidates": duplicate_candidates,
     }
     for dataset, summary in grouped.items():
         accuracy = summary["accuracy"]

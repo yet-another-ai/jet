@@ -189,6 +189,7 @@ time target/release/jet judge \
   --timings "$run_dir/stages.json"
 python3 scripts/evaluate-accuracy.py \
   --gold tests/accuracy/generated/gold.jsonl \
+  --requests tests/accuracy/generated/requests.jsonl \
   --responses "$run_dir/responses.jsonl" \
   --report "$run_dir/report.json"
 ```

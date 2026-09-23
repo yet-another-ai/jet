@@ -98,20 +98,32 @@ impl OutputDistribution<'_> {
         match self {
             Self::Logits(values) => target_log_probability(values, target),
             Self::DeviceLogProbabilities(values) => {
-                let value = f64::from(*values.get(target_index).ok_or_else(|| {
+                let value = *values.get(target_index).ok_or_else(|| {
                     JetError::NativeRuntime(
                         "Vulkan score target index exceeds sampler output".to_owned(),
                     )
-                })?);
-                if value.is_nan() || value == f64::INFINITY || value > 0.0 {
-                    return Err(JetError::NonFiniteScore(format!(
-                        "Vulkan softmax returned invalid target log-probability {value}"
-                    )));
-                }
-                Ok(value)
+                })?;
+                checked_device_log_probability(value)
             }
         }
     }
+}
+
+fn checked_device_log_probability(value: f32) -> Result<f64> {
+    // The Vulkan softmax divides two rounded f32 values. For a dominant token,
+    // the result can cross 1 by a few ulps and log(1 + epsilon) becomes positive.
+    // Restore the mathematical upper bound only within that rounding window;
+    // larger positives and NaN/+inf still report a broken device result.
+    if value > 0.0 && value <= 4.0 * f32::EPSILON {
+        return Ok(0.0);
+    }
+    if value.is_nan() || value == f32::INFINITY || value > 0.0 {
+        return Err(JetError::NonFiniteScore(format!(
+            "Vulkan softmax returned invalid target log-probability {}",
+            f64::from(value)
+        )));
+    }
+    Ok(f64::from(value))
 }
 
 struct DecodeItem {
@@ -1821,6 +1833,23 @@ fn target_log_probability(logits: &[f32], target: sys::llama_token) -> Result<f6
 mod tests {
     use super::*;
     use jet_core::normalize_log_probabilities;
+
+    #[test]
+    fn bounds_only_float32_rounding_above_zero_from_device() -> Result<()> {
+        assert_eq!(checked_device_log_probability(1.9361265e-7)?, 0.0);
+        assert_eq!(checked_device_log_probability(-0.25)?, -0.25);
+        assert_eq!(
+            checked_device_log_probability(f32::NEG_INFINITY)?,
+            f64::NEG_INFINITY
+        );
+        for invalid in [5.0 * f32::EPSILON, f32::INFINITY, f32::NAN] {
+            assert!(matches!(
+                checked_device_log_probability(invalid),
+                Err(JetError::NonFiniteScore(_))
+            ));
+        }
+        Ok(())
+    }
 
     #[test]
     fn rejects_conflicting_and_overflowing_offload_configuration() -> Result<()> {

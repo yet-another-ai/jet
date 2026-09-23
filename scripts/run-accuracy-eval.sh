@@ -36,5 +36,6 @@ mise exec -- "$@" \
 
 python3 scripts/evaluate-accuracy.py \
   --gold "$work_dir/gold.jsonl" \
+  --requests "$work_dir/requests.jsonl" \
   --responses "$work_dir/responses.jsonl" \
   --report "$work_dir/report.json"

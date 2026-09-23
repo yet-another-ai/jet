@@ -76,6 +76,9 @@ other than a fixed count per subject is needed.
 The primary metric is top-1 accuracy. Mean negative log-likelihood of the gold label is included as
 a diagnostic. These results are not directly comparable to the official MMLU leaderboard because
 Jet uses its own Tera-rendered zero-shot instruction prompt and semantic candidate scoring.
+Pass matching `--requests` to `evaluate-accuracy.py` when evaluating MMLU: if multiple option
+letters have identical answer text, any letter equivalent to the gold answer counts as correct.
+The gold probability sums those equivalent labels. The report lists duplicate-answer questions.
 
 See [the recorded baseline](../../docs/accuracy.md) for the latest checked-in result and its
 interpretation.

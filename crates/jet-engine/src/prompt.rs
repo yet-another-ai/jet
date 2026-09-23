@@ -189,7 +189,7 @@ fn finish_plan(
 ) -> Result<QuestionPlan> {
     let mut targets = BTreeSet::new();
     for candidate in &candidates {
-        if !targets.insert(candidate.target.clone()) {
+        if !targets.insert(candidate.target.clone()) && kind != AnswerKind::Choice {
             return Err(JetError::InvalidRequest(format!(
                 "question {question_id:?} contains duplicate rendered candidate {:?}",
                 candidate.target
@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_semantic_candidates_are_rejected() -> Result<()> {
+    fn choice_candidates_with_duplicate_meanings_remain_scoreable() -> Result<()> {
         let request: DecisionRequest = serde_json::from_value(serde_json::json!({
             "state": "x",
             "questions": {
@@ -370,7 +370,13 @@ mod tests {
                 }
             }
         }))?;
-        assert!(prepare_request(&request).is_err());
+        let plan = prepare_request(&request)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| JetError::InvalidRequest("missing plan".into()))?;
+        assert_eq!(plan.candidates.len(), 2);
+        assert_eq!(plan.candidates[0].target, plan.candidates[1].target);
+        assert!(plan.user_content.contains("\"same\", \"same\""));
         Ok(())
     }
 
