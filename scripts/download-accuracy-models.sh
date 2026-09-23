@@ -4,11 +4,11 @@ set -eu
 model_dir=${JET_MODEL_DIR:-models}
 selection=qwen35
 if [ "$#" -gt 0 ]; then
-    if [ "$#" -ne 1 ] || [ "$1" != "--qwen36" ]; then
-        printf 'Usage: %s [--qwen36]\n' "$0" >&2
+    if [ "$#" -ne 1 ] || { [ "$1" != "--qwen36" ] && [ "$1" != "--qwen36-vision" ]; }; then
+        printf 'Usage: %s [--qwen36|--qwen36-vision]\n' "$0" >&2
         exit 2
     fi
-    selection=qwen36
+    selection=${1#--}
 fi
 
 checksum() {
@@ -47,13 +47,21 @@ download() {
 
 mkdir -p "$model_dir"
 
-if [ "$selection" = qwen36 ]; then
+if [ "$selection" = qwen36 ] || [ "$selection" = qwen36-vision ]; then
     download \
         ggml-org/Qwen3.6-35B-A3B-GGUF \
         baec3ebee244827cda0f4557eafa8b28f7545fa6 \
         Qwen3.6-35B-A3B-Q4_K_M.gguf \
         Qwen3.6-35B-A3B-Q4_K_M.gguf \
         671e47e0ec53c665d048b98c3ecbfd5236b5ca9c3e02ed19fc8f81f7b85140c7
+    if [ "$selection" = qwen36-vision ]; then
+        download \
+            ggml-org/Qwen3.6-35B-A3B-GGUF \
+            baec3ebee244827cda0f4557eafa8b28f7545fa6 \
+            mmproj-Qwen3.6-35B-A3B-Q8_0.gguf \
+            mmproj-Qwen3.6-35B-A3B-Q8_0.gguf \
+            904cbf8c8e876220066ab3bf676c7efa40f3da372276fdaf8b01d2fb2a37a51d
+    fi
     exit 0
 fi
 

@@ -13,6 +13,7 @@ path = "src/main.rs"
 [features]
 default = []
 vulkan = ["jet-engine/vulkan"]
+vision = ["jet-engine/vision", "dep:base64"]
 
 [dependencies]
 clap.workspace = true
@@ -22,6 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+base64 = { version = "0.22", optional = true }
 
 [lints]
 workspace = true

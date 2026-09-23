@@ -3,9 +3,15 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+#[cfg(feature = "vision")]
+use base64::Engine as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use jet_core::{DecisionRequest, ErrorCode, JetError, Result};
 use jet_engine::{Engine, EngineConfig, ExecutionMode, ThinkingMode};
+#[cfg(feature = "vision")]
+use jet_engine::{ImageInput, MultimodalDecisionRequest, VisionConfig};
+#[cfg(feature = "vision")]
+use serde::Deserialize;
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -18,6 +24,55 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Judge(JudgeArgs),
+    #[cfg(feature = "vision")]
+    JudgeMultimodal(JudgeMultimodalArgs),
+}
+
+#[cfg(feature = "vision")]
+#[derive(clap::Args)]
+struct JudgeMultimodalArgs {
+    #[arg(long)]
+    model_path: PathBuf,
+    #[arg(long, default_value = "qwen/qwen3.6-35b-a3b-q4_k_m")]
+    model_id: String,
+    #[arg(long, default_value = "-")]
+    input: PathBuf,
+    #[arg(long, default_value = "-")]
+    output: PathBuf,
+    #[arg(long, value_name = "PATH", value_parser = parse_timings_path)]
+    timings: Option<PathBuf>,
+    #[arg(long)]
+    mmproj_path: PathBuf,
+    #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
+    backend: BackendArg,
+    #[arg(long)]
+    gpu_layers: Option<u32>,
+    #[arg(long, default_value_t = 0)]
+    cpu_moe_layers: u32,
+    #[arg(long)]
+    no_mmap: bool,
+    #[arg(long, default_value_t = 4096)]
+    context_tokens: u32,
+    #[arg(long, default_value_t = 2048)]
+    token_batch: u32,
+    #[arg(long, default_value_t = 512)]
+    micro_batch: u32,
+    #[arg(long, default_value_t = 2)]
+    max_sequences: u32,
+    #[arg(long, default_value_t = 256)]
+    max_output_rows: u32,
+    #[arg(long, value_enum, default_value_t = ExecutionArg::Batched)]
+    execution: ExecutionArg,
+    #[arg(long)]
+    threads: Option<i32>,
+    #[arg(long, default_value_t = 4)]
+    max_images: usize,
+    #[arg(long, default_value_t = 10 * 1024 * 1024)]
+    max_image_bytes: usize,
+    #[arg(long, default_value_t = 16 * 1024 * 1024)]
+    max_image_pixels: usize,
+    #[arg(long, default_value_t = 1024)]
+    image_max_tokens: i32,
 }
 
 #[derive(clap::Args)]
@@ -112,6 +167,42 @@ enum InputLine {
     Error(ErrorEnvelope),
 }
 
+#[cfg(feature = "vision")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MultimodalInputLine {
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    state: serde_json::Value,
+    images: Vec<WireImage>,
+    questions: std::collections::BTreeMap<String, jet_core::Question>,
+}
+
+#[cfg(feature = "vision")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireImage {
+    id: String,
+    source: ImageSource,
+}
+
+#[cfg(feature = "vision")]
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum ImageSource {
+    Base64 { media_type: String, data: String },
+    Path { media_type: String, path: PathBuf },
+}
+
+#[cfg(feature = "vision")]
+#[derive(Serialize)]
+struct MultimodalErrorEnvelope {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
+    error: ErrorBody,
+}
+
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -123,6 +214,15 @@ fn main() -> ExitCode {
 
     match Cli::parse().command {
         Command::Judge(args) => match run_judge(args) {
+            Ok(had_errors) if had_errors => ExitCode::FAILURE,
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("jet: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        #[cfg(feature = "vision")]
+        Command::JudgeMultimodal(args) => match run_judge_multimodal(args) {
             Ok(had_errors) if had_errors => ExitCode::FAILURE,
             Ok(_) => ExitCode::SUCCESS,
             Err(error) => {
@@ -143,40 +243,7 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         validate_timings_path(timings, &args.input, &args.output)?;
     }
 
-    let mut config = match args.backend {
-        BackendArg::Cpu => EngineConfig::cpu(&args.model_path, args.model_id),
-        BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, args.model_id),
-    };
-    config.gpu_layers = args.gpu_layers;
-    config.cpu_moe_layers = args.cpu_moe_layers;
-    config.use_mmap = !args.no_mmap;
-    config.context_tokens_per_sequence = args.context_tokens;
-    config.token_batch = args.token_batch;
-    config.micro_batch = args.micro_batch;
-    config.max_sequences = args.max_sequences;
-    config.preparation_pipeline = !args.no_preparation_pipeline;
-    if let Some(max_output_rows) = args.max_output_rows {
-        config.max_output_rows = max_output_rows;
-    }
-    if let Some(threads) = args.threads {
-        config.threads = threads;
-    }
-    config.execution_mode = match args.execution {
-        ExecutionArg::Reference => ExecutionMode::Reference,
-        ExecutionArg::Batched => ExecutionMode::Batched,
-    };
-    config.thinking.mode = match args.thinking {
-        ThinkingArg::Disabled => ThinkingMode::Disabled,
-        ThinkingArg::Auto => ThinkingMode::Auto,
-        ThinkingArg::Required => ThinkingMode::Required,
-    };
-    config.thinking.max_tokens = args.thinking_tokens;
-    config.thinking.temperature = args.thinking_temperature;
-    config.thinking.top_k = args.thinking_top_k;
-    config.thinking.top_p = args.thinking_top_p;
-    config.thinking.seed = args.thinking_seed;
-    config.collect_timings = args.timings.is_some();
-
+    let config = engine_config(&args);
     let mut engine = Engine::load(config)?;
     let input = open_input(&args.input)?;
     let mut output = open_output(&args.output)?;
@@ -207,6 +274,190 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         timings_output.flush()?;
     }
     Ok(had_errors)
+}
+
+fn engine_config(args: &JudgeArgs) -> EngineConfig {
+    let mut config = match args.backend {
+        BackendArg::Cpu => EngineConfig::cpu(&args.model_path, &args.model_id),
+        BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, &args.model_id),
+    };
+    config.gpu_layers = args.gpu_layers;
+    config.cpu_moe_layers = args.cpu_moe_layers;
+    config.use_mmap = !args.no_mmap;
+    config.context_tokens_per_sequence = args.context_tokens;
+    config.token_batch = args.token_batch;
+    config.micro_batch = args.micro_batch;
+    config.max_sequences = args.max_sequences;
+    config.preparation_pipeline = !args.no_preparation_pipeline;
+    if let Some(max_output_rows) = args.max_output_rows {
+        config.max_output_rows = max_output_rows;
+    }
+    if let Some(threads) = args.threads {
+        config.threads = threads;
+    }
+    config.execution_mode = match args.execution {
+        ExecutionArg::Reference => ExecutionMode::Reference,
+        ExecutionArg::Batched => ExecutionMode::Batched,
+    };
+    config.thinking.mode = match args.thinking {
+        ThinkingArg::Disabled => ThinkingMode::Disabled,
+        ThinkingArg::Auto => ThinkingMode::Auto,
+        ThinkingArg::Required => ThinkingMode::Required,
+    };
+    config.thinking.max_tokens = args.thinking_tokens;
+    config.thinking.temperature = args.thinking_temperature;
+    config.thinking.top_k = args.thinking_top_k;
+    config.thinking.top_p = args.thinking_top_p;
+    config.thinking.seed = args.thinking_seed;
+    config.collect_timings = args.timings.is_some();
+    config
+}
+
+#[cfg(feature = "vision")]
+fn run_judge_multimodal(args: JudgeMultimodalArgs) -> Result<bool> {
+    if let Some(timings) = &args.timings {
+        validate_timings_path(timings, &args.input, &args.output)?;
+    }
+    let mut config = match args.backend {
+        BackendArg::Cpu => EngineConfig::cpu(&args.model_path, args.model_id),
+        BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, args.model_id),
+    };
+    config.gpu_layers = args.gpu_layers;
+    config.cpu_moe_layers = args.cpu_moe_layers;
+    config.use_mmap = !args.no_mmap;
+    config.context_tokens_per_sequence = args.context_tokens;
+    config.token_batch = args.token_batch;
+    config.micro_batch = args.micro_batch;
+    config.max_sequences = args.max_sequences;
+    config.max_output_rows = args.max_output_rows;
+    config.execution_mode = match args.execution {
+        ExecutionArg::Reference => ExecutionMode::Reference,
+        ExecutionArg::Batched => ExecutionMode::Batched,
+    };
+    if let Some(threads) = args.threads {
+        config.threads = threads;
+    }
+    let mut vision = VisionConfig::new(args.mmproj_path);
+    vision.max_images = args.max_images;
+    vision.max_image_bytes = args.max_image_bytes;
+    vision.max_image_pixels = args.max_image_pixels;
+    vision.image_max_tokens = args.image_max_tokens;
+    config.vision = Some(vision);
+    config.collect_timings = args.timings.is_some();
+    let mut engine = Engine::load(config)?;
+    let input = open_input(&args.input)?;
+    let mut output = open_output(&args.output)?;
+    let base_dir = if args.input == Path::new("-") {
+        std::env::current_dir()?
+    } else {
+        args.input
+            .canonicalize()?
+            .parent()
+            .ok_or_else(|| JetError::InvalidRequest("input path has no parent".to_owned()))?
+            .to_path_buf()
+    };
+    let mut had_errors = false;
+    for line in input.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let parsed = serde_json::from_str::<MultimodalInputLine>(&line);
+        let request_id = parsed
+            .as_ref()
+            .ok()
+            .and_then(|input| input.request_id.clone());
+        let result = parsed
+            .map_err(JetError::from)
+            .and_then(|input| multimodal_request(input, &base_dir, args.max_image_bytes))
+            .and_then(|request| engine.decide_multimodal(request));
+        match result {
+            Ok(response) => write_json_line(&mut *output, &response)?,
+            Err(error) => {
+                had_errors = true;
+                write_json_line(
+                    &mut *output,
+                    &MultimodalErrorEnvelope {
+                        request_id,
+                        error: ErrorBody {
+                            code: error.code(),
+                            message: error.to_string(),
+                        },
+                    },
+                )?;
+            }
+        }
+        output.flush()?;
+    }
+    if let Some(path) = args.timings {
+        let mut timings_output = BufWriter::new(File::create(path)?);
+        serde_json::to_writer_pretty(&mut timings_output, engine.timings())?;
+        timings_output.write_all(b"\n")?;
+        timings_output.flush()?;
+    }
+    Ok(had_errors)
+}
+
+#[cfg(feature = "vision")]
+fn multimodal_request(
+    input: MultimodalInputLine,
+    base_dir: &Path,
+    max_image_bytes: usize,
+) -> Result<MultimodalDecisionRequest> {
+    let mut images = Vec::with_capacity(input.images.len());
+    for image in input.images {
+        let (media_type, data) = match image.source {
+            ImageSource::Base64 { media_type, data } => {
+                if data.len() > (max_image_bytes.saturating_mul(4) / 3).saturating_add(8) {
+                    return Err(JetError::InvalidRequest(format!(
+                        "image {:?} exceeds byte limit",
+                        image.id
+                    )));
+                }
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data)
+                    .map_err(|error| {
+                        JetError::InvalidRequest(format!(
+                            "image {:?} has invalid base64: {error}",
+                            image.id
+                        ))
+                    })?;
+                (media_type, bytes)
+            }
+            ImageSource::Path { media_type, path } => {
+                let resolved = if path.is_absolute() {
+                    path
+                } else {
+                    base_dir.join(path)
+                };
+                let length = std::fs::metadata(&resolved)?.len();
+                if length > u64::try_from(max_image_bytes).unwrap_or(u64::MAX) {
+                    return Err(JetError::InvalidRequest(format!(
+                        "image {:?} exceeds byte limit",
+                        image.id
+                    )));
+                }
+                (media_type, std::fs::read(resolved)?)
+            }
+        };
+        if data.len() > max_image_bytes {
+            return Err(JetError::InvalidRequest(format!(
+                "image {:?} exceeds byte limit",
+                image.id
+            )));
+        }
+        images.push(ImageInput {
+            id: image.id,
+            media_type,
+            data,
+        });
+    }
+    Ok(MultimodalDecisionRequest {
+        request_id: input.request_id,
+        state: input.state,
+        images,
+        questions: input.questions,
+    })
 }
 
 fn parse_timings_path(value: &str) -> std::result::Result<PathBuf, String> {
@@ -337,10 +588,57 @@ fn error_envelope(error: JetError) -> ErrorEnvelope {
 mod tests {
     use super::*;
 
+    fn parsed_judge(cli: Cli) -> std::result::Result<JudgeArgs, clap::Error> {
+        match cli.command {
+            Command::Judge(args) => Ok(args),
+            #[cfg(feature = "vision")]
+            Command::JudgeMultimodal(_) => Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidSubcommand,
+                "expected judge command",
+            )),
+        }
+    }
+
+    #[cfg(feature = "vision")]
+    #[test]
+    fn multimodal_json_accepts_bytes_and_paths_with_the_same_image() -> Result<()> {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/vision/red.png");
+        let expected = std::fs::read(&path)?;
+        let base64 = base64::engine::general_purpose::STANDARD.encode(&expected);
+        let image_directory = path.parent().ok_or_else(|| {
+            JetError::InvalidRequest("fixture image has no parent directory".to_owned())
+        })?;
+        let filename = path
+            .file_name()
+            .ok_or_else(|| JetError::InvalidRequest("fixture image has no filename".to_owned()))?;
+        for source in [
+            serde_json::json!({"type":"base64", "media_type":"image/png", "data":base64}),
+            serde_json::json!({"type":"path", "media_type":"image/png", "path":filename.to_string_lossy()}),
+        ] {
+            let value = serde_json::json!({
+                "request_id":"frame-1", "state":"x",
+                "images":[{"id":"screen", "source":source}],
+                "questions":{"action":{"type":"choice", "instructions":"choose",
+                    "criteria":{"a":"A", "b":"B"}}}
+            });
+            let parsed: MultimodalInputLine = serde_json::from_value(value)?;
+            let request = multimodal_request(parsed, image_directory, 1024)?;
+            assert_eq!(request.request_id.as_deref(), Some("frame-1"));
+            assert_eq!(request.images[0].data, expected);
+        }
+        let without_state: MultimodalInputLine = serde_json::from_value(serde_json::json!({
+            "images": [],
+            "questions": {}
+        }))?;
+        assert!(without_state.state.is_null());
+        Ok(())
+    }
+
     #[test]
     fn preparation_pipeline_defaults_to_enabled() -> std::result::Result<(), clap::Error> {
         let cli = Cli::try_parse_from(["jet", "judge", "--model-path", "model.gguf"])?;
-        let Command::Judge(args) = cli.command;
+        let args = parsed_judge(cli)?;
         assert!(!args.no_preparation_pipeline);
         Ok(())
     }
@@ -357,7 +655,7 @@ mod tests {
             "4",
             "--no-preparation-pipeline",
         ])?;
-        let Command::Judge(args) = cli.command;
+        let args = parsed_judge(cli)?;
         assert_eq!(args.max_sequences, 4);
         assert!(args.no_preparation_pipeline);
         assert!(
@@ -389,7 +687,7 @@ mod tests {
             "--cpu-moe-layers",
             "30",
         ])?;
-        let Command::Judge(args) = cli.command;
+        let args = parsed_judge(cli)?;
         assert_eq!(args.gpu_layers, Some(12));
         assert_eq!(args.cpu_moe_layers, 30);
         for option in ["--gpu-layers", "--cpu-moe-layers"] {
@@ -434,7 +732,7 @@ mod tests {
             "--timings",
             "results.jsonl",
         ])?;
-        let Command::Judge(args) = cli.command;
+        let args = parsed_judge(cli)?;
         assert!(matches!(run_judge(args), Err(JetError::InvalidRequest(_))));
         Ok(())
     }
@@ -478,7 +776,7 @@ mod tests {
                     OsStr::new("--timings"),
                     alias.as_os_str(),
                 ])?;
-                let Command::Judge(args) = cli.command;
+                let args = parsed_judge(cli)?;
                 assert!(matches!(run_judge(args), Err(JetError::InvalidRequest(_))));
                 assert_eq!(std::fs::read(&path)?, b"preserve existing content\n");
             }

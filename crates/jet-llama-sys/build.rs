@@ -70,10 +70,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let vulkan = env::var_os("CARGO_FEATURE_VULKAN").is_some();
+    let vision = env::var_os("CARGO_FEATURE_VISION").is_some();
     let mut config = cmake::Config::new(&source_dir);
     config
         .profile("Release")
-        .build_target("llama-common")
+        .build_target(if vision { "mtmd" } else { "llama-common" })
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("GGML_STATIC", "ON")
         .define("GGML_BACKEND_DL", "OFF")
@@ -82,6 +83,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("LLAMA_BUILD_TOOLS", "OFF")
         .define("LLAMA_BUILD_EXAMPLES", "OFF")
         .define("LLAMA_BUILD_SERVER", "OFF")
+        .define("LLAMA_BUILD_MTMD", if vision { "ON" } else { "OFF" })
+        .define("MTMD_VIDEO", "OFF")
         .define("LLAMA_LLGUIDANCE", "OFF")
         .define("GGML_OPENMP", "OFF")
         .define("GGML_BLAS", "OFF")
@@ -93,8 +96,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("GGML_SYCL", "OFF");
 
     let dst = config.build();
+    if vision {
+        // Both targets share one configured build tree; mtmd does not depend on common.
+        config.build_target("llama-common").build();
+    }
 
-    cc::Build::new()
+    let mut wrapper_build = cc::Build::new();
+    wrapper_build
         .cpp(true)
         .std("c++17")
         .file(&wrapper)
@@ -102,8 +110,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .include(&common_dir)
         .include(&vendor_dir)
         .include(&ggml_include_dir)
-        .warnings(false)
-        .compile("jet_llama_wrapper");
+        .warnings(false);
+    if vision {
+        wrapper_build
+            .file(manifest_dir.join("src/vision.cpp"))
+            .include(source_dir.join("tools/mtmd"));
+    }
+    wrapper_build.compile("jet_llama_wrapper");
 
     let mut link_paths = vec![
         dst.join("build/common"),
@@ -111,6 +124,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         dst.join("build/ggml/src"),
         dst.join("build/ggml/src/ggml-cpu"),
         dst.join("build/vendor/cpp-httplib"),
+        dst.join("build/tools/mtmd"),
+        dst.join("build/vendor/hash"),
         dst.join("lib"),
         dst.join("lib64"),
     ];
@@ -139,6 +154,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "ggml-cpu",
     ] {
         println!("cargo:rustc-link-lib=static={library}");
+    }
+    if vision {
+        println!("cargo:rustc-link-lib=static=mtmd");
+        println!("cargo:rustc-link-lib=static=vendor-hash");
+        println!(
+            "cargo:rerun-if-changed={}",
+            manifest_dir.join("src/vision.cpp").display()
+        );
     }
     if vulkan {
         println!("cargo:rustc-link-lib=static=ggml-vulkan");

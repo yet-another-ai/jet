@@ -17,7 +17,11 @@ use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
 mod prepare;
 #[cfg(test)]
 mod prepare_tests;
+#[cfg(feature = "vision")]
+mod vision;
 use prepare::{PreparationWorker, PreparedPrompt, PromptPreparer};
+#[cfg(feature = "vision")]
+use vision::VisionContext;
 
 static BACKEND_INIT: Once = Once::new();
 
@@ -203,6 +207,8 @@ pub(crate) struct LlamaScorer {
     isolate_candidate_groups: bool,
     timings: EngineTimings,
     preparer: Option<PromptPreparer>,
+    #[cfg(feature = "vision")]
+    vision: Option<VisionContext>,
     preparation_worker: Option<PreparationWorker>,
     // LlamaScorer::drop frees both contexts before this owned pool is dropped.
     _cpu_threadpool: CpuThreadpool,
@@ -266,6 +272,22 @@ impl LlamaScorer {
                 ))
             })?;
 
+        #[cfg(feature = "vision")]
+        let vision = match &config.vision {
+            Some(vision_config) => match VisionContext::new(model, config.backend, vision_config) {
+                Ok(vision) => Some(vision),
+                Err(error) => {
+                    // SAFETY: no context has been constructed and the model is still owned here.
+                    unsafe { sys::llama_model_free(model.as_ptr()) };
+                    return Err(error);
+                }
+            },
+            None => None,
+        };
+
+        #[cfg(feature = "vision")]
+        let mut load_result = Self::finish_load(model, config, vision);
+        #[cfg(not(feature = "vision"))]
         let mut load_result = Self::finish_load(model, config);
         if let Ok(scorer) = &mut load_result {
             scorer.timings.load_ms = elapsed_ms(started);
@@ -278,7 +300,11 @@ impl LlamaScorer {
         load_result
     }
 
-    fn finish_load(model: NonNull<sys::llama_model>, config: EngineConfig) -> Result<Self> {
+    fn finish_load(
+        model: NonNull<sys::llama_model>,
+        config: EngineConfig,
+        #[cfg(feature = "vision")] vision: Option<VisionContext>,
+    ) -> Result<Self> {
         // SAFETY: load owns the model; preparers are released before that model.
         let preparer = unsafe { PromptPreparer::new(model) }?;
         // Create the pool before native contexts. Every failure path below frees
@@ -478,6 +504,8 @@ impl LlamaScorer {
             isolate_candidate_groups: isolates_candidate_forks,
             timings: EngineTimings::default(),
             preparer: Some(preparer),
+            #[cfg(feature = "vision")]
+            vision,
             preparation_worker: None,
             _cpu_threadpool: cpu_threadpool,
             // load() transfers its still-live overrides here immediately on success.
@@ -1562,6 +1590,8 @@ impl Drop for LlamaScorer {
         // Join CPU preparation before releasing its borrowed model and vocabulary.
         self.preparation_worker.take();
         self.preparer.take();
+        #[cfg(feature = "vision")]
+        self.vision.take();
         // SAFETY: contexts must be freed before the model and the shared CPU pool.
         // The pool remains live until automatic field destruction after this body.
         unsafe {

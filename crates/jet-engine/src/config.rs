@@ -72,6 +72,31 @@ pub struct EngineConfig {
     pub thinking: ThinkingConfig,
     /// Collect cumulative stage timings and workload counters.
     pub collect_timings: bool,
+    #[cfg(feature = "vision")]
+    pub vision: Option<VisionConfig>,
+}
+
+#[cfg(feature = "vision")]
+#[derive(Debug, Clone)]
+pub struct VisionConfig {
+    pub mmproj_path: PathBuf,
+    pub max_images: usize,
+    pub max_image_bytes: usize,
+    pub max_image_pixels: usize,
+    pub image_max_tokens: i32,
+}
+
+#[cfg(feature = "vision")]
+impl VisionConfig {
+    pub fn new(mmproj_path: impl Into<PathBuf>) -> Self {
+        Self {
+            mmproj_path: mmproj_path.into(),
+            max_images: 4,
+            max_image_bytes: 10 * 1024 * 1024,
+            max_image_pixels: 16 * 1024 * 1024,
+            image_max_tokens: 1024,
+        }
+    }
 }
 
 impl EngineConfig {
@@ -95,6 +120,8 @@ impl EngineConfig {
             execution_mode: ExecutionMode::Batched,
             thinking: ThinkingConfig::default(),
             collect_timings: false,
+            #[cfg(feature = "vision")]
+            vision: None,
         }
     }
 

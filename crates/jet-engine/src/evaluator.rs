@@ -92,7 +92,7 @@ fn fill_scoring_errors(slots: &mut [Option<Result<DecisionResponse>>], message: 
     }
 }
 
-fn plan_to_job(plan: &QuestionPlan) -> ScoreJob {
+pub(crate) fn plan_to_job(plan: &QuestionPlan) -> ScoreJob {
     ScoreJob {
         system_content: SYSTEM_INSTRUCTION,
         user_content: plan.user_content.clone(),
@@ -104,7 +104,7 @@ fn plan_to_job(plan: &QuestionPlan) -> ScoreJob {
     }
 }
 
-fn build_response(
+pub(crate) fn build_response(
     model_id: &str,
     plans: &[QuestionPlan],
     scores: &[ScoreResult],

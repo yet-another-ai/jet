@@ -144,6 +144,37 @@ Successful lines contain only `model`, `answers`, and `usage`. Failed lines have
 `{"error":{"code":"...","message":"..."}}`; Jet preserves input order and exits non-zero if
 any line fails.
 
+### Multimodal decisions
+
+Build with the `vision` feature and download the Qwen3.6 language model and its matching visual
+projector. The downloader pins both files by revision and SHA-256:
+
+```sh
+./scripts/download-accuracy-models.sh --qwen36-vision
+mise exec -- cargo run -p jet-cli --features vision -- judge-multimodal \
+  --model-path models/Qwen3.6-35B-A3B-Q4_K_M.gguf \
+  --mmproj-path models/mmproj-Qwen3.6-35B-A3B-Q8_0.gguf \
+  --input - --output -
+```
+
+Send one JSON object per line. `state` is optional and defaults to `null`. `source` accepts Base64
+image bytes or a local path; PNG and JPEG are supported. Paths are relative to the input JSONL
+file's directory, or the current directory when reading stdin. The Rust `Engine::decide_multimodal`
+API accepts image bytes directly.
+
+```json
+{"request_id":"frame-1","state":{"goal":"reach the exit"},"images":[{"id":"screen","source":{"type":"path","media_type":"image/png","path":"tests/fixtures/vision/red.png"}}],"questions":{"action":{"type":"choice","instructions":"Choose the best next action based on the image","criteria":{"left":"Move left","right":"Move right","wait":"Wait"}}}}
+```
+
+`judge-multimodal` keeps the model loaded and writes and flushes one response for each input line,
+even while stdin remains open. A response echoes `request_id`, returns the existing answer types,
+and reports total, text, and image input tokens. An invalid image fails its request; later lines
+still run. The initial implementation requires disabled thinking. Image count, encoded bytes,
+decoded pixels, and visual token limits can be set with the `--max-images`, `--max-image-bytes`,
+`--max-image-pixels`, and `--image-max-tokens` options. Context occupancy counts visual embeddings
+as well as text tokens. Use `--backend vulkan` with `--features 'vision,vulkan'` when the Vulkan SDK
+and device are available.
+
 See [docs/scoring.md](docs/scoring.md) for scoring semantics and
 [docs/development.md](docs/development.md) for validation commands. The reproducible BoolQ/MMLU
 accuracy workflow is documented in [tests/accuracy/README.md](tests/accuracy/README.md); downloaded

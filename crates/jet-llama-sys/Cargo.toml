@@ -13,6 +13,7 @@ publish = false
 default = []
 generate-bindings = ["dep:bindgen"]
 vulkan = []
+vision = []
 
 [build-dependencies]
 bindgen = { version = "0.72", optional = true }

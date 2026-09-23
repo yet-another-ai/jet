@@ -3,9 +3,17 @@ mod evaluator;
 mod llama;
 mod prompt;
 mod timing;
+#[cfg(feature = "vision")]
+mod vision;
 
+#[cfg(feature = "vision")]
+pub use config::VisionConfig;
 pub use config::{Backend, EngineConfig, ExecutionMode, ThinkingConfig, ThinkingMode};
 pub use timing::EngineTimings;
+#[cfg(feature = "vision")]
+pub use vision::{
+    ImageInput, MultimodalDecisionRequest, MultimodalDecisionResponse, MultimodalUsage,
+};
 
 use jet_core::{DecisionRequest, DecisionResponse, JetError, Result};
 
@@ -35,6 +43,14 @@ impl Engine {
 
     pub fn decide_batch(&mut self, requests: &[DecisionRequest]) -> Vec<Result<DecisionResponse>> {
         decide_batch(&mut self.scorer, &self.model_id, requests)
+    }
+
+    #[cfg(feature = "vision")]
+    pub fn decide_multimodal(
+        &mut self,
+        request: MultimodalDecisionRequest,
+    ) -> Result<MultimodalDecisionResponse> {
+        vision::decide_multimodal(&mut self.scorer, &self.model_id, request)
     }
 
     /// Return cumulative stage timings, or zeros if collection is disabled.
