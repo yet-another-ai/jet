@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
 use std::rc::Rc;
@@ -13,6 +13,11 @@ use serde::Deserialize;
 use crate::EngineTimings;
 use crate::config::{Backend, EngineConfig, ExecutionMode, ThinkingMode};
 use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
+
+mod prepare;
+#[cfg(test)]
+mod prepare_tests;
+use prepare::{PreparationWorker, PreparedPrompt, PromptPreparer};
 
 static BACKEND_INIT: Once = Once::new();
 
@@ -185,6 +190,8 @@ pub(crate) struct LlamaScorer {
     candidate_capacity: usize,
     isolate_candidate_groups: bool,
     timings: EngineTimings,
+    preparer: Option<PromptPreparer>,
+    preparation_worker: Option<PreparationWorker>,
     // LlamaScorer::drop frees both contexts before this owned pool is dropped.
     _cpu_threadpool: CpuThreadpool,
     _tensor_buffer_overrides: TensorBufferOverrides,
@@ -260,6 +267,8 @@ impl LlamaScorer {
     }
 
     fn finish_load(model: NonNull<sys::llama_model>, config: EngineConfig) -> Result<Self> {
+        // SAFETY: load owns the model; preparers are released before that model.
+        let preparer = unsafe { PromptPreparer::new(model) }?;
         // Create the pool before native contexts. Every failure path below frees
         // its contexts before this local owner drops, and success transfers it to
         // the scorer. Without an attached pool each CPU graph split starts and
@@ -456,6 +465,8 @@ impl LlamaScorer {
             candidate_capacity,
             isolate_candidate_groups: isolates_candidate_forks,
             timings: EngineTimings::default(),
+            preparer: Some(preparer),
+            preparation_worker: None,
             _cpu_threadpool: cpu_threadpool,
             // load() transfers its still-live overrides here immediately on success.
             _tensor_buffer_overrides: TensorBufferOverrides::default(),
@@ -471,44 +482,21 @@ impl LlamaScorer {
         self.config.collect_timings.then(Instant::now)
     }
 
+    fn preparer(&self) -> Result<&PromptPreparer> {
+        self.preparer
+            .as_ref()
+            .ok_or_else(|| JetError::NativeRuntime("prompt preparer is unavailable".to_owned()))
+    }
+
     fn tokenize_jobs(&mut self, jobs: &[ScoreJob]) -> Result<Vec<TokenizedJob>> {
         jobs.iter()
             .map(|job| {
-                let (prompt_text, logical_prompt_tokens, thinking_tokens) =
-                    self.prepare_prompt(job)?;
-                let prompt = self.tokenize(&prompt_text)?;
-                if prompt.is_empty() {
-                    return Err(JetError::UnsupportedModel(
-                        "chat template produced an empty prompt".to_owned(),
-                    ));
-                }
-                let mut targets = Vec::with_capacity(job.targets.len());
-                for target in &job.targets {
-                    let combined = self.tokenize(&format!("{prompt_text}{target}"))?;
-                    if !combined.starts_with(&prompt) {
-                        return Err(JetError::UnsupportedModel(format!(
-                            "tokenizer boundary is unstable for candidate {target:?}"
-                        )));
-                    }
-                    let target_tokens = combined[prompt.len()..].to_vec();
-                    if target_tokens.is_empty() {
-                        return Err(JetError::InvalidRequest(format!(
-                            "candidate {target:?} has no scoreable tokens"
-                        )));
-                    }
-                    let required = prompt.len().saturating_add(target_tokens.len());
-                    let limit = self.config.context_tokens_per_sequence as usize;
-                    if required > limit {
-                        return Err(JetError::ContextExceeded { required, limit });
-                    }
-                    targets.push(target_tokens);
-                }
-                Ok(TokenizedJob {
+                let prompt = self.prepare_prompt(job)?;
+                self.preparer()?.finish(
+                    job,
                     prompt,
-                    targets,
-                    logical_prompt_tokens,
-                    thinking_tokens,
-                })
+                    self.config.context_tokens_per_sequence as usize,
+                )
             })
             .collect()
     }
@@ -518,23 +506,9 @@ impl LlamaScorer {
         Ok(self.render_chat_plan(job, false, None)?.prompt)
     }
 
-    fn prepare_prompt(&mut self, job: &ScoreJob) -> Result<(String, usize, usize)> {
+    fn prepare_prompt(&mut self, job: &ScoreJob) -> Result<PreparedPrompt> {
         match self.config.thinking.mode {
-            ThinkingMode::Disabled => {
-                let disabled = self.render_chat_plan(job, false, None)?;
-                let enabled = self.render_chat_plan(job, true, None)?;
-                if thinking_is_open(&disabled)
-                    || (enabled.supports_thinking
-                        && enabled.prompt == disabled.prompt
-                        && enabled.generation_prompt == disabled.generation_prompt)
-                {
-                    return Err(JetError::UnsupportedModel(
-                        "the chat template does not expose a verified non-thinking path".to_owned(),
-                    ));
-                }
-                let prompt_tokens = self.tokenize(&disabled.prompt)?.len();
-                Ok((disabled.prompt, prompt_tokens, 0))
-            }
+            ThinkingMode::Disabled => self.preparer()?.disabled_prompt(job),
             ThinkingMode::Auto | ThinkingMode::Required => {
                 let plan = self.render_chat_plan(job, true, None)?;
                 if !plan.supports_thinking || plan.thinking_end_tags.is_empty() {
@@ -545,11 +519,15 @@ impl LlamaScorer {
                         ));
                     }
                     let disabled = self.render_chat_plan(job, false, None)?;
-                    let prompt_tokens = self.tokenize(&disabled.prompt)?.len();
-                    return Ok((disabled.prompt, prompt_tokens, 0));
+                    let tokens = self.tokenize(&disabled.prompt)?;
+                    return Ok(PreparedPrompt {
+                        text: disabled.prompt,
+                        logical_tokens: tokens.len(),
+                        tokens,
+                        thinking_tokens: 0,
+                    });
                 }
-
-                let logical_prompt_tokens = self.tokenize(&plan.prompt)?.len();
+                let logical_tokens = self.tokenize(&plan.prompt)?.len();
                 let started = self.timing_start();
                 let cache_before = self.timings.cache_ms;
                 let generated = self.generate_reasoning(&plan);
@@ -568,7 +546,13 @@ impl LlamaScorer {
                             .to_owned(),
                     ));
                 }
-                Ok((final_plan.prompt, logical_prompt_tokens, thinking_tokens))
+                let tokens = self.tokenize(&final_plan.prompt)?;
+                Ok(PreparedPrompt {
+                    text: final_plan.prompt,
+                    tokens,
+                    logical_tokens,
+                    thinking_tokens,
+                })
             }
         }
     }
@@ -579,117 +563,11 @@ impl LlamaScorer {
         enable_thinking: bool,
         reasoning: Option<&str>,
     ) -> Result<ChatPlan> {
-        let system = CString::new(job.system_content).map_err(|_| {
-            JetError::InvalidRequest("system content contains an interior NUL byte".to_owned())
-        })?;
-        let user = CString::new(job.user_content.as_str()).map_err(|_| {
-            JetError::InvalidRequest("user content contains an interior NUL byte".to_owned())
-        })?;
-        let reasoning = reasoning.map(CString::new).transpose().map_err(|_| {
-            JetError::NativeRuntime("generated reasoning contains an interior NUL byte".to_owned())
-        })?;
-        let reasoning_ptr = reasoning
-            .as_ref()
-            .map_or(ptr::null(), |value| value.as_ptr());
-        let mut error = vec![0_i8; 1_024];
-        // SAFETY: all pointers are live for the duration of the call; null output requests size.
-        let required = unsafe {
-            sys::jet_chat_render(
-                self.model.as_ptr(),
-                system.as_ptr(),
-                user.as_ptr(),
-                enable_thinking,
-                reasoning_ptr,
-                ptr::null_mut(),
-                0,
-                error.as_mut_ptr(),
-                error.len(),
-            )
-        };
-        if required < 0 {
-            return Err(template_error(&error));
-        }
-        let required = usize::try_from(required)
-            .map_err(|_| JetError::NativeRuntime("chat template length overflow".to_owned()))?;
-        let mut output = vec![0_i8; required.saturating_add(1)];
-        // SAFETY: output and error buffers are writable and model/messages remain live.
-        let written = unsafe {
-            sys::jet_chat_render(
-                self.model.as_ptr(),
-                system.as_ptr(),
-                user.as_ptr(),
-                enable_thinking,
-                reasoning_ptr,
-                output.as_mut_ptr(),
-                output.len(),
-                error.as_mut_ptr(),
-                error.len(),
-            )
-        };
-        if written < 0 {
-            return Err(template_error(&error));
-        }
-        let written = usize::try_from(written)
-            .map_err(|_| JetError::NativeRuntime("chat template length overflow".to_owned()))?;
-        let bytes = output
-            .get(..written)
-            .ok_or_else(|| {
-                JetError::NativeRuntime("chat template overflowed its buffer".to_owned())
-            })?
-            .iter()
-            .map(|byte| *byte as u8)
-            .collect::<Vec<_>>();
-        let json = String::from_utf8(bytes).map_err(|error| {
-            JetError::NativeRuntime(format!("chat template emitted invalid UTF-8: {error}"))
-        })?;
-        serde_json::from_str(&json).map_err(JetError::from)
+        self.preparer()?.render(job, enable_thinking, reasoning)
     }
 
     fn tokenize(&self, text: &str) -> Result<Vec<sys::llama_token>> {
-        let text_len = i32::try_from(text.len()).map_err(|_| {
-            JetError::InvalidRequest("text is too large for llama.cpp tokenization".to_owned())
-        })?;
-        // SAFETY: text bytes are valid for text_len; null output with zero capacity queries size.
-        let count = unsafe {
-            sys::llama_tokenize(
-                self.vocab.as_ptr(),
-                text.as_ptr().cast(),
-                text_len,
-                ptr::null_mut(),
-                0,
-                true,
-                true,
-            )
-        };
-        if count == i32::MIN {
-            return Err(JetError::NativeRuntime(
-                "tokenization length overflow".to_owned(),
-            ));
-        }
-        let capacity = if count < 0 { -count } else { count };
-        let capacity = usize::try_from(capacity)
-            .map_err(|_| JetError::NativeRuntime("invalid tokenizer size response".to_owned()))?;
-        let mut tokens = vec![0; capacity];
-        // SAFETY: tokens has capacity elements and text/vocab remain valid.
-        let written = unsafe {
-            sys::llama_tokenize(
-                self.vocab.as_ptr(),
-                text.as_ptr().cast(),
-                text_len,
-                tokens.as_mut_ptr(),
-                i32::try_from(tokens.len()).unwrap_or(i32::MAX),
-                true,
-                true,
-            )
-        };
-        if written < 0 {
-            return Err(JetError::NativeRuntime(format!(
-                "tokenizer buffer was unexpectedly too small: needs {} tokens",
-                -written
-            )));
-        }
-        tokens.truncate(usize::try_from(written).unwrap_or(0));
-        Ok(tokens)
+        self.preparer()?.tokenize(text)
     }
 
     fn detokenize(&self, tokens: &[sys::llama_token]) -> Result<String> {
@@ -715,7 +593,7 @@ impl LlamaScorer {
         }
         let capacity = if required < 0 { -required } else { required };
         let mut output = vec![
-            0_i8;
+            0 as c_char;
             usize::try_from(capacity).map_err(|_| {
                 JetError::NativeRuntime("invalid detokenizer size response".to_owned())
             })?
@@ -765,7 +643,7 @@ impl LlamaScorer {
         let end_tags_json = CString::new(end_tags_json).map_err(|_| {
             JetError::NativeRuntime("thinking end tags contain an interior NUL byte".to_owned())
         })?;
-        let mut error = vec![0_i8; 1_024];
+        let mut error = vec![0 as c_char; 1_024];
         // SAFETY: all arguments are live and the wrapper returns an owned sampler or null.
         let sampler = NonNull::new(unsafe {
             sys::jet_thinking_sampler_init(
@@ -1590,6 +1468,16 @@ impl SequenceScorer for LlamaScorer {
             self.timings.batches += 1;
             self.timings.jobs += jobs.len() as u64;
         }
+        if self.config.preparation_pipeline
+            && self.config.backend == Backend::Vulkan
+            && self.config.thinking.mode == ThinkingMode::Disabled
+            && self.config.execution_mode == ExecutionMode::Batched
+            && self.isolate_candidate_groups
+        {
+            let results = self.score_pipelined(jobs);
+            self.timings.batch_ms += elapsed_ms(batch_started);
+            return results;
+        }
         let mut slots: Vec<Option<Result<ScoreResult>>> = (0..jobs.len()).map(|_| None).collect();
         let mut tokenized = Vec::new();
         let mut valid_indices = Vec::new();
@@ -1659,6 +1547,9 @@ impl SequenceScorer for LlamaScorer {
 
 impl Drop for LlamaScorer {
     fn drop(&mut self) {
+        // Join CPU preparation before releasing its borrowed model and vocabulary.
+        self.preparation_worker.take();
+        self.preparer.take();
         // SAFETY: contexts must be freed before the model and the shared CPU pool.
         // The pool remains live until automatic field destruction after this body.
         unsafe {
@@ -1728,7 +1619,7 @@ fn model_metadata(model: NonNull<sys::llama_model>, key: &CStr) -> Option<String
     if length < 0 {
         return None;
     }
-    let mut value = vec![0_i8; length as usize + 1];
+    let mut value = vec![0 as c_char; length as usize + 1];
     // SAFETY: the mutable buffer has space for the advertised bytes plus terminating NUL.
     unsafe {
         sys::llama_model_meta_val_str(
@@ -1870,7 +1761,7 @@ fn strip_thinking_end<'a>(rendered: &'a str, end_tags: &[String]) -> Option<&'a 
         .min_by_key(|prefix| prefix.len())
 }
 
-fn template_error(error: &[i8]) -> JetError {
+fn template_error(error: &[c_char]) -> JetError {
     let message = if error.first().copied().unwrap_or_default() == 0 {
         "unknown chat template error".to_owned()
     } else {

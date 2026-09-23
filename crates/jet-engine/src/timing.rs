@@ -6,14 +6,17 @@ use serde::Serialize;
 /// measurements include host work and waits for the backend; they are not GPU
 /// kernel timings. `batch_ms` includes preparation, thinking, cache management,
 /// and scoring, but excludes model loading. `prepare_ms` excludes thinking.
-/// Phase totals need not sum to `batch_ms`, which also includes scheduling and
-/// other bookkeeping. Counters and durations are zero when collection is off.
+/// Pipelined preparation overlaps scoring, so phase totals may exceed `batch_ms`.
+/// `prepare_wait_ms` measures the consumer's wait for prepared jobs. Counters
+/// and durations are zero when collection is off.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct EngineTimings {
     /// Model, backend, and inference-context initialization.
     pub load_ms: f64,
     /// Native chat-template rendering, tokenization, and validation, excluding thinking.
     pub prepare_ms: f64,
+    /// Time waiting for the CPU preparation worker; zero on the synchronous path.
+    pub prepare_wait_ms: f64,
     /// Optional reasoning generation.
     pub thinking_ms: f64,
     /// Decoding scoring prompts and reading their final-token scores.

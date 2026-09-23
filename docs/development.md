@@ -74,6 +74,31 @@ JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
 On NixOS, the upstream prebuilt LLVM archive expects the host's zlib shared library. Regeneration
 therefore needs a shell that exposes zlib in `LD_LIBRARY_PATH`. Regular builds do not need this.
 
+On Windows/MSVC, install a Vulkan SDK and use a short Cargo target directory to avoid generated
+shader paths exceeding compiler limits. PowerShell 7 example (adjust the SDK path):
+
+```powershell
+$env:VULKAN_SDK = 'C:\VulkanSDK\1.4.357.0'
+$env:PATH = "$env:VULKAN_SDK\Bin;$env:PATH"
+$env:CARGO_TARGET_DIR = 'E:\jet-target'
+mise exec -- cargo build --release -p jet-cli --features vulkan
+```
+
+The native build locates Visual Studio's `Release` library subdirectories and links `advapi32`.
+No manual static-library copying or linker flags are required.
+
+Preparation regressions use the same Qwen3.5 fixture:
+
+```sh
+JET_QWEN35_MODEL_PATH="$PWD/models/Qwen3.5-0.8B-Q8_0.gguf" \
+  mise exec -- cargo test -p jet-engine --features vulkan preparation -- --ignored --test-threads=1
+```
+
+These compare cached/uncached rendering and tokenization, synchronous/pipelined preparation,
+mixed request errors and order, and worker cancellation/reuse. The existing hybrid regression
+above compares serial/reference scoring. Run GPU model tests serially to avoid memory and timing
+interference.
+
 ## Stage timings
 
 The CLI accepts `--timings PATH` to write one JSON document after processing its input, including
@@ -103,14 +128,18 @@ They include host work and backend waits, rather than individual GPU kernel dura
 | --- | --- |
 | `load_ms` | Backend initialization, model loading, and inference-context setup. |
 | `prepare_ms` | Native chat-template rendering, prompt/candidate tokenization, and scorer validation; excludes thinking and its cache resets. |
+| `prepare_wait_ms` | Consumer wait for the bounded CPU preparation worker; zero on the synchronous path. |
 | `thinking_ms` | Bounded reasoning generation, including its prompt decode and sampling; excludes explicit cache resets. |
 | `prefill_ms` | Scoring-prompt decoding and reading the final prompt output, which scores candidate first tokens. |
 | `candidate_ms` | Decoding and scoring candidate continuations after the prompt. |
 | `cache_ms` | Explicit sequence reset, removal, and prefix-copy API calls. |
 | `batch_ms` | Complete scorer-batch processing, including preparation, thinking, cache management, scoring, and bookkeeping; excludes loading. |
 
-`batch_ms` is an enclosing total, so do not add it to the other scoring phases. Its phase subtotals
-can be smaller because scheduling and other bookkeeping are included only in the total. Deferred
+`batch_ms` is an enclosing total, so do not add it to the other scoring phases. With the preparation
+pipeline, `prepare_ms` is worker time excluding queue backpressure and overlaps GPU scoring; phase
+sums may exceed `batch_ms`. `prepare_wait_ms` is already included in `batch_ms`, not extra work.
+Phase subtotals can also be smaller because worker setup, scheduling, and bookkeeping are included
+only in the total. Deferred
 recurrent-state copies execute during decoding and are charged to that decode phase, rather than
 to `cache_ms`. Timing collection relies on the synchronization already needed to read scoring
 outputs; it does not add a wait between prompt chunks.

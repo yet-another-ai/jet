@@ -223,6 +223,8 @@ regressions. Enabling it needs its own correctness and performance experiment.
 
 ## Next optimization targets
 
+The RTX 4090 preparation work described below leaves these GPU backend targets unchanged.
+
 1. Tune the confirmed short-chunk Q4_K expert dispatch crossover, followed by the large Q8_0
    projections. These account for most recorded GPU operation time. Compare
    warmed standalone shapes first, then full requests with numerical checks.
@@ -240,3 +242,75 @@ Even eliminating all idle gaps, with GPU work otherwise unchanged, would leave
 about 0.74 seconds/request in the original 32-case probe. This is a conditional
 estimate, not a hardware lower bound; reaching the 0.5-second budget also calls
 for more efficient GPU execution or amortizing work across requests.
+
+## RTX 4090 preparation pipeline (2026-09-23)
+
+This change deliberately leaves Vulkan kernels and recurrent scoring order unchanged:
+
+- A scorer-owned native renderer retains the parsed chat template. Each render returns its
+  complete JSON once instead of separately rendering to query size and then fill a buffer.
+- A retained token buffer avoids repeated sizing passes, and the already-tokenized prompt is
+  reused. Each full prompt-plus-candidate is still tokenized to verify the assistant boundary;
+  disabled/enabled template checks, context limits, and score validation remain intact.
+- For disabled-thinking, batched Vulkan hybrid execution, a persistent CPU worker prepares
+  upcoming questions behind a bounded result queue. The GPU still scores one question and one
+  candidate fork at a time. `--no-preparation-pipeline` provides a synchronous comparison.
+- `prepare_wait_ms` measures visible consumer stalls. Worker `prepare_ms` excludes queue
+  backpressure and overlaps scoring, so phase totals are not additive.
+
+### Fixed 285-question MMLU comparison
+
+Qwen3.6-35B-A3B Q4_K_M ran on the RTX 4090 with Vulkan, all model layers on GPU, disabled thinking,
+eight input requests per CLI chunk, two native sequence slots, microbatch/output rows 256,
+eight CPU threads, and `--no-mmap`. These are sequential fresh-process runs, with startup and
+roughly ten seconds of model loading included; no concurrent compilation or model tests ran
+during this final comparison.
+
+| Configuration | Wall time | Requests/s | Prepare time | Visible prepare wait | Prefill / candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Preserved old binary | 111.460 s | 2.557 | 33.451 s | synchronous | 24.080 / 42.604 s |
+| Cached preparation, synchronous | 80.420 s | 3.544 | 3.640 s | synchronous | 23.767 / 42.147 s |
+| Cached preparation, pipeline | 77.183 s | 3.693 | 3.853 s | 0.464 s | 23.864 / 42.182 s |
+
+The synchronous cache change reduced preparation time by 89.1%; pipeline overlap saved another
+3.24 seconds of process wall time in this sequence. Overall wall time fell 30.8% and throughput
+rose 44.4% versus the repeated baseline. These are observations, not confidence intervals or
+an extrapolation to the full MMLU set. Earlier exploratory runs measured 142.028 / 80.931 /
+86.910 seconds respectively, with compilation overlapping some new-binary runs and visibly
+different GPU-stage times; they are retained but not used for the final speedup comparison.
+
+Every variant returned 285 responses, 250 correct (87.7193%), mean gold NLL
+`0.44754015556245685`, and zero failures. Output JSONL was byte-identical, SHA-256
+`b4d1617c0e1b364a2fce24c50c81569590b844faf64177aea2cd62204f54155a`.
+All three final runs performed 285 prefills, 60,680 prefill tokens, 9,283 continuation decode
+tokens, and 1,472 decode calls. The optimization does not skip scoring work.
+
+Final raw artifacts are `baseline-repeat/`, `final-cached-sync/`, and `final-pipeline/` beneath
+`tests/accuracy/generated/qwen36-preparation-20260923/`. Each contains commands, provenance,
+responses, stage timings, reports, and logs. New untracked module sources are additionally
+snapshotted under `final-source/`, since the harness's Git patch excludes untracked files.
+
+To reproduce, use `scripts/benchmark-model.py` with the fixed input/gold files in
+`tests/accuracy/generated/qwen36-4090-mmlu-run/`, `--runs 1 --batch-requests 8`, then
+`--extra-args --max-sequences 2 --micro-batch 256 --max-output-rows 256 --threads 8 --no-mmap`.
+Append `--no-preparation-pipeline` for the cached synchronous comparison. Each configuration
+must use a new output directory.
+
+### Deferred independent-request experiment
+
+An independent-request batching experiment was **not retained**, including its CLI switch.
+On Qwen3.5-0.8B Q8_0, serial/reference scoring matched, but retaining multiple independent prefixes
+while advancing just one candidate at a time changed a 101-token candidate's log-probability
+from `-43.8409075778909` to `-43.91248824680224`. The `0.07158` difference exceeded the unchanged
+`0.01011` test tolerance. A multi-sequence run also changed a three-token candidate by `0.00568`.
+This does not isolate a specific native bug or shader: the state/cache layout and calculation
+path still need investigation. The failed experiment and diagnostic logs are preserved under
+`tests/accuracy/generated/qwen36-preparation-20260923/rejected-independent-batching/` and the
+sibling `hybrid-diagnostic.log` / `hybrid-ablation.log`. No numerical guard was relaxed.
+
+Validation for the retained path: release Clippy with warnings denied, 27 unit tests, five
+focused model regressions on the pinned Qwen3/Qwen3.5 small fixtures, and an additional fresh-scorer
+pipeline run that forces the device target-gather width to grow between questions. The CPU CLI
+golden test passed. An earlier all-ignored run was stopped during the long legacy CPU reference
+test; that test is not claimed as completed. The 14,042-example full MMLU run was not repeated
+for this change; the performance comparison uses the fixed 285-question subset.

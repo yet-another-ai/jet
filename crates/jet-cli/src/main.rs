@@ -43,6 +43,9 @@ struct JudgeArgs {
     micro_batch: u32,
     #[arg(long, default_value_t = 9)]
     max_sequences: u32,
+    /// Disable overlapping CPU prompt preparation with Vulkan hybrid execution.
+    #[arg(long)]
+    no_preparation_pipeline: bool,
     #[arg(long)]
     max_output_rows: Option<u32>,
     #[arg(long)]
@@ -151,6 +154,7 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
     config.token_batch = args.token_batch;
     config.micro_batch = args.micro_batch;
     config.max_sequences = args.max_sequences;
+    config.preparation_pipeline = !args.no_preparation_pipeline;
     if let Some(max_output_rows) = args.max_output_rows {
         config.max_output_rows = max_output_rows;
     }
@@ -332,6 +336,43 @@ fn error_envelope(error: JetError) -> ErrorEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preparation_pipeline_defaults_to_enabled() -> std::result::Result<(), clap::Error> {
+        let cli = Cli::try_parse_from(["jet", "judge", "--model-path", "model.gguf"])?;
+        let Command::Judge(args) = cli.command;
+        assert!(!args.no_preparation_pipeline);
+        Ok(())
+    }
+
+    #[test]
+    fn preparation_options_accept_explicit_overrides_and_reject_negative_counts()
+    -> std::result::Result<(), clap::Error> {
+        let cli = Cli::try_parse_from([
+            "jet",
+            "judge",
+            "--model-path",
+            "model.gguf",
+            "--max-sequences",
+            "4",
+            "--no-preparation-pipeline",
+        ])?;
+        let Command::Judge(args) = cli.command;
+        assert_eq!(args.max_sequences, 4);
+        assert!(args.no_preparation_pipeline);
+        assert!(
+            Cli::try_parse_from([
+                "jet",
+                "judge",
+                "--model-path",
+                "model.gguf",
+                "--max-sequences",
+                "-1"
+            ])
+            .is_err()
+        );
+        Ok(())
+    }
 
     #[test]
     fn offload_options_accept_explicit_counts_and_reject_negative_values()

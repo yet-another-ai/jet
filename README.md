@@ -91,6 +91,12 @@ unchanged prefix while scoring candidate continuations serially. Two sequence sl
 for this path (`--max-sequences 2`). Cache cleanup resets sequence metadata without synchronously
 zeroing the full KV and recurrent-state buffers.
 
+CPU preparation reuses the native chat template and tokenizer buffer. With disabled thinking on
+Vulkan hybrid models, a bounded worker prepares upcoming requests while scoring the current request;
+`--no-preparation-pipeline` disables this overlap for comparisons. Scoring remains serial to
+preserve recurrent-state behavior. `--batch-requests` controls the input chunk, not the native
+inference batch.
+
 ## CLI
 
 ```sh

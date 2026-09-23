@@ -64,6 +64,8 @@ pub struct EngineConfig {
     pub token_batch: u32,
     pub micro_batch: u32,
     pub max_sequences: u32,
+    /// Prepare the next Vulkan hybrid question on a CPU worker while the current question scores.
+    pub preparation_pipeline: bool,
     pub max_output_rows: u32,
     pub threads: i32,
     pub execution_mode: ExecutionMode,
@@ -85,6 +87,7 @@ impl EngineConfig {
             token_batch: 2_048,
             micro_batch: 512,
             max_sequences: 9,
+            preparation_pipeline: true,
             max_output_rows: 2_048,
             threads: std::thread::available_parallelism()
                 .map(|count| i32::try_from(count.get()).unwrap_or(i32::MAX))
@@ -132,6 +135,7 @@ mod tests {
         ] {
             assert_eq!(config.gpu_layers, None);
             assert_eq!(config.cpu_moe_layers, 0);
+            assert!(config.preparation_pipeline);
             assert!(config.use_mmap);
         }
     }

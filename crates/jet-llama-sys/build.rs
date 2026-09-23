@@ -119,6 +119,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         emit_vulkan_sdk_search_paths(&target_os);
     }
     for path in link_paths {
+        // Visual Studio is a multi-configuration generator and puts static
+        // libraries beneath the selected configuration, even for Cargo debug.
+        if target_env == "msvc" {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                path.join("Release").display()
+            );
+        }
         println!("cargo:rustc-link-search=native={}", path.display());
     }
     for library in [
@@ -151,13 +159,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("cargo:rustc-link-lib=vulkan");
             }
         }
-        "windows" if vulkan => {
-            let library = if target_env == "msvc" {
-                "vulkan-1"
-            } else {
-                "vulkan"
-            };
-            println!("cargo:rustc-link-lib={library}");
+        "windows" => {
+            // ggml-cpu reads Windows processor information from the registry.
+            println!("cargo:rustc-link-lib=advapi32");
+            if vulkan {
+                let library = if target_env == "msvc" {
+                    "vulkan-1"
+                } else {
+                    "vulkan"
+                };
+                println!("cargo:rustc-link-lib={library}");
+            }
         }
         _ => {}
     }
@@ -173,6 +185,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .allowlist_function("llama_.*")
             .allowlist_var("LLAMA_.*")
             .allowlist_function("jet_.*")
+            // FILE is only passed by pointer. Its libc-specific layout must
+            // never enter the checked bindings used across supported targets.
+            .blocklist_type("FILE")
+            .raw_line("#[repr(C)] pub struct FILE { _unused: [u8; 0] }")
             .derive_default(true)
             .generate_comments(false);
         for argument in compiler_system_include_args() {

@@ -68,11 +68,20 @@ Hybrid and recurrent models, including Qwen3.5, also prefill each question once.
 the unchanged prefix, whose final output scores the first token of every candidate. Before each
 remaining continuation, Jet removes sequence 1's previous state and copies the prefix into it;
 only sequence 1 advances. llama.cpp preserves the shared recurrent state through copy-on-write.
-Candidates and questions run serially on this path because advancing several recurrent forks in
-the same decode can change their results. A one-token candidate needs no continuation decode.
+Candidates of one prefix run serially because advancing sibling recurrent forks in the same
+decode can change their results. A one-token candidate needs no continuation decode.
 Two sequence slots suffice even when a question has more than two candidates, and Vulkan's target
 gather grows to cover all distinct first tokens. The reference execution mode continues to score
 each candidate independently and exists for correctness comparisons.
+
+Native chat-template objects and tokenizer scratch buffers are reused without caching request
+results. Full prompt-plus-candidate tokenization still verifies the assistant token boundary.
+In disabled-thinking, batched Vulkan hybrid execution, a persistent CPU worker prepares the next
+questions while the scorer consumes earlier ones. Its result queue has two slots, with at most
+one additional result awaiting send. Prepared results and errors remain in input order.
+`--no-preparation-pipeline` restores synchronous preparation. CPU, thinking, and reference execution
+remain synchronous. Questions still score serially; preparation and native scoring failures on
+the pipelined path remain local to the corresponding question.
 
 Completed scoring waves and serial questions release sequence metadata once. Cache cleanup does
 not zero the entire KV or recurrent-state allocation: attention masks exclude old KV entries and

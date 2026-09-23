@@ -5,6 +5,7 @@
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -187,23 +188,52 @@ extern "C" bool jet_score_sampler_set_targets(
     return true;
 }
 
-extern "C" int32_t jet_chat_render(
+struct jet_chat_renderer {
+    common_chat_templates_ptr templates;
+    std::string rendered;
+};
+
+extern "C" struct jet_chat_renderer * jet_chat_renderer_init(
     const struct llama_model * model,
+    char * error,
+    size_t error_capacity) {
+    try {
+        if (model == nullptr) {
+            throw std::invalid_argument("model must be non-null");
+        }
+        auto renderer = std::make_unique<jet_chat_renderer>();
+        renderer->templates = common_chat_templates_init(model, "");
+        return renderer.release();
+    } catch (const std::exception & exception) {
+        copy_string(exception.what(), error, error_capacity);
+        return nullptr;
+    } catch (...) {
+        copy_string("unknown chat template initialization failure", error, error_capacity);
+        return nullptr;
+    }
+}
+
+extern "C" void jet_chat_renderer_free(struct jet_chat_renderer * renderer) {
+    delete renderer;
+}
+
+extern "C" const char * jet_chat_renderer_render(
+    struct jet_chat_renderer * renderer,
     const char * system_content,
     const char * user_content,
     bool enable_thinking,
     const char * reasoning_content,
-    char * output,
-    size_t output_capacity,
     char * error,
     size_t error_capacity) {
     try {
-        if (model == nullptr || system_content == nullptr || user_content == nullptr) {
-            copy_string("model and message content must be non-null", error, error_capacity);
-            return -1;
+        if (renderer == nullptr) {
+            throw std::invalid_argument("renderer must be non-null");
+        }
+        renderer->rendered.clear();
+        if (system_content == nullptr || user_content == nullptr) {
+            throw std::invalid_argument("message content must be non-null");
         }
 
-        auto templates = common_chat_templates_init(model, "");
         common_chat_templates_inputs inputs{};
         inputs.messages = {message("system", system_content), message("user", user_content)};
         inputs.add_generation_prompt = true;
@@ -219,28 +249,49 @@ extern "C" int32_t jet_chat_render(
             inputs.continue_final_message = COMMON_CHAT_CONTINUATION_CONTENT;
         }
 
-        const auto params = common_chat_templates_apply(templates.get(), inputs);
-        const auto rendered = json{
+        const auto params = common_chat_templates_apply(renderer->templates.get(), inputs);
+        renderer->rendered = json{
             {"prompt", params.prompt},
             {"generation_prompt", params.generation_prompt},
             {"supports_thinking", params.supports_thinking},
             {"thinking_start_tag", params.thinking_start_tag},
             {"thinking_end_tags", params.thinking_end_tags},
         }.dump();
-        if (rendered.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
-            copy_string("rendered chat plan exceeds the bridge length limit", error, error_capacity);
-            return -1;
-        }
-
-        copy_string(rendered, output, output_capacity);
-        return static_cast<int32_t>(rendered.size());
+        return renderer->rendered.c_str();
     } catch (const std::exception & exception) {
         copy_string(exception.what(), error, error_capacity);
-        return -1;
+        return nullptr;
     } catch (...) {
         copy_string("unknown chat template failure", error, error_capacity);
+        return nullptr;
+    }
+}
+
+extern "C" int32_t jet_chat_render(
+    const struct llama_model * model,
+    const char * system_content,
+    const char * user_content,
+    bool enable_thinking,
+    const char * reasoning_content,
+    char * output,
+    size_t output_capacity,
+    char * error,
+    size_t error_capacity) {
+    // Keep the uncached bridge for compatibility and cached/uncached regression
+    // checks; production callers retain a renderer and use its borrowed output.
+    const std::unique_ptr<jet_chat_renderer> renderer(
+        jet_chat_renderer_init(model, error, error_capacity));
+    if (renderer == nullptr || jet_chat_renderer_render(
+            renderer.get(), system_content, user_content, enable_thinking,
+            reasoning_content, error, error_capacity) == nullptr) {
         return -1;
     }
+    if (renderer->rendered.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+        copy_string("rendered chat plan exceeds the bridge length limit", error, error_capacity);
+        return -1;
+    }
+    copy_string(renderer->rendered, output, output_capacity);
+    return static_cast<int32_t>(renderer->rendered.size());
 }
 
 struct jet_thinking_sampler {

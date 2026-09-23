@@ -149,172 +149,11 @@ pub const LLAMA_STATE_SEQ_FLAGS_NONE: u32 = 0;
 pub const LLAMA_STATE_SEQ_FLAGS_SWA_ONLY: u32 = 1;
 pub const LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY: u32 = 1;
 pub const LLAMA_STATE_SEQ_FLAGS_ON_DEVICE: u32 = 2;
-pub type __uint64_t = ::std::os::raw::c_ulong;
-pub type __off_t = ::std::os::raw::c_long;
-pub type __off64_t = ::std::os::raw::c_long;
-pub type FILE = _IO_FILE;
+// FILE is opaque: llama.cpp accepts only pointers, and its libc-specific
+// layout is different on Linux, macOS, and Windows.
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _IO_marker {
+pub struct FILE {
     _unused: [u8; 0],
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _IO_codecvt {
-    _unused: [u8; 0],
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _IO_wide_data {
-    _unused: [u8; 0],
-}
-pub type _IO_lock_t = ::std::os::raw::c_void;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _IO_FILE {
-    pub _flags: ::std::os::raw::c_int,
-    pub _IO_read_ptr: *mut ::std::os::raw::c_char,
-    pub _IO_read_end: *mut ::std::os::raw::c_char,
-    pub _IO_read_base: *mut ::std::os::raw::c_char,
-    pub _IO_write_base: *mut ::std::os::raw::c_char,
-    pub _IO_write_ptr: *mut ::std::os::raw::c_char,
-    pub _IO_write_end: *mut ::std::os::raw::c_char,
-    pub _IO_buf_base: *mut ::std::os::raw::c_char,
-    pub _IO_buf_end: *mut ::std::os::raw::c_char,
-    pub _IO_save_base: *mut ::std::os::raw::c_char,
-    pub _IO_backup_base: *mut ::std::os::raw::c_char,
-    pub _IO_save_end: *mut ::std::os::raw::c_char,
-    pub _markers: *mut _IO_marker,
-    pub _chain: *mut _IO_FILE,
-    pub _fileno: ::std::os::raw::c_int,
-    pub _bitfield_align_1: [u32; 0],
-    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 3usize]>,
-    pub _short_backupbuf: [::std::os::raw::c_char; 1usize],
-    pub _old_offset: __off_t,
-    pub _cur_column: ::std::os::raw::c_ushort,
-    pub _vtable_offset: ::std::os::raw::c_schar,
-    pub _shortbuf: [::std::os::raw::c_char; 1usize],
-    pub _lock: *mut _IO_lock_t,
-    pub _offset: __off64_t,
-    pub _codecvt: *mut _IO_codecvt,
-    pub _wide_data: *mut _IO_wide_data,
-    pub _freeres_list: *mut _IO_FILE,
-    pub _freeres_buf: *mut ::std::os::raw::c_void,
-    pub _prevchain: *mut *mut _IO_FILE,
-    pub _mode: ::std::os::raw::c_int,
-    pub _unused3: ::std::os::raw::c_int,
-    pub _total_written: __uint64_t,
-    pub _unused2: [::std::os::raw::c_char; 8usize],
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _IO_FILE"][::std::mem::size_of::<_IO_FILE>() - 216usize];
-    ["Alignment of _IO_FILE"][::std::mem::align_of::<_IO_FILE>() - 8usize];
-    ["Offset of field: _IO_FILE::_flags"][::std::mem::offset_of!(_IO_FILE, _flags) - 0usize];
-    ["Offset of field: _IO_FILE::_IO_read_ptr"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_read_ptr) - 8usize];
-    ["Offset of field: _IO_FILE::_IO_read_end"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_read_end) - 16usize];
-    ["Offset of field: _IO_FILE::_IO_read_base"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_read_base) - 24usize];
-    ["Offset of field: _IO_FILE::_IO_write_base"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_write_base) - 32usize];
-    ["Offset of field: _IO_FILE::_IO_write_ptr"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_write_ptr) - 40usize];
-    ["Offset of field: _IO_FILE::_IO_write_end"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_write_end) - 48usize];
-    ["Offset of field: _IO_FILE::_IO_buf_base"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_buf_base) - 56usize];
-    ["Offset of field: _IO_FILE::_IO_buf_end"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_buf_end) - 64usize];
-    ["Offset of field: _IO_FILE::_IO_save_base"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_save_base) - 72usize];
-    ["Offset of field: _IO_FILE::_IO_backup_base"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_backup_base) - 80usize];
-    ["Offset of field: _IO_FILE::_IO_save_end"]
-        [::std::mem::offset_of!(_IO_FILE, _IO_save_end) - 88usize];
-    ["Offset of field: _IO_FILE::_markers"][::std::mem::offset_of!(_IO_FILE, _markers) - 96usize];
-    ["Offset of field: _IO_FILE::_chain"][::std::mem::offset_of!(_IO_FILE, _chain) - 104usize];
-    ["Offset of field: _IO_FILE::_fileno"][::std::mem::offset_of!(_IO_FILE, _fileno) - 112usize];
-    ["Offset of field: _IO_FILE::_short_backupbuf"]
-        [::std::mem::offset_of!(_IO_FILE, _short_backupbuf) - 119usize];
-    ["Offset of field: _IO_FILE::_old_offset"]
-        [::std::mem::offset_of!(_IO_FILE, _old_offset) - 120usize];
-    ["Offset of field: _IO_FILE::_cur_column"]
-        [::std::mem::offset_of!(_IO_FILE, _cur_column) - 128usize];
-    ["Offset of field: _IO_FILE::_vtable_offset"]
-        [::std::mem::offset_of!(_IO_FILE, _vtable_offset) - 130usize];
-    ["Offset of field: _IO_FILE::_shortbuf"]
-        [::std::mem::offset_of!(_IO_FILE, _shortbuf) - 131usize];
-    ["Offset of field: _IO_FILE::_lock"][::std::mem::offset_of!(_IO_FILE, _lock) - 136usize];
-    ["Offset of field: _IO_FILE::_offset"][::std::mem::offset_of!(_IO_FILE, _offset) - 144usize];
-    ["Offset of field: _IO_FILE::_codecvt"][::std::mem::offset_of!(_IO_FILE, _codecvt) - 152usize];
-    ["Offset of field: _IO_FILE::_wide_data"]
-        [::std::mem::offset_of!(_IO_FILE, _wide_data) - 160usize];
-    ["Offset of field: _IO_FILE::_freeres_list"]
-        [::std::mem::offset_of!(_IO_FILE, _freeres_list) - 168usize];
-    ["Offset of field: _IO_FILE::_freeres_buf"]
-        [::std::mem::offset_of!(_IO_FILE, _freeres_buf) - 176usize];
-    ["Offset of field: _IO_FILE::_prevchain"]
-        [::std::mem::offset_of!(_IO_FILE, _prevchain) - 184usize];
-    ["Offset of field: _IO_FILE::_mode"][::std::mem::offset_of!(_IO_FILE, _mode) - 192usize];
-    ["Offset of field: _IO_FILE::_unused3"][::std::mem::offset_of!(_IO_FILE, _unused3) - 196usize];
-    ["Offset of field: _IO_FILE::_total_written"]
-        [::std::mem::offset_of!(_IO_FILE, _total_written) - 200usize];
-    ["Offset of field: _IO_FILE::_unused2"][::std::mem::offset_of!(_IO_FILE, _unused2) - 208usize];
-};
-impl Default for _IO_FILE {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
-}
-impl _IO_FILE {
-    #[inline]
-    pub fn _flags2(&self) -> ::std::os::raw::c_int {
-        unsafe { ::std::mem::transmute(self._bitfield_1.get(0usize, 24u8) as u32) }
-    }
-    #[inline]
-    pub fn set__flags2(&mut self, val: ::std::os::raw::c_int) {
-        unsafe {
-            let val: u32 = ::std::mem::transmute(val);
-            self._bitfield_1.set(0usize, 24u8, val as u64)
-        }
-    }
-    #[inline]
-    pub unsafe fn _flags2_raw(this: *const Self) -> ::std::os::raw::c_int {
-        unsafe {
-            ::std::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
-                ::std::ptr::addr_of!((*this)._bitfield_1),
-                0usize,
-                24u8,
-            ) as u32)
-        }
-    }
-    #[inline]
-    pub unsafe fn set__flags2_raw(this: *mut Self, val: ::std::os::raw::c_int) {
-        unsafe {
-            let val: u32 = ::std::mem::transmute(val);
-            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
-                ::std::ptr::addr_of_mut!((*this)._bitfield_1),
-                0usize,
-                24u8,
-                val as u64,
-            )
-        }
-    }
-    #[inline]
-    pub fn new_bitfield_1(_flags2: ::std::os::raw::c_int) -> __BindgenBitfieldUnit<[u8; 3usize]> {
-        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 3usize]> = Default::default();
-        __bindgen_bitfield_unit.set(0usize, 24u8, {
-            let _flags2: u32 = unsafe { ::std::mem::transmute(_flags2) };
-            _flags2 as u64
-        });
-        __bindgen_bitfield_unit
-    }
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2658,6 +2497,32 @@ unsafe extern "C" {
         callback_eval: ggml_opt_epoch_callback,
     );
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct jet_chat_renderer {
+    _unused: [u8; 0],
+}
+unsafe extern "C" {
+    pub fn jet_chat_renderer_init(
+        model: *const llama_model,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> *mut jet_chat_renderer;
+}
+unsafe extern "C" {
+    pub fn jet_chat_renderer_free(renderer: *mut jet_chat_renderer);
+}
+unsafe extern "C" {
+    pub fn jet_chat_renderer_render(
+        renderer: *mut jet_chat_renderer,
+        system_content: *const ::std::os::raw::c_char,
+        user_content: *const ::std::os::raw::c_char,
+        enable_thinking: bool,
+        reasoning_content: *const ::std::os::raw::c_char,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> *const ::std::os::raw::c_char;
+}
 unsafe extern "C" {
     pub fn jet_chat_render(
         model: *const llama_model,
@@ -2707,10 +2572,7 @@ unsafe extern "C" {
     ) -> llama_token;
 }
 unsafe extern "C" {
-    pub fn jet_thinking_sampler_accept(
-        sampler: *mut jet_thinking_sampler,
-        token: llama_token,
-    );
+    pub fn jet_thinking_sampler_accept(sampler: *mut jet_thinking_sampler, token: llama_token);
 }
 unsafe extern "C" {
     pub fn jet_thinking_sampler_done(sampler: *const jet_thinking_sampler) -> bool;
