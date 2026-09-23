@@ -175,6 +175,10 @@ decoded pixels, and visual token limits can be set with the `--max-images`, `--m
 as well as text tokens. Use `--backend vulkan` with `--features 'vision,vulkan'` when the Vulkan SDK
 and device are available.
 
+The [Doom demo](demos/doom/README.md) connects this interface to a running game: 160×100 frames,
+nine discrete actions, and asynchronous inference capped at two requests per second. It uses
+ViZDoom's bundled Freedoom2 assets by default and supports your own Doom IWAD.
+
 See [docs/scoring.md](docs/scoring.md) for scoring semantics and
 [docs/development.md](docs/development.md) for validation commands. The reproducible BoolQ/MMLU
 accuracy workflow is documented in [tests/accuracy/README.md](tests/accuracy/README.md); downloaded
