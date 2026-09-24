@@ -2,8 +2,9 @@
 
 Jet pins llama.cpp as a Git submodule at commit
 `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` (the v0.4.1 line). The default build is CPU-only and
-disables OpenMP, BLAS, CUDA, Metal, Vulkan, HIP, SYCL, and RPC. The opt-in `vulkan` Cargo feature
-enables only llama.cpp's Vulkan backend in addition to CPU fallback support.
+disables OpenMP, BLAS, CUDA, Metal, Vulkan, HIP, SYCL, and RPC. The opt-in `cuda` and `vulkan`
+Cargo features independently enable those llama.cpp backends. The CLI defaults to automatic
+selection in CUDA, Vulkan, CPU order among compiled features with available devices.
 
 Bindings matching that commit are checked into `jet-llama-sys`. Normal builds do not load
 libclang. To deliberately regenerate them after changing the pin:
@@ -83,6 +84,38 @@ $env:PATH = "$env:VULKAN_SDK\Bin;$env:PATH"
 $env:CARGO_TARGET_DIR = 'E:\jet-target'
 mise exec -- cargo build --release -p jet-cli --features vulkan
 ```
+
+For a CUDA build, install the CUDA Toolkit, then run:
+
+```sh
+JET_CUDA_ARCHITECTURES="86;89" mise exec -- cargo build -p jet-cli --features cuda
+```
+
+`JET_CUDA_ARCHITECTURES` forwards to CMake's `CMAKE_CUDA_ARCHITECTURES`; set it for a headless
+build or a known deployment GPU. CMake discovers the compiler and libraries with `CUDACXX`,
+`CUDAToolkit_ROOT`, or `CUDA_PATH`. The static GGML build links CUDA dependencies using the
+resolved library paths in CMake's cache. To test automatic selection on a machine with both
+toolchains, build with `--features cuda,vulkan` and run the same model once each with
+`--backend auto`, `cuda`, `vulkan`, and `cpu`. Confirm the selected device in the native log.
+
+For Windows distribution, set `CUDAToolkit_ROOT` and run `mise run package:cuda`. This builds
+the release CLI with `cuda,vulkan`, scans ordinary and delay-loaded PE imports with `llvm-readobj`,
+copies matching CUDA Toolkit DLLs and their transitive DLL dependencies beside `jet.exe`,
+and writes `dist/jet-cuda-windows-x64.zip` with SHA-256 hashes. The task fails if a required CUDA
+DLL is absent from the selected Toolkit. Use `pwsh -File scripts/package-cuda.ps1 -Features cuda`
+for a CUDA-only binary; `-Features cuda,vulkan,vision` also includes vision. CUDA execution on the
+target machine needs a compatible NVIDIA driver but does not need the CUDA Toolkit. The Windows
+CLI delay-loads cuBLAS, cuBLASLt, and the CUDA driver so a missing NVIDIA driver does not prevent
+`--backend auto`
+from reaching Vulkan or CPU during startup. On Linux, the current CUDA build links the Toolkit
+libraries statically, leaving the driver supplied by the host.
+Rust applications embedding `jet-engine` on Windows must also delay-load their final executable's
+CUDA imports if they need to start without an NVIDIA driver; the Jet CLI configures this itself.
+
+With `JET_MODEL_PATH` set, run the ignored CUDA smoke test with
+`mise exec -- cargo test -p jet-engine --features cuda qwen_cuda_smoke -- --ignored --nocapture`.
+Use `JET_QWEN35_MODEL_PATH` and `qwen35_cuda_hybrid_batch_matches_reference` for the CUDA
+hybrid/gather regression. Run GPU model tests serially to avoid memory interference.
 
 The native build locates Visual Studio's `Release` library subdirectories and links `advapi32`.
 No manual static-library copying or linker flags are required.
@@ -170,7 +203,8 @@ diagnosis, and isolated optimization comparisons, see [performance.md](performan
 
 `scripts/benchmark-model.py` runs a built CLI against the prepared accuracy workload and saves
 responses, accuracy reports, stage timings, process wall times, commands, and failure logs. It
-defaults to Vulkan, disabled thinking, eight requests per input batch, and two fresh processes.
+defaults to automatic backend selection, disabled thinking, eight requests per input batch, and
+two fresh processes. Set `--backend vulkan` to reproduce the Vulkan-only comparisons.
 Choose a new output directory for each configuration:
 
 ```sh

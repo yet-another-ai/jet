@@ -34,7 +34,11 @@ fn request(frame: &str, image: &str) -> String {
 
 fn backend() -> (String, &'static str) {
     let value = std::env::var("JET_VISION_BACKEND").unwrap_or_else(|_| "cpu".to_owned());
-    let context_tokens = if value == "vulkan" { "2048" } else { "4096" };
+    let context_tokens = if value == "vulkan" || value == "cuda" || value == "auto" {
+        "2048"
+    } else {
+        "4096"
+    };
     (value, context_tokens)
 }
 
@@ -60,7 +64,7 @@ fn stdin_returns_each_frame_before_eof_and_uses_the_image() -> Result<(), Box<dy
         "--threads",
         "8",
     ]);
-    if backend == "vulkan" {
+    if backend != "cpu" {
         command.args(["--no-mmap", "--micro-batch", "256"]);
     }
     let mut child = command
@@ -140,7 +144,7 @@ fn prefix_reuse_matches_independent_vision_scoring() -> Result<(), Box<dyn Error
             "--threads",
             "8",
         ]);
-        if backend == "vulkan" {
+        if backend != "cpu" {
             command.args(["--no-mmap", "--micro-batch", "256"]);
         }
         let mut child = command

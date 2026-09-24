@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
                         default=ROOT / "tests/accuracy/generated/gold.jsonl")
     parser.add_argument("--runs", type=int, default=2)
     parser.add_argument("--batch-requests", type=int, default=8)
-    parser.add_argument("--backend", choices=("cpu", "vulkan"), default="vulkan")
+    parser.add_argument("--backend", choices=("auto", "cpu", "cuda", "vulkan"), default="auto")
     parser.add_argument("--limit", type=int, help="Use only the first N requests and matching labels")
     parser.add_argument("--model-provenance", type=Path,
                         help="Optional JSON download metadata, copied without hashing large weights")

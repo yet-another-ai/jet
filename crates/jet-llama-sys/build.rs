@@ -1,8 +1,7 @@
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-#[cfg(not(feature = "generate-bindings"))]
-use std::fs;
 #[cfg(feature = "generate-bindings")]
 use std::process::{Command, Stdio};
 
@@ -66,11 +65,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", checked_bindings.display());
     println!("cargo:rerun-if-env-changed=LLAMA_CPP_SRC");
     println!("cargo:rerun-if-env-changed=VULKAN_SDK");
+    println!("cargo:rerun-if-env-changed=JET_CUDA_ARCHITECTURES");
+    println!("cargo:rerun-if-env-changed=CUDAToolkit_ROOT");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=CUDACXX");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let vulkan = env::var_os("CARGO_FEATURE_VULKAN").is_some();
+    let cuda = env::var_os("CARGO_FEATURE_CUDA").is_some();
     let vision = env::var_os("CARGO_FEATURE_VISION").is_some();
+    if cuda && !matches!(target_os.as_str(), "windows" | "linux") {
+        return Err("the cuda feature currently supports Windows and Linux targets".into());
+    }
     let mut config = cmake::Config::new(&source_dir);
     config
         .profile("Release")
@@ -88,12 +95,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("LLAMA_LLGUIDANCE", "OFF")
         .define("GGML_OPENMP", "OFF")
         .define("GGML_BLAS", "OFF")
-        .define("GGML_CUDA", "OFF")
+        .define("GGML_CUDA", if cuda { "ON" } else { "OFF" })
+        .define("GGML_CUDA_NCCL", "OFF")
         .define("GGML_METAL", "OFF")
         .define("GGML_RPC", "OFF")
         .define("GGML_VULKAN", if vulkan { "ON" } else { "OFF" })
         .define("GGML_HIP", "OFF")
         .define("GGML_SYCL", "OFF");
+    if cuda {
+        if let Some(architectures) = env::var_os("JET_CUDA_ARCHITECTURES") {
+            config.define("CMAKE_CUDA_ARCHITECTURES", architectures);
+        }
+        println!(
+            "cargo:rerun-if-changed={}",
+            source_dir
+                .join("ggml/src/ggml-cuda/CMakeLists.txt")
+                .display()
+        );
+    }
 
     let dst = config.build();
     if vision {
@@ -133,6 +152,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         link_paths.push(dst.join("build/ggml/src/ggml-vulkan"));
         emit_vulkan_sdk_search_paths(&target_os);
     }
+    if cuda {
+        link_paths.push(dst.join("build/ggml/src/ggml-cuda"));
+    }
     for path in link_paths {
         // Visual Studio is a multi-configuration generator and puts static
         // libraries beneath the selected configuration, even for Cargo debug.
@@ -165,6 +187,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if vulkan {
         println!("cargo:rustc-link-lib=static=ggml-vulkan");
+    }
+    if cuda {
+        println!("cargo:rustc-link-lib=static=ggml-cuda");
+        emit_cuda_links(&dst.join("build/CMakeCache.txt"), &target_os)?;
     }
     match target_os.as_str() {
         "linux" | "android" => {
@@ -243,4 +269,69 @@ fn emit_vulkan_sdk_search_paths(target_os: &str) {
             println!("cargo:rustc-link-search=native={}", path.display());
         }
     }
+}
+
+fn emit_cuda_links(cache_path: &Path, target_os: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let cache = fs::read_to_string(cache_path)?;
+    let libraries: &[(&str, &str, &str, bool)] = if target_os == "windows" {
+        &[
+            (
+                "CUDA_cudart_static_LIBRARY",
+                "static",
+                "cudart_static",
+                true,
+            ),
+            ("CUDA_cublas_LIBRARY", "dylib", "cublas", true),
+            ("CUDA_cublasLt_LIBRARY", "dylib", "cublasLt", true),
+            ("CUDA_culibos_LIBRARY", "static", "culibos", false),
+            ("CUDA_cuda_driver_LIBRARY", "dylib", "cuda", true),
+        ]
+    } else {
+        &[
+            (
+                "CUDA_cudart_static_LIBRARY",
+                "static",
+                "cudart_static",
+                true,
+            ),
+            (
+                "CUDA_cublas_static_LIBRARY",
+                "static",
+                "cublas_static",
+                true,
+            ),
+            (
+                "CUDA_cublasLt_static_LIBRARY",
+                "static",
+                "cublasLt_static",
+                true,
+            ),
+            ("CUDA_culibos_LIBRARY", "static", "culibos", true),
+            ("CUDA_cuda_driver_LIBRARY", "dylib", "cuda", true),
+        ]
+    };
+    for &(variable, kind, library, required) in libraries {
+        let prefix = format!("{variable}:");
+        let value = cache
+            .lines()
+            .find(|line| line.starts_with(&prefix))
+            .and_then(|line| line.split_once('=').map(|(_, value)| value))
+            .filter(|value| !value.is_empty() && !value.ends_with("-NOTFOUND"));
+        let Some(value) = value else {
+            if required {
+                return Err(format!("CMake did not resolve {variable} for the CUDA build").into());
+            }
+            continue;
+        };
+        let path = Path::new(value);
+        let directory = path
+            .parent()
+            .ok_or_else(|| format!("invalid CUDA library path for {variable}: {value}"))?;
+        println!("cargo:rustc-link-search=native={}", directory.display());
+        println!("cargo:rustc-link-lib={kind}={library}");
+    }
+    if target_os == "linux" {
+        println!("cargo:rustc-link-lib=rt");
+    }
+    Ok(())
 }

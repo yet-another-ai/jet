@@ -43,7 +43,7 @@ struct JudgeMultimodalArgs {
     timings: Option<PathBuf>,
     #[arg(long)]
     mmproj_path: PathBuf,
-    #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
+    #[arg(long, value_enum, default_value_t = BackendArg::Auto)]
     backend: BackendArg,
     #[arg(long)]
     gpu_layers: Option<u32>,
@@ -98,19 +98,19 @@ struct JudgeArgs {
     micro_batch: u32,
     #[arg(long, default_value_t = 9)]
     max_sequences: u32,
-    /// Disable overlapping CPU prompt preparation with Vulkan hybrid execution.
+    /// Disable overlapping CPU prompt preparation with GPU hybrid execution.
     #[arg(long)]
     no_preparation_pipeline: bool,
     #[arg(long)]
     max_output_rows: Option<u32>,
     #[arg(long)]
     threads: Option<i32>,
-    #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
+    #[arg(long, value_enum, default_value_t = BackendArg::Auto)]
     backend: BackendArg,
-    /// Number of model layers to place on GPU; Vulkan defaults to all layers.
+    /// Number of model layers to place on GPU; GPU backends default to all layers.
     #[arg(long)]
     gpu_layers: Option<u32>,
-    /// Keep routed MoE experts in the first N layers on CPU (Vulkan only).
+    /// Keep routed MoE experts in the first N layers on CPU (GPU backends only).
     #[arg(long, default_value_t = 0)]
     cpu_moe_layers: u32,
     /// Load weights into allocated memory instead of mapping the model file.
@@ -140,8 +140,10 @@ enum ExecutionArg {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum BackendArg {
+    Auto,
     Cpu,
     Vulkan,
+    Cuda,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -278,8 +280,10 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
 
 fn engine_config(args: &JudgeArgs) -> EngineConfig {
     let mut config = match args.backend {
+        BackendArg::Auto => EngineConfig::auto(&args.model_path, &args.model_id),
         BackendArg::Cpu => EngineConfig::cpu(&args.model_path, &args.model_id),
         BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, &args.model_id),
+        BackendArg::Cuda => EngineConfig::cuda(&args.model_path, &args.model_id),
     };
     config.gpu_layers = args.gpu_layers;
     config.cpu_moe_layers = args.cpu_moe_layers;
@@ -319,8 +323,10 @@ fn run_judge_multimodal(args: JudgeMultimodalArgs) -> Result<bool> {
         validate_timings_path(timings, &args.input, &args.output)?;
     }
     let mut config = match args.backend {
+        BackendArg::Auto => EngineConfig::auto(&args.model_path, args.model_id),
         BackendArg::Cpu => EngineConfig::cpu(&args.model_path, args.model_id),
         BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, args.model_id),
+        BackendArg::Cuda => EngineConfig::cuda(&args.model_path, args.model_id),
     };
     config.gpu_layers = args.gpu_layers;
     config.cpu_moe_layers = args.cpu_moe_layers;
@@ -587,6 +593,27 @@ fn error_envelope(error: JetError) -> ErrorEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backend_defaults_to_auto_and_accepts_cuda() -> std::result::Result<(), clap::Error> {
+        let default = parsed_judge(Cli::try_parse_from([
+            "jet",
+            "judge",
+            "--model-path",
+            "model.gguf",
+        ])?)?;
+        assert!(matches!(default.backend, BackendArg::Auto));
+        let cuda = parsed_judge(Cli::try_parse_from([
+            "jet",
+            "judge",
+            "--model-path",
+            "model.gguf",
+            "--backend",
+            "cuda",
+        ])?)?;
+        assert!(matches!(cuda.backend, BackendArg::Cuda));
+        Ok(())
+    }
 
     fn parsed_judge(cli: Cli) -> std::result::Result<JudgeArgs, clap::Error> {
         match cli.command {

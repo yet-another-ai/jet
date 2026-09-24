@@ -22,13 +22,24 @@ extern "C" ggml_backend_buffer_type_t jet_cpu_buffer_type(void) {
     return ggml_backend_cpu_buffer_type();
 }
 
+extern "C" ggml_backend_dev_t jet_backend_device(const char * backend_name) {
+    if (!backend_name) return nullptr;
+    const auto reg = ggml_backend_reg_by_name(backend_name);
+    if (!reg || ggml_backend_reg_dev_count(reg) == 0) return nullptr;
+    return ggml_backend_reg_dev_get(reg, 0);
+}
+
+extern "C" const char * jet_backend_device_name(ggml_backend_dev_t device) {
+    return device ? ggml_backend_dev_name(device) : nullptr;
+}
+
 extern "C" ggml_threadpool_t jet_cpu_threadpool_new(int32_t n_threads) {
     if (n_threads <= 0) {
         return nullptr;
     }
     auto params = ggml_threadpool_params_default(n_threads);
     // Hybrid offload alternates CPU and GPU work. Sleep between CPU graph splits
-    // instead of spinning while Vulkan executes, and retain workers for reuse.
+    // instead of spinning while a GPU executes, and retain workers for reuse.
     params.poll = 0;
     return ggml_threadpool_new(&params);
 }

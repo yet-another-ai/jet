@@ -1,8 +1,8 @@
 # Jet
 
 Jet is a local decisions engine. It scores a fixed set of structured candidates with teacher
-forcing instead of generating free-form text. CPU execution is the default; an optional Vulkan
-backend offloads the model, KV cache, and supported operations to a local GPU.
+forcing instead of generating free-form text. The default CPU-only build runs on CPU. Optional
+CUDA and Vulkan backends offload the model, KV cache, and supported operations to a local GPU.
 
 Jet supports `noul`, `choice`, and zero-based `score` questions through a Rust API and a JSONL
 command-line interface. It does not provide HTTP serving, NPU execution, or general free-text
@@ -32,6 +32,50 @@ Download the pinned Qwen3 test model:
 ./scripts/download-test-model.sh
 ```
 
+### Backend selection
+
+The CLI defaults to `--backend auto`. It selects the first available backend compiled into the
+binary in this order: CUDA, Vulkan, CPU. Use `--backend cuda`, `--backend vulkan`, or
+`--backend cpu` to require a specific backend. An explicit GPU selection fails when that feature
+or a matching device is unavailable. `EngineConfig::auto` provides the same selection for Rust
+callers; `EngineConfig::cpu`, `cuda`, and `vulkan` select explicitly.
+
+Build with both GPU backends using `--features cuda,vulkan`. On a machine with both GPU backends,
+the `auto` choice uses CUDA. Model loading binds the selected GPU device explicitly, so a
+Vulkan request cannot silently use a CUDA device. The initial CUDA integration selects one GPU.
+
+### CUDA
+
+Install the CUDA Toolkit with `nvcc` and a compatible NVIDIA driver. The CUDA feature builds
+llama.cpp's CUDA backend from the pinned submodule:
+
+```sh
+mise exec -- cargo run -p jet-cli --features cuda -- judge \
+  --backend cuda \
+  --model-path models/Qwen3-0.6B-Q8_0.gguf \
+  --input tests/fixtures/decisions.jsonl \
+  --output -
+```
+
+Set `JET_CUDA_ARCHITECTURES` to a CMake CUDA architecture list when building for a different GPU
+or on a machine without a GPU, for example `86;89`. CMake discovers the Toolkit using its
+standard `CUDAToolkit_ROOT`, `CUDA_PATH`, and `CUDACXX` inputs. To produce a Windows archive with
+both GPU backends and the matching CUDA runtime DLLs, run:
+
+```powershell
+$env:CUDAToolkit_ROOT = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3'
+$env:VULKAN_SDK = 'C:\VulkanSDK\1.4.357.0'
+$env:CARGO_TARGET_DIR = 'E:\jet-target'
+mise run package:cuda
+```
+
+The archive is written to `dist/jet-cuda-windows-x64.zip`. The task inspects the executable's
+imports and bundles cuBLAS, cuBLASLt, cudart, and their required CUDA Toolkit DLLs. The CLI
+delay-loads CUDA imports so a host without an NVIDIA driver can still select Vulkan or CPU.
+Jet links CUDA Runtime statically, while bundling cudart for cuBLAS's runtime needs. The NVIDIA
+driver must still be installed for CUDA execution. To
+package CUDA without Vulkan, invoke `pwsh -File scripts/package-cuda.ps1 -Features cuda`.
+
 ### Vulkan
 
 Vulkan is opt-in so ordinary CPU builds keep their existing dependencies. Install a Vulkan loader
@@ -50,7 +94,7 @@ Model loading fails with a clear error if `--backend vulkan` is used without the
 a usable Vulkan GPU. A successful run logs the selected `Vulkan0` device and the number of model
 layers offloaded before emitting JSONL results.
 
-Control weight placement with `--gpu-layers N` (Vulkan defaults to all layers). Layers beyond
+Control weight placement with `--gpu-layers N` (GPU backends default to all layers). Layers beyond
 that GPU allocation execute on CPU. For MoE models, `--cpu-moe-layers N` keeps the routed experts
 in the first N transformer layers on CPU while leaving attention and shared experts eligible for
 GPU execution. These are layer counts, not percentages of bytes. For example, this Q4 placement
@@ -172,7 +216,8 @@ and reports total, text, and image input tokens. An invalid image fails its requ
 still run. The initial implementation requires disabled thinking. Image count, encoded bytes,
 decoded pixels, and visual token limits can be set with the `--max-images`, `--max-image-bytes`,
 `--max-image-pixels`, and `--image-max-tokens` options. Context occupancy counts visual embeddings
-as well as text tokens. Use `--backend vulkan` with `--features 'vision,vulkan'` when the Vulkan SDK
+as well as text tokens. Use `--backend cuda` with `--features 'vision,cuda'` or `--backend vulkan`
+with `--features 'vision,vulkan'` when the corresponding SDK
 and device are available.
 
 The [Doom demo](demos/doom/README.md) connects this interface to a running game: 160×100 frames,

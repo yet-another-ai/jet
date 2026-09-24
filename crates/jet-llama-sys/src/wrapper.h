@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "llama.h"
+#include "ggml-backend.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,6 +13,10 @@ extern "C" {
 
 // CPU buffer type used by llama_model_params.tensor_buft_overrides.
 ggml_backend_buffer_type_t jet_cpu_buffer_type(void);
+
+// The backend registry is initialized by llama_backend_init before these calls.
+ggml_backend_dev_t jet_backend_device(const char * backend_name);
+const char * jet_backend_device_name(ggml_backend_dev_t device);
 
 // Persistent CPU workers shared by a scorer's sequential llama contexts.
 // The caller must free all attached contexts before freeing the threadpool.

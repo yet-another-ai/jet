@@ -65,7 +65,8 @@ JET_ACCURACY_DIR=tests/accuracy/generated-vulkan-qwen35-2b \
 ```
 
 This requires the Vulkan build dependencies described in
-[the development guide](../../docs/development.md). `JET_BACKEND` defaults to `cpu`.
+[the development guide](../../docs/development.md). `JET_BACKEND` defaults to `auto`; set
+`JET_GPU_FEATURES=cuda,vulkan` when running the script with both GPU backends compiled in.
 Jet automatically uses isolated candidate waves for Qwen3.5's hybrid recurrent state; no extra CLI
 flag is required for the correctness-safe path.
 

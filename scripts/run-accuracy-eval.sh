@@ -6,7 +6,7 @@ model_id=${JET_MODEL_ID:-qwen/qwen3-0.6b-q8_0}
 work_dir=${JET_ACCURACY_DIR:-tests/accuracy/generated}
 boolq_limit=${JET_BOOLQ_LIMIT:-256}
 mmlu_per_subject=${JET_MMLU_PER_SUBJECT:-5}
-backend=${JET_BACKEND:-cpu}
+backend=${JET_BACKEND:-auto}
 
 case "$backend" in
   cpu)
@@ -15,8 +15,18 @@ case "$backend" in
   vulkan)
     set -- cargo run --release -p jet-cli --features vulkan -- judge
     ;;
+  cuda)
+    set -- cargo run --release -p jet-cli --features cuda -- judge
+    ;;
+  auto)
+    if [ -n "${JET_GPU_FEATURES:-}" ]; then
+      set -- cargo run --release -p jet-cli --features "$JET_GPU_FEATURES" -- judge
+    else
+      set -- cargo run --release -p jet-cli -- judge
+    fi
+    ;;
   *)
-    echo "run-accuracy-eval: JET_BACKEND must be cpu or vulkan" >&2
+    echo "run-accuracy-eval: JET_BACKEND must be auto, cpu, cuda, or vulkan" >&2
     exit 2
     ;;
 esac

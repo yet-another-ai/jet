@@ -1,4 +1,5 @@
 /target/
+/dist/
 /models/
 /tests/accuracy/data/
 /tests/accuracy/generated*/

@@ -1,5 +1,6 @@
 [package]
 name = "jet-cli"
+build = "build.rs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +14,7 @@ path = "src/main.rs"
 [features]
 default = []
 vulkan = ["jet-engine/vulkan"]
+cuda = ["jet-engine/cuda"]
 vision = ["jet-engine/vision", "dep:base64"]
 
 [dependencies]

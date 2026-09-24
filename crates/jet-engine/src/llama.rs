@@ -25,6 +25,66 @@ use vision::VisionContext;
 
 static BACKEND_INIT: Once = Once::new();
 
+fn registered_gpu(backend: Backend) -> sys::ggml_backend_dev_t {
+    let name = match backend {
+        Backend::Cuda => c"CUDA",
+        Backend::Vulkan => c"Vulkan",
+        Backend::Auto | Backend::Cpu => return ptr::null_mut(),
+    };
+    // SAFETY: llama_backend_init has populated the process-wide registry.
+    unsafe { sys::jet_backend_device(name.as_ptr()) }
+}
+
+fn choose_auto_backend(cuda: bool, vulkan: bool) -> Backend {
+    if cuda {
+        Backend::Cuda
+    } else if vulkan {
+        Backend::Vulkan
+    } else {
+        Backend::Cpu
+    }
+}
+
+fn resolve_backend(requested: Backend) -> Result<(Backend, sys::ggml_backend_dev_t)> {
+    if requested == Backend::Auto {
+        let cuda = cfg!(feature = "cuda")
+            .then(|| registered_gpu(Backend::Cuda))
+            .unwrap_or(ptr::null_mut());
+        let vulkan = if cuda.is_null() && cfg!(feature = "vulkan") {
+            registered_gpu(Backend::Vulkan)
+        } else {
+            ptr::null_mut()
+        };
+        let selected = choose_auto_backend(!cuda.is_null(), !vulkan.is_null());
+        let device = if !cuda.is_null() { cuda } else { vulkan };
+        return Ok((selected, device));
+    }
+    if requested == Backend::Cpu {
+        return Ok((Backend::Cpu, ptr::null_mut()));
+    }
+    let (feature, enabled) = match requested {
+        Backend::Cuda => ("cuda", cfg!(feature = "cuda")),
+        Backend::Vulkan => ("vulkan", cfg!(feature = "vulkan")),
+        Backend::Auto | Backend::Cpu => {
+            return Err(JetError::NativeRuntime(
+                "unexpected backend during device selection".to_owned(),
+            ));
+        }
+    };
+    if !enabled {
+        return Err(JetError::NativeRuntime(format!(
+            "{requested:?} was requested, but this build does not include the `{feature}` feature"
+        )));
+    }
+    let device = registered_gpu(requested);
+    if device.is_null() {
+        return Err(JetError::NativeRuntime(format!(
+            "{requested:?} was requested, but llama.cpp found no {requested:?} GPU device available for offload"
+        )));
+    }
+    Ok((requested, device))
+}
+
 struct TokenizedJob {
     prompt: Vec<sys::llama_token>,
     targets: Vec<Vec<sys::llama_token>>,
@@ -104,7 +164,7 @@ impl OutputDistribution<'_> {
             Self::DeviceLogProbabilities(values) => {
                 let value = *values.get(target_index).ok_or_else(|| {
                     JetError::NativeRuntime(
-                        "Vulkan score target index exceeds sampler output".to_owned(),
+                        "GPU score target index exceeds sampler output".to_owned(),
                     )
                 })?;
                 checked_device_log_probability(value)
@@ -114,7 +174,7 @@ impl OutputDistribution<'_> {
 }
 
 fn checked_device_log_probability(value: f32) -> Result<f64> {
-    // The Vulkan softmax divides two rounded f32 values. For a dominant token,
+    // The GPU softmax divides two rounded f32 values. For a dominant token,
     // the result can cross 1 by a few ulps and log(1 + epsilon) becomes positive.
     // Restore the mathematical upper bound only within that rounding window;
     // larger positives and NaN/+inf still report a broken device result.
@@ -123,7 +183,7 @@ fn checked_device_log_probability(value: f32) -> Result<f64> {
     }
     if value.is_nan() || value == f32::INFINITY || value > 0.0 {
         return Err(JetError::NonFiniteScore(format!(
-            "Vulkan softmax returned invalid target log-probability {}",
+            "GPU softmax returned invalid target log-probability {}",
             f64::from(value)
         )));
     }
@@ -212,31 +272,31 @@ pub(crate) struct LlamaScorer {
     preparation_worker: Option<PreparationWorker>,
     // LlamaScorer::drop frees both contexts before this owned pool is dropped.
     _cpu_threadpool: CpuThreadpool,
+    _devices: Option<Box<[sys::ggml_backend_dev_t; 2]>>,
     _tensor_buffer_overrides: TensorBufferOverrides,
     _single_threaded: PhantomData<Rc<()>>,
 }
 
 impl LlamaScorer {
-    pub(crate) fn load(config: EngineConfig) -> Result<Self> {
+    pub(crate) fn load(mut config: EngineConfig) -> Result<Self> {
         validate_config(&config)?;
         let started = config.collect_timings.then(Instant::now);
         BACKEND_INIT.call_once(|| {
             // SAFETY: llama.cpp requires one process-wide initialization before any model calls.
             unsafe { sys::llama_backend_init() };
         });
-        if config.backend == Backend::Vulkan {
-            if !cfg!(feature = "vulkan") {
-                return Err(JetError::NativeRuntime(
-                    "Vulkan was requested, but this build does not include the `vulkan` feature"
-                        .to_owned(),
-                ));
-            }
-            // SAFETY: llama.cpp's process-wide backend initialization completed above.
-            if !unsafe { sys::llama_supports_gpu_offload() } {
-                return Err(JetError::NativeRuntime(
-                    "Vulkan was requested, but llama.cpp found no GPU device available for offload"
-                        .to_owned(),
-                ));
+        let (backend, device) = resolve_backend(config.backend)?;
+        config.backend = backend;
+        validate_config(&config)?;
+        if device.is_null() {
+            tracing::info!(backend = ?backend, "selected backend");
+        } else {
+            // SAFETY: the device comes from llama.cpp's live backend registry.
+            let name = unsafe { sys::jet_backend_device_name(device) };
+            if !name.is_null() {
+                // SAFETY: ggml returns a stable, NUL-terminated device name.
+                let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
+                tracing::info!(backend = ?backend, device = %name, "selected backend");
             }
         }
 
@@ -252,8 +312,18 @@ impl LlamaScorer {
         let mut model_params = unsafe { sys::llama_model_default_params() };
         model_params.n_gpu_layers = match config.backend {
             Backend::Cpu => 0,
-            Backend::Vulkan => config.gpu_layers.map_or(-1, |layers| layers as i32),
+            Backend::Cuda | Backend::Vulkan => config.gpu_layers.map_or(-1, |layers| layers as i32),
+            Backend::Auto => {
+                return Err(JetError::NativeRuntime(
+                    "automatic backend was not resolved".to_owned(),
+                ));
+            }
         };
+        // An empty list also keeps explicit CPU selection off GPU backends.
+        let mut devices = Some(Box::new([device, ptr::null_mut()]));
+        model_params.devices = devices
+            .as_mut()
+            .map_or(ptr::null_mut(), |devices| devices.as_mut_ptr());
         if !config.use_mmap {
             model_params.load_mode = sys::llama_load_mode_LLAMA_LOAD_MODE_NONE;
         }
@@ -274,7 +344,7 @@ impl LlamaScorer {
 
         #[cfg(feature = "vision")]
         let vision = match &config.vision {
-            Some(vision_config) => match VisionContext::new(model, config.backend, vision_config) {
+            Some(vision_config) => match VisionContext::new(model, device, vision_config) {
                 Ok(vision) => Some(vision),
                 Err(error) => {
                     // SAFETY: no context has been constructed and the model is still owned here.
@@ -291,6 +361,7 @@ impl LlamaScorer {
         let mut load_result = Self::finish_load(model, config);
         if let Ok(scorer) = &mut load_result {
             scorer.timings.load_ms = elapsed_ms(started);
+            scorer._devices = devices;
             scorer._tensor_buffer_overrides = tensor_buffer_overrides;
         }
         if load_result.is_err() {
@@ -313,7 +384,7 @@ impl LlamaScorer {
         // joins a fresh set of worker threads.
         let cpu_threadpool = CpuThreadpool::new(config.threads)?;
         let device_softmax =
-            config.backend == Backend::Vulkan && config.execution_mode == ExecutionMode::Batched;
+            config.backend.is_gpu() && config.execution_mode == ExecutionMode::Batched;
         let needs_generation_context =
             device_softmax && config.thinking.mode != ThinkingMode::Disabled;
         // llama.cpp can copy a hybrid/recurrent prefix to multiple sequence IDs, but advancing
@@ -348,7 +419,7 @@ impl LlamaScorer {
         context_params.n_threads = config.threads;
         context_params.n_threads_batch = config.threads;
         context_params.embeddings = false;
-        let offload = config.backend == Backend::Vulkan;
+        let offload = config.backend.is_gpu();
         // Native op_offload can upload CPU weights again for sufficiently large batches.
         // Explicit placement must keep their computation on CPU, including MoE prefill.
         let offload_cpu_ops = offload && config.gpu_layers.is_none() && config.cpu_moe_layers == 0;
@@ -369,7 +440,7 @@ impl LlamaScorer {
                                 unsafe { sys::llama_sampler_free(sampler.as_ptr()) };
                             }
                             JetError::NativeRuntime(
-                                "failed to create Vulkan score softmax sampler".to_owned(),
+                                "failed to create GPU score softmax sampler".to_owned(),
                             )
                         })?;
                 score_samplers.push(sampler);
@@ -406,7 +477,7 @@ impl LlamaScorer {
         };
 
         let generation_context = if needs_generation_context {
-            // Keep generation on the Vulkan model backend, but omit the device-side scoring
+            // Keep generation on the selected GPU backend, but omit the device-side scoring
             // sampler so llama.cpp exposes the selected logits row to the CPU sampler.
             // This context shares model weights with the scoring context and owns only its
             // single-sequence runtime state (KV cache and compute buffers).
@@ -508,6 +579,7 @@ impl LlamaScorer {
             vision,
             preparation_worker: None,
             _cpu_threadpool: cpu_threadpool,
+            _devices: None,
             // load() transfers its still-live overrides here immediately on success.
             _tensor_buffer_overrides: TensorBufferOverrides::default(),
             _single_threaded: PhantomData,
@@ -516,6 +588,10 @@ impl LlamaScorer {
 
     pub(crate) fn timings(&self) -> &EngineTimings {
         &self.timings
+    }
+
+    pub(crate) fn backend(&self) -> Backend {
+        self.config.backend
     }
 
     fn timing_start(&self) -> Option<Instant> {
@@ -919,7 +995,7 @@ impl LlamaScorer {
             // be rebound because llama.cpp permits backend initialization only once per chain.
             let replacement = NonNull::new(unsafe { sys::jet_score_sampler_init(width) })
                 .ok_or_else(|| {
-                    JetError::NativeRuntime("failed to allocate Vulkan score targets".to_owned())
+                    JetError::NativeRuntime("failed to allocate GPU score targets".to_owned())
                 })?;
             // SAFETY: context and replacement are live; the next decode rebuilds the sampling graph.
             if !unsafe {
@@ -928,7 +1004,7 @@ impl LlamaScorer {
                 // SAFETY: the context did not retain this unsupported sampler.
                 unsafe { sys::llama_sampler_free(replacement.as_ptr()) };
                 return Err(JetError::NativeRuntime(
-                    "failed to resize Vulkan score targets".to_owned(),
+                    "failed to resize GPU score targets".to_owned(),
                 ));
             }
             let previous = std::mem::replace(sampler, replacement);
@@ -1269,7 +1345,7 @@ impl LlamaScorer {
                             )
                         } {
                             return Err(JetError::NativeRuntime(
-                                "failed to set Vulkan score targets".to_owned(),
+                                "failed to set GPU score targets".to_owned(),
                             ));
                         }
                     }
@@ -1370,11 +1446,10 @@ impl LlamaScorer {
         if !self.device_softmax {
             return Ok(OutputDistribution::Logits(self.logits_row(logits, row)));
         }
-        let row = i32::try_from(row).map_err(|_| {
-            JetError::NativeRuntime("Vulkan score output row exceeds i32".to_owned())
-        })?;
+        let row = i32::try_from(row)
+            .map_err(|_| JetError::NativeRuntime("GPU score output row exceeds i32".to_owned()))?;
         let output_count = i32::try_from(output_count).map_err(|_| {
-            JetError::NativeRuntime("Vulkan score output count exceeds i32".to_owned())
+            JetError::NativeRuntime("GPU score output count exceeds i32".to_owned())
         })?;
         let sampled_index = row - output_count;
         // SAFETY: row identifies an output selected in the most recent successful decode.
@@ -1382,7 +1457,7 @@ impl LlamaScorer {
             unsafe { sys::llama_get_sampled_probs_count_ith(self.context.as_ptr(), sampled_index) };
         if count as usize != self.device_target_width {
             return Err(JetError::NativeRuntime(format!(
-                "Vulkan score softmax returned {count} values instead of {} target log-probabilities",
+                "GPU score softmax returned {count} values instead of {} target log-probabilities",
                 self.device_target_width
             )));
         }
@@ -1391,7 +1466,7 @@ impl LlamaScorer {
             unsafe { sys::llama_get_sampled_probs_ith(self.context.as_ptr(), sampled_index) };
         if probabilities.is_null() {
             return Err(JetError::NativeRuntime(
-                "Vulkan score softmax did not expose probabilities".to_owned(),
+                "GPU score softmax did not expose probabilities".to_owned(),
             ));
         }
         // SAFETY: llama.cpp reported device_target_width contiguous f32 values.
@@ -1509,7 +1584,7 @@ impl SequenceScorer for LlamaScorer {
             self.timings.jobs += jobs.len() as u64;
         }
         if self.config.preparation_pipeline
-            && self.config.backend == Backend::Vulkan
+            && self.config.backend.is_gpu()
             && self.config.thinking.mode == ThinkingMode::Disabled
             && self.config.execution_mode == ExecutionMode::Batched
             && self.isolate_candidate_groups
@@ -1716,7 +1791,7 @@ fn validate_config(config: &EngineConfig) -> Result<()> {
         && (config.gpu_layers.is_some_and(|layers| layers > 0) || config.cpu_moe_layers > 0)
     {
         return Err(JetError::InvalidRequest(
-            "gpu_layers > 0 and cpu_moe_layers > 0 require the Vulkan backend".to_owned(),
+            "gpu_layers > 0 and cpu_moe_layers > 0 require a GPU backend".to_owned(),
         ));
     }
     if config.model_id.is_empty() {
@@ -1863,6 +1938,14 @@ fn target_log_probability(logits: &[f32], target: sys::llama_token) -> Result<f6
 mod tests {
     use super::*;
     use jet_core::normalize_log_probabilities;
+
+    #[test]
+    fn automatic_backend_prefers_cuda_then_vulkan_then_cpu() {
+        assert_eq!(choose_auto_backend(true, true), Backend::Cuda);
+        assert_eq!(choose_auto_backend(true, false), Backend::Cuda);
+        assert_eq!(choose_auto_backend(false, true), Backend::Vulkan);
+        assert_eq!(choose_auto_backend(false, false), Backend::Cpu);
+    }
 
     #[test]
     fn bounds_only_float32_rounding_above_zero_from_device() -> Result<()> {
@@ -2103,14 +2186,74 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "cuda")]
+    #[test]
+    #[ignore = "requires JET_MODEL_PATH and a working CUDA device"]
+    fn qwen_cuda_smoke_and_auto_priority() -> Result<()> {
+        let model_path = std::env::var_os("JET_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::cuda(model_path.clone(), "qwen/qwen3-0.6b-q8_0");
+        config.context_tokens_per_sequence = 512;
+        config.token_batch = 512;
+        config.micro_batch = 128;
+        config.max_sequences = 3;
+        config.threads = 2;
+        let mut scorer = LlamaScorer::load(config)?;
+        assert_eq!(scorer.config.backend, Backend::Cuda);
+        let job = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: "State: Choose yes or no.\nTask: Answer directly.".to_owned(),
+            targets: vec!["yes".to_owned(), "no".to_owned()],
+        };
+        let first = collect_scores(scorer.score_batch(std::slice::from_ref(&job)))?;
+        let mut reversed = job.clone();
+        reversed.targets.reverse();
+        for _ in 0..3 {
+            let scores = collect_scores(scorer.score_batch(std::slice::from_ref(&reversed)))?;
+            assert_eq!(scores[0].log_probabilities.len(), 2);
+            for (expected, actual) in first[0]
+                .log_probabilities
+                .iter()
+                .rev()
+                .zip(&scores[0].log_probabilities)
+            {
+                assert!((expected - actual).abs() < 1e-4);
+            }
+        }
+        let auto = LlamaScorer::load(EngineConfig::auto(model_path, "qwen/qwen3-0.6b-q8_0"))?;
+        assert_eq!(auto.config.backend, Backend::Cuda);
+        Ok(())
+    }
+
     #[cfg(feature = "vulkan")]
     #[test]
     #[ignore = "requires JET_QWEN35_MODEL_PATH and a working Vulkan device"]
     fn qwen35_hybrid_batch_matches_reference() -> Result<()> {
+        qwen35_hybrid_batch_matches_reference_on(Backend::Vulkan)
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    #[ignore = "requires JET_QWEN35_MODEL_PATH and a working CUDA device"]
+    fn qwen35_cuda_hybrid_batch_matches_reference() -> Result<()> {
+        qwen35_hybrid_batch_matches_reference_on(Backend::Cuda)
+    }
+
+    #[cfg(any(feature = "vulkan", feature = "cuda"))]
+    fn qwen35_hybrid_batch_matches_reference_on(backend: Backend) -> Result<()> {
         let model_path = std::env::var_os("JET_QWEN35_MODEL_PATH").ok_or_else(|| {
             JetError::InvalidRequest("JET_QWEN35_MODEL_PATH is required for model tests".to_owned())
         })?;
-        let mut config = EngineConfig::vulkan(model_path, "qwen/qwen3.5");
+        let mut config = match backend {
+            Backend::Vulkan => EngineConfig::vulkan(model_path, "qwen/qwen3.5"),
+            Backend::Cuda => EngineConfig::cuda(model_path, "qwen/qwen3.5"),
+            Backend::Auto | Backend::Cpu => {
+                return Err(JetError::InvalidRequest(
+                    "hybrid GPU test requires a GPU backend".to_owned(),
+                ));
+            }
+        };
         config.context_tokens_per_sequence = 1_024;
         config.token_batch = 512;
         config.micro_batch = 128;

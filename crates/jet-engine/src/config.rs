@@ -3,8 +3,16 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Backend {
     #[default]
+    Auto,
     Cpu,
     Vulkan,
+    Cuda,
+}
+
+impl Backend {
+    pub(crate) fn is_gpu(self) -> bool {
+        matches!(self, Self::Vulkan | Self::Cuda)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -50,12 +58,12 @@ pub struct EngineConfig {
     pub model_path: PathBuf,
     pub model_id: String,
     pub backend: Backend,
-    /// Transformer/output layers to offload. None selects all layers on Vulkan and none on CPU.
+    /// Transformer/output layers to offload. None selects all layers on GPU and none on CPU.
     /// Values above the model's layer count follow llama.cpp's all-layers behavior.
     /// Explicit placement disables opportunistic GPU execution of CPU weight operations.
     pub gpu_layers: Option<u32>,
     /// Keep routed expert tensors in the first N transformer layers on CPU.
-    /// Requires Vulkan and a MoE model; attention and shared experts retain normal placement.
+    /// Requires a GPU backend and a MoE model; attention and shared experts retain normal placement.
     /// Selected expert operations stay on CPU even during large prompt batches.
     pub cpu_moe_layers: u32,
     /// Allow llama.cpp to select memory mapping automatically; false disables mapping.
@@ -64,7 +72,7 @@ pub struct EngineConfig {
     pub token_batch: u32,
     pub micro_batch: u32,
     pub max_sequences: u32,
-    /// Prepare the next Vulkan hybrid question on a CPU worker while the current question scores.
+    /// Prepare the next GPU hybrid question on a CPU worker while the current question scores.
     pub preparation_pipeline: bool,
     pub max_output_rows: u32,
     pub threads: i32,
@@ -129,8 +137,21 @@ impl EngineConfig {
         Self::cpu(model_path, "qwen/qwen3-0.6b-q8_0")
     }
 
-    pub fn vulkan(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
+    pub fn auto(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
         let mut config = Self::cpu(model_path, model_id);
+        config.backend = Backend::Auto;
+        config.max_output_rows = 256;
+        config
+    }
+
+    pub fn cuda(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
+        let mut config = Self::auto(model_path, model_id);
+        config.backend = Backend::Cuda;
+        config
+    }
+
+    pub fn vulkan(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
+        let mut config = Self::auto(model_path, model_id);
         config.backend = Backend::Vulkan;
         config.max_output_rows = 256;
         config
@@ -147,7 +168,16 @@ mod tests {
 
     #[test]
     fn constructors_select_the_requested_backend() {
+        assert_eq!(Backend::default(), Backend::Auto);
+        assert_eq!(
+            EngineConfig::auto("model.gguf", "model").backend,
+            Backend::Auto
+        );
         assert_eq!(EngineConfig::qwen3_cpu("model.gguf").backend, Backend::Cpu);
+        assert_eq!(
+            EngineConfig::cuda("model.gguf", "model").backend,
+            Backend::Cuda
+        );
         assert_eq!(
             EngineConfig::qwen3_vulkan("model.gguf").backend,
             Backend::Vulkan
@@ -157,7 +187,9 @@ mod tests {
             256
         );
         for config in [
+            EngineConfig::auto("model.gguf", "model"),
             EngineConfig::qwen3_cpu("model.gguf"),
+            EngineConfig::cuda("model.gguf", "model"),
             EngineConfig::qwen3_vulkan("model.gguf"),
         ] {
             assert_eq!(config.gpu_layers, None);

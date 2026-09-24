@@ -1,4 +1,5 @@
 #include "llama.h"
+#include "ggml-backend.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
 #include "stb/stb_image.h"
@@ -71,14 +72,15 @@ struct jet_vision_job {
 };
 
 extern "C" jet_vision * jet_vision_init(const llama_model * model, const char * mmproj,
-                                         bool use_gpu, int image_max_tokens,
+                                         ggml_backend_dev_t device, int image_max_tokens,
                                          char * error, size_t error_capacity) {
     if (!model || !mmproj) {
         set_error("model and mmproj are required", error, error_capacity);
         return nullptr;
     }
     auto params = mtmd_context_params_default();
-    params.use_gpu = use_gpu;
+    params.use_gpu = device != nullptr;
+    params.device = device;
     if (image_max_tokens > 0) params.image_max_tokens = image_max_tokens;
     auto * native = mtmd_init_from_file(mmproj, model, params);
     if (!native) {

@@ -9,7 +9,7 @@ unsafe extern "C" {
     fn jet_vision_init(
         model: *const sys::llama_model,
         mmproj: *const c_char,
-        use_gpu: bool,
+        device: sys::ggml_backend_dev_t,
         image_max_tokens: i32,
         error: *mut c_char,
         error_capacity: usize,
@@ -59,7 +59,7 @@ pub(super) struct VisionContext(NonNull<c_void>);
 impl VisionContext {
     pub(super) fn new(
         model: NonNull<sys::llama_model>,
-        backend: Backend,
+        device: sys::ggml_backend_dev_t,
         config: &VisionConfig,
     ) -> Result<Self> {
         if config.max_images == 0
@@ -83,7 +83,7 @@ impl VisionContext {
             jet_vision_init(
                 model.as_ptr(),
                 path.as_ptr(),
-                backend == Backend::Vulkan,
+                device,
                 config.image_max_tokens,
                 error.as_mut_ptr(),
                 error.len(),

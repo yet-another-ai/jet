@@ -21,10 +21,10 @@ exhausted. Thinking uses configurable temperature, top-k, top-p, and seed values
 trace is generated once per question and then frozen; all candidate scores are conditional on that
 same trace.
 
-For Vulkan batched execution, generation and scoring use two contexts over the same model. The
+For GPU batched execution, generation and scoring use two contexts over the same model. The
 single-sequence generation context copies its selected logits row to the CPU for the bounded
 thinking sampler. The scoring context performs vocabulary softmax, target-token gather, and log on
-the model-output backend (GPU with default Vulkan placement) and returns only a target vector per
+the backend holding the output weights and returns only a target vector per
 output row. Both contexts share the configured GPU layer and CPU expert placement.
 The vector width is fixed for a decode;
 for hybrid and recurrent models, it grows as needed to cover distinct candidate first tokens,
@@ -72,13 +72,13 @@ remaining continuation, Jet removes sequence 1's previous state and copies the p
 only sequence 1 advances. llama.cpp preserves the shared recurrent state through copy-on-write.
 Candidates of one prefix run serially because advancing sibling recurrent forks in the same
 decode can change their results. A one-token candidate needs no continuation decode.
-Two sequence slots suffice even when a question has more than two candidates, and Vulkan's target
+Two sequence slots suffice even when a question has more than two candidates, and the GPU target
 gather grows to cover all distinct first tokens. The reference execution mode continues to score
 each candidate independently and exists for correctness comparisons.
 
 Native chat-template objects and tokenizer scratch buffers are reused without caching request
 results. Full prompt-plus-candidate tokenization still verifies the assistant token boundary.
-In disabled-thinking, batched Vulkan hybrid execution, a persistent CPU worker prepares the next
+In disabled-thinking, batched GPU hybrid execution, a persistent CPU worker prepares the next
 questions while the scorer consumes earlier ones. Its result queue has two slots, with at most
 one additional result awaiting send. Prepared results and errors remain in input order.
 `--no-preparation-pipeline` restores synchronous preparation. CPU, thinking, and reference execution

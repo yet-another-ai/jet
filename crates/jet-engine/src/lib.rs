@@ -57,4 +57,9 @@ impl Engine {
     pub fn timings(&self) -> &EngineTimings {
         self.scorer.timings()
     }
+
+    /// Return the backend selected when the model was loaded.
+    pub fn backend(&self) -> Backend {
+        self.scorer.backend()
+    }
 }

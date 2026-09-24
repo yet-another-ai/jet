@@ -398,6 +398,12 @@ pub struct ggml_backend_device {
     _unused: [u8; 0],
 }
 pub type ggml_backend_dev_t = *mut ggml_backend_device;
+unsafe extern "C" {
+    pub fn jet_backend_device(backend_name: *const ::std::os::raw::c_char) -> ggml_backend_dev_t;
+}
+unsafe extern "C" {
+    pub fn jet_backend_device_name(device: ggml_backend_dev_t) -> *const ::std::os::raw::c_char;
+}
 pub type ggml_backend_sched_eval_callback = ::std::option::Option<
     unsafe extern "C" fn(
         t: *mut ggml_tensor,

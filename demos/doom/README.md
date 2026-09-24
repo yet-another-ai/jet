@@ -14,6 +14,10 @@ mise exec -- cargo build --release -p jet-cli --features vision,vulkan
 mise exec uv@0.12.13 -- uv run --locked --script demos/doom/play.py
 ```
 
+For CUDA, build with `--features vision,cuda` and run the demo with `--backend cuda`.
+Build with `--features vision,cuda,vulkan` to let the default `auto` backend choose CUDA,
+then Vulkan, then CPU.
+
 The script declares Python 3.12 and pins ViZDoom, Pillow, and pygame-ce. `play.py.lock` also locks the transitive
 dependencies; uv installs the runtime and dependencies on first use. The model files are the
 same ones used by `judge-multimodal`. Run from the repository root.

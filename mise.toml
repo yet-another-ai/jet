@@ -19,3 +19,7 @@ windows-x64 = { url = "https://github.com/llvm/llvm-project/releases/download/ll
 
 [settings]
 lockfile = true
+
+[tasks."package:cuda"]
+description = "Build and package Jet with its Windows CUDA runtime DLLs"
+run = 'pwsh -File scripts/package-cuda.ps1'
