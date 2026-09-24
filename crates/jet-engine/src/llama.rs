@@ -737,8 +737,8 @@ impl LlamaScorer {
                     };
                 }
 
-                // SAFETY: the sampler is live and accepts the sampled token exactly once.
-                unsafe { sys::jet_thinking_sampler_accept(sampler.0.as_ptr(), token) };
+                // llama_sampler_sample already accepts the token into the sampler chain.
+                // Accepting it again would consume two reasoning-budget slots per token.
                 generated.push(token);
                 // SAFETY: the sampler remains live for the duration of generation.
                 if unsafe { sys::jet_thinking_sampler_done(sampler.0.as_ptr()) } {
@@ -2209,6 +2209,28 @@ mod tests {
         let recovered = recovered.into_iter().skip(1).collect::<Result<Vec<_>>>()?;
         compare_scores(&first, &recovered)?;
         compare_scores(&first, &collect_scores(scorer.score_batch(&[job]))?)
+    }
+
+    #[cfg(feature = "vulkan")]
+    #[test]
+    #[ignore = "requires the pinned Qwen3.5-0.8B model and a working Vulkan device"]
+    fn qwen35_thinking_budget_counts_tokens_once() -> Result<()> {
+        let model_path = std::env::var_os("JET_QWEN35_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_QWEN35_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::vulkan(model_path, "qwen/qwen3.5");
+        config.max_sequences = 2;
+        config.thinking.mode = ThinkingMode::Required;
+        config.thinking.max_tokens = 8;
+        let mut scorer = LlamaScorer::load(config)?;
+        let job = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: "State:\nWhat is 2 + 2?\n\nTask:\nChoose the single correct answer.\n\nCandidates:\n\"3\", \"4\"\n\nResponse format:\nOne quoted candidate exactly as listed above; no explanation, whitespace, or extra text.".to_owned(),
+            targets: vec!["\"3\"".to_owned(), "\"4\"".to_owned()],
+        };
+        let scores = collect_scores(scorer.score_batch(&[job]))?;
+        assert_eq!(scores[0].thinking_tokens, 9);
+        Ok(())
     }
 
     #[cfg(feature = "vulkan")]
