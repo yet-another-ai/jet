@@ -26,6 +26,8 @@ fn jsonl_order_shape_and_error_exit_are_stable() -> Result<(), Box<dyn Error>> {
     let output = Command::new(env!("CARGO_BIN_EXE_jet"))
         .args([
             "judge",
+            "--backend",
+            "cpu",
             "--model-path",
             &model_path.to_string_lossy(),
             "--model-id",

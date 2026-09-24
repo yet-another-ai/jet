@@ -15,6 +15,7 @@ path = "src/main.rs"
 default = []
 vulkan = ["jet-engine/vulkan"]
 cuda = ["jet-engine/cuda"]
+metal = ["jet-engine/metal"]
 vision = ["jet-engine/vision", "dep:base64"]
 
 [dependencies]

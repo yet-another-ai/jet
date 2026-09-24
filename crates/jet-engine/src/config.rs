@@ -7,11 +7,12 @@ pub enum Backend {
     Cpu,
     Vulkan,
     Cuda,
+    Metal,
 }
 
 impl Backend {
     pub(crate) fn is_gpu(self) -> bool {
-        matches!(self, Self::Vulkan | Self::Cuda)
+        matches!(self, Self::Vulkan | Self::Cuda | Self::Metal)
     }
 }
 
@@ -150,6 +151,12 @@ impl EngineConfig {
         config
     }
 
+    pub fn metal(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
+        let mut config = Self::auto(model_path, model_id);
+        config.backend = Backend::Metal;
+        config
+    }
+
     pub fn vulkan(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
         let mut config = Self::auto(model_path, model_id);
         config.backend = Backend::Vulkan;
@@ -179,6 +186,10 @@ mod tests {
             Backend::Cuda
         );
         assert_eq!(
+            EngineConfig::metal("model.gguf", "model").backend,
+            Backend::Metal
+        );
+        assert_eq!(
             EngineConfig::qwen3_vulkan("model.gguf").backend,
             Backend::Vulkan
         );
@@ -190,6 +201,7 @@ mod tests {
             EngineConfig::auto("model.gguf", "model"),
             EngineConfig::qwen3_cpu("model.gguf"),
             EngineConfig::cuda("model.gguf", "model"),
+            EngineConfig::metal("model.gguf", "model"),
             EngineConfig::qwen3_vulkan("model.gguf"),
         ] {
             assert_eq!(config.gpu_layers, None);

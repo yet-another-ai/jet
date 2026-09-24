@@ -74,9 +74,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let vulkan = env::var_os("CARGO_FEATURE_VULKAN").is_some();
     let cuda = env::var_os("CARGO_FEATURE_CUDA").is_some();
+    let metal = env::var_os("CARGO_FEATURE_METAL").is_some();
     let vision = env::var_os("CARGO_FEATURE_VISION").is_some();
     if cuda && !matches!(target_os.as_str(), "windows" | "linux") {
         return Err("the cuda feature currently supports Windows and Linux targets".into());
+    }
+    if metal && target_os != "macos" {
+        return Err("the metal feature currently supports macOS targets".into());
     }
     let mut config = cmake::Config::new(&source_dir);
     config
@@ -95,9 +99,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("LLAMA_LLGUIDANCE", "OFF")
         .define("GGML_OPENMP", "OFF")
         .define("GGML_BLAS", "OFF")
+        .define(
+            "GGML_ACCELERATE",
+            if matches!(target_os.as_str(), "macos" | "ios") {
+                "ON"
+            } else {
+                "OFF"
+            },
+        )
         .define("GGML_CUDA", if cuda { "ON" } else { "OFF" })
         .define("GGML_CUDA_NCCL", "OFF")
-        .define("GGML_METAL", "OFF")
+        .define("GGML_METAL", if metal { "ON" } else { "OFF" })
+        .define("GGML_METAL_EMBED_LIBRARY", if metal { "ON" } else { "OFF" })
         .define("GGML_RPC", "OFF")
         .define("GGML_VULKAN", if vulkan { "ON" } else { "OFF" })
         .define("GGML_HIP", "OFF")
@@ -111,6 +124,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             source_dir
                 .join("ggml/src/ggml-cuda/CMakeLists.txt")
                 .display()
+        );
+    }
+    if metal {
+        println!(
+            "cargo:rerun-if-changed={}",
+            source_dir.join("ggml/src/ggml-metal").display()
         );
     }
 
@@ -155,6 +174,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cuda {
         link_paths.push(dst.join("build/ggml/src/ggml-cuda"));
     }
+    if metal {
+        link_paths.push(dst.join("build/ggml/src/ggml-metal"));
+    }
     for path in link_paths {
         // Visual Studio is a multi-configuration generator and puts static
         // libraries beneath the selected configuration, even for Cargo debug.
@@ -192,6 +214,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("cargo:rustc-link-lib=static=ggml-cuda");
         emit_cuda_links(&dst.join("build/CMakeCache.txt"), &target_os)?;
     }
+    if metal {
+        println!("cargo:rustc-link-lib=static=ggml-metal");
+        for framework in ["Foundation", "Metal", "MetalKit"] {
+            println!("cargo:rustc-link-lib=framework={framework}");
+        }
+    }
     match target_os.as_str() {
         "linux" | "android" => {
             println!("cargo:rustc-link-lib=stdc++");
@@ -204,6 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "macos" | "ios" => {
             println!("cargo:rustc-link-lib=c++");
+            println!("cargo:rustc-link-lib=framework=Accelerate");
             if vulkan {
                 println!("cargo:rustc-link-lib=vulkan");
             }

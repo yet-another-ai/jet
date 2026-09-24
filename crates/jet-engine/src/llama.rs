@@ -28,6 +28,7 @@ static BACKEND_INIT: Once = Once::new();
 fn registered_gpu(backend: Backend) -> sys::ggml_backend_dev_t {
     let name = match backend {
         Backend::Cuda => c"CUDA",
+        Backend::Metal => c"MTL", // llama.cpp registers Metal under this name.
         Backend::Vulkan => c"Vulkan",
         Backend::Auto | Backend::Cpu => return ptr::null_mut(),
     };
@@ -35,9 +36,11 @@ fn registered_gpu(backend: Backend) -> sys::ggml_backend_dev_t {
     unsafe { sys::jet_backend_device(name.as_ptr()) }
 }
 
-fn choose_auto_backend(cuda: bool, vulkan: bool) -> Backend {
+fn choose_auto_backend(cuda: bool, metal: bool, vulkan: bool) -> Backend {
     if cuda {
         Backend::Cuda
+    } else if metal {
+        Backend::Metal
     } else if vulkan {
         Backend::Vulkan
     } else {
@@ -50,13 +53,24 @@ fn resolve_backend(requested: Backend) -> Result<(Backend, sys::ggml_backend_dev
         let cuda = cfg!(feature = "cuda")
             .then(|| registered_gpu(Backend::Cuda))
             .unwrap_or(ptr::null_mut());
-        let vulkan = if cuda.is_null() && cfg!(feature = "vulkan") {
+        let metal = if cuda.is_null() && cfg!(feature = "metal") {
+            registered_gpu(Backend::Metal)
+        } else {
+            ptr::null_mut()
+        };
+        let vulkan = if cuda.is_null() && metal.is_null() && cfg!(feature = "vulkan") {
             registered_gpu(Backend::Vulkan)
         } else {
             ptr::null_mut()
         };
-        let selected = choose_auto_backend(!cuda.is_null(), !vulkan.is_null());
-        let device = if !cuda.is_null() { cuda } else { vulkan };
+        let selected = choose_auto_backend(!cuda.is_null(), !metal.is_null(), !vulkan.is_null());
+        let device = if !cuda.is_null() {
+            cuda
+        } else if !metal.is_null() {
+            metal
+        } else {
+            vulkan
+        };
         return Ok((selected, device));
     }
     if requested == Backend::Cpu {
@@ -64,6 +78,7 @@ fn resolve_backend(requested: Backend) -> Result<(Backend, sys::ggml_backend_dev
     }
     let (feature, enabled) = match requested {
         Backend::Cuda => ("cuda", cfg!(feature = "cuda")),
+        Backend::Metal => ("metal", cfg!(feature = "metal")),
         Backend::Vulkan => ("vulkan", cfg!(feature = "vulkan")),
         Backend::Auto | Backend::Cpu => {
             return Err(JetError::NativeRuntime(
@@ -312,7 +327,9 @@ impl LlamaScorer {
         let mut model_params = unsafe { sys::llama_model_default_params() };
         model_params.n_gpu_layers = match config.backend {
             Backend::Cpu => 0,
-            Backend::Cuda | Backend::Vulkan => config.gpu_layers.map_or(-1, |layers| layers as i32),
+            Backend::Cuda | Backend::Metal | Backend::Vulkan => {
+                config.gpu_layers.map_or(-1, |layers| layers as i32)
+            }
             Backend::Auto => {
                 return Err(JetError::NativeRuntime(
                     "automatic backend was not resolved".to_owned(),
@@ -1940,11 +1957,22 @@ mod tests {
     use jet_core::normalize_log_probabilities;
 
     #[test]
-    fn automatic_backend_prefers_cuda_then_vulkan_then_cpu() {
-        assert_eq!(choose_auto_backend(true, true), Backend::Cuda);
-        assert_eq!(choose_auto_backend(true, false), Backend::Cuda);
-        assert_eq!(choose_auto_backend(false, true), Backend::Vulkan);
-        assert_eq!(choose_auto_backend(false, false), Backend::Cpu);
+    fn automatic_backend_prefers_cuda_then_metal_then_vulkan_then_cpu() {
+        assert_eq!(choose_auto_backend(true, true, true), Backend::Cuda);
+        assert_eq!(choose_auto_backend(true, false, false), Backend::Cuda);
+        assert_eq!(choose_auto_backend(false, true, true), Backend::Metal);
+        assert_eq!(choose_auto_backend(false, true, false), Backend::Metal);
+        assert_eq!(choose_auto_backend(false, false, true), Backend::Vulkan);
+        assert_eq!(choose_auto_backend(false, false, false), Backend::Cpu);
+    }
+
+    #[cfg(not(feature = "metal"))]
+    #[test]
+    fn explicit_metal_requires_the_feature() {
+        let result = resolve_backend(Backend::Metal);
+        assert!(
+            matches!(result, Err(JetError::NativeRuntime(message)) if message.contains("`metal` feature"))
+        );
     }
 
     #[test]
@@ -2226,6 +2254,62 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "metal")]
+    #[test]
+    #[ignore = "requires JET_MODEL_PATH and a working Metal device"]
+    fn qwen_metal_smoke_and_cpu_reference() -> Result<()> {
+        let model_path = std::env::var_os("JET_MODEL_PATH").ok_or_else(|| {
+            JetError::InvalidRequest("JET_MODEL_PATH is required for model tests".to_owned())
+        })?;
+        let mut config = EngineConfig::metal(model_path.clone(), "qwen/qwen3-0.6b-q8_0");
+        config.context_tokens_per_sequence = 512;
+        config.token_batch = 512;
+        config.micro_batch = 128;
+        config.max_sequences = 3;
+        config.threads = 2;
+        let mut scorer = LlamaScorer::load(config.clone())?;
+        assert_eq!(scorer.config.backend, Backend::Metal);
+        assert!(scorer.device_softmax);
+        let job = ScoreJob {
+            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            user_content: "State: Choose yes or no.\nTask: Answer directly.".to_owned(),
+            targets: vec!["yes".to_owned(), "no".to_owned()],
+        };
+        let metal_scores = collect_scores(scorer.score_batch(std::slice::from_ref(&job)))?;
+        assert_eq!(metal_scores[0].log_probabilities.len(), 2);
+        let mut reversed = job.clone();
+        reversed.targets.reverse();
+        let reversed_scores = collect_scores(scorer.score_batch(&[reversed]))?;
+        for (expected, actual) in metal_scores[0]
+            .log_probabilities
+            .iter()
+            .rev()
+            .zip(&reversed_scores[0].log_probabilities)
+        {
+            assert!((expected - actual).abs() < 1e-4);
+        }
+
+        config.backend = Backend::Cpu;
+        let mut cpu = LlamaScorer::load(config)?;
+        let cpu_scores = collect_scores(cpu.score_batch(&[job]))?;
+        assert_eq!(cpu_scores[0].log_probabilities.len(), 2);
+        for ((metal, reference), token_count) in metal_scores[0]
+            .log_probabilities
+            .iter()
+            .zip(&cpu_scores[0].log_probabilities)
+            .zip(&cpu_scores[0].target_token_counts)
+        {
+            let tolerance = 0.01 + 0.01 * *token_count as f64;
+            assert!(
+                (metal - reference).abs() <= tolerance,
+                "metal={metal}, cpu={reference}, tokens={token_count}, tolerance={tolerance}"
+            );
+        }
+        let auto = LlamaScorer::load(EngineConfig::auto(model_path, "qwen/qwen3-0.6b-q8_0"))?;
+        assert_eq!(auto.config.backend, Backend::Metal);
+        Ok(())
+    }
+
     #[cfg(feature = "vulkan")]
     #[test]
     #[ignore = "requires JET_QWEN35_MODEL_PATH and a working Vulkan device"]
@@ -2240,7 +2324,14 @@ mod tests {
         qwen35_hybrid_batch_matches_reference_on(Backend::Cuda)
     }
 
-    #[cfg(any(feature = "vulkan", feature = "cuda"))]
+    #[cfg(feature = "metal")]
+    #[test]
+    #[ignore = "requires JET_QWEN35_MODEL_PATH and a working Metal device"]
+    fn qwen35_metal_hybrid_batch_matches_reference() -> Result<()> {
+        qwen35_hybrid_batch_matches_reference_on(Backend::Metal)
+    }
+
+    #[cfg(any(feature = "vulkan", feature = "cuda", feature = "metal"))]
     fn qwen35_hybrid_batch_matches_reference_on(backend: Backend) -> Result<()> {
         let model_path = std::env::var_os("JET_QWEN35_MODEL_PATH").ok_or_else(|| {
             JetError::InvalidRequest("JET_QWEN35_MODEL_PATH is required for model tests".to_owned())
@@ -2248,6 +2339,7 @@ mod tests {
         let mut config = match backend {
             Backend::Vulkan => EngineConfig::vulkan(model_path, "qwen/qwen3.5"),
             Backend::Cuda => EngineConfig::cuda(model_path, "qwen/qwen3.5"),
+            Backend::Metal => EngineConfig::metal(model_path, "qwen/qwen3.5"),
             Backend::Auto | Backend::Cpu => {
                 return Err(JetError::InvalidRequest(
                     "hybrid GPU test requires a GPU backend".to_owned(),
@@ -2358,10 +2450,30 @@ mod tests {
     #[test]
     #[ignore = "requires the pinned Qwen3.5-0.8B model and a working Vulkan device"]
     fn qwen35_thinking_budget_counts_tokens_once() -> Result<()> {
+        qwen35_thinking_budget_counts_tokens_once_on(Backend::Vulkan)
+    }
+
+    #[cfg(feature = "metal")]
+    #[test]
+    #[ignore = "requires the pinned Qwen3.5-0.8B model and a working Metal device"]
+    fn qwen35_metal_thinking_budget_counts_tokens_once() -> Result<()> {
+        qwen35_thinking_budget_counts_tokens_once_on(Backend::Metal)
+    }
+
+    #[cfg(any(feature = "vulkan", feature = "metal"))]
+    fn qwen35_thinking_budget_counts_tokens_once_on(backend: Backend) -> Result<()> {
         let model_path = std::env::var_os("JET_QWEN35_MODEL_PATH").ok_or_else(|| {
             JetError::InvalidRequest("JET_QWEN35_MODEL_PATH is required for model tests".to_owned())
         })?;
-        let mut config = EngineConfig::vulkan(model_path, "qwen/qwen3.5");
+        let mut config = match backend {
+            Backend::Vulkan => EngineConfig::vulkan(model_path, "qwen/qwen3.5"),
+            Backend::Metal => EngineConfig::metal(model_path, "qwen/qwen3.5"),
+            _ => {
+                return Err(JetError::InvalidRequest(
+                    "expected Vulkan or Metal".to_owned(),
+                ));
+            }
+        };
         config.max_sequences = 2;
         config.thinking.mode = ThinkingMode::Required;
         config.thinking.max_tokens = 8;
@@ -2380,10 +2492,30 @@ mod tests {
     #[test]
     #[ignore = "requires JET_MODEL_PATH and a working Vulkan device"]
     fn qwen_vulkan_thinking_uses_split_contexts() -> Result<()> {
+        qwen_thinking_uses_split_contexts_on(Backend::Vulkan)
+    }
+
+    #[cfg(feature = "metal")]
+    #[test]
+    #[ignore = "requires JET_MODEL_PATH and a working Metal device"]
+    fn qwen_metal_thinking_uses_split_contexts() -> Result<()> {
+        qwen_thinking_uses_split_contexts_on(Backend::Metal)
+    }
+
+    #[cfg(any(feature = "vulkan", feature = "metal"))]
+    fn qwen_thinking_uses_split_contexts_on(backend: Backend) -> Result<()> {
         let model_path = std::env::var_os("JET_MODEL_PATH").ok_or_else(|| {
             JetError::InvalidRequest("JET_MODEL_PATH is required for model tests".to_owned())
         })?;
-        let mut config = EngineConfig::qwen3_vulkan(model_path);
+        let mut config = match backend {
+            Backend::Vulkan => EngineConfig::qwen3_vulkan(model_path),
+            Backend::Metal => EngineConfig::metal(model_path, "qwen/qwen3-0.6b-q8_0"),
+            _ => {
+                return Err(JetError::InvalidRequest(
+                    "expected Vulkan or Metal".to_owned(),
+                ));
+            }
+        };
         config.context_tokens_per_sequence = 512;
         config.token_batch = 512;
         config.micro_batch = 128;
@@ -2398,7 +2530,7 @@ mod tests {
 
         let job = ScoreJob {
             system_content: crate::prompt::SYSTEM_INSTRUCTION,
-            user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"Vulkan thinking split-context smoke test"}"#.to_owned(),
+            user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"GPU thinking split-context smoke test"}"#.to_owned(),
             targets: vec!["false".to_owned(), "true".to_owned()],
         };
         let scores = collect_scores(scorer.score_batch(&[job]))?;

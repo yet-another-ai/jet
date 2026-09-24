@@ -17,6 +17,8 @@ mise exec uv@0.12.13 -- uv run --locked --script demos/doom/play.py
 For CUDA, build with `--features vision,cuda` and run the demo with `--backend cuda`.
 Build with `--features vision,cuda,vulkan` to let the default `auto` backend choose CUDA,
 then Vulkan, then CPU.
+On Apple Silicon, build with `--features vision,metal` and use `--backend metal` to select Metal
+explicitly; `auto` selects it when the device is available.
 
 The script declares Python 3.12 and pins ViZDoom, Pillow, and pygame-ce. `play.py.lock` also locks the transitive
 dependencies; uv installs the runtime and dependencies on first use. The model files are the

@@ -18,6 +18,9 @@ case "$backend" in
   cuda)
     set -- cargo run --release -p jet-cli --features cuda -- judge
     ;;
+  metal)
+    set -- cargo run --release -p jet-cli --features metal -- judge
+    ;;
   auto)
     if [ -n "${JET_GPU_FEATURES:-}" ]; then
       set -- cargo run --release -p jet-cli --features "$JET_GPU_FEATURES" -- judge
@@ -26,7 +29,7 @@ case "$backend" in
     fi
     ;;
   *)
-    echo "run-accuracy-eval: JET_BACKEND must be auto, cpu, cuda, or vulkan" >&2
+    echo "run-accuracy-eval: JET_BACKEND must be auto, cpu, cuda, metal, or vulkan" >&2
     exit 2
     ;;
 esac

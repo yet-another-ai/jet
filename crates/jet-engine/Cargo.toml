@@ -10,6 +10,7 @@ repository.workspace = true
 default = []
 vulkan = ["jet-llama-sys/vulkan"]
 cuda = ["jet-llama-sys/cuda"]
+metal = ["jet-llama-sys/metal"]
 vision = ["jet-llama-sys/vision"]
 
 [dependencies]

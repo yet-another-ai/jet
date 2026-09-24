@@ -23,3 +23,7 @@ lockfile = true
 [tasks."package:cuda"]
 description = "Build and package Jet with its Windows CUDA runtime DLLs"
 run = 'pwsh -File scripts/package-cuda.ps1'
+
+[tasks."package:metal"]
+description = "Build and package Jet for Apple Silicon Metal"
+run = 'sh scripts/package-metal.sh'

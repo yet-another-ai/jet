@@ -144,6 +144,7 @@ enum BackendArg {
     Cpu,
     Vulkan,
     Cuda,
+    Metal,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -284,6 +285,7 @@ fn engine_config(args: &JudgeArgs) -> EngineConfig {
         BackendArg::Cpu => EngineConfig::cpu(&args.model_path, &args.model_id),
         BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, &args.model_id),
         BackendArg::Cuda => EngineConfig::cuda(&args.model_path, &args.model_id),
+        BackendArg::Metal => EngineConfig::metal(&args.model_path, &args.model_id),
     };
     config.gpu_layers = args.gpu_layers;
     config.cpu_moe_layers = args.cpu_moe_layers;
@@ -327,6 +329,7 @@ fn run_judge_multimodal(args: JudgeMultimodalArgs) -> Result<bool> {
         BackendArg::Cpu => EngineConfig::cpu(&args.model_path, args.model_id),
         BackendArg::Vulkan => EngineConfig::vulkan(&args.model_path, args.model_id),
         BackendArg::Cuda => EngineConfig::cuda(&args.model_path, args.model_id),
+        BackendArg::Metal => EngineConfig::metal(&args.model_path, args.model_id),
     };
     config.gpu_layers = args.gpu_layers;
     config.cpu_moe_layers = args.cpu_moe_layers;
@@ -595,7 +598,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn backend_defaults_to_auto_and_accepts_cuda() -> std::result::Result<(), clap::Error> {
+    fn backend_defaults_to_auto_and_accepts_gpu_backends() -> std::result::Result<(), clap::Error> {
         let default = parsed_judge(Cli::try_parse_from([
             "jet",
             "judge",
@@ -612,6 +615,15 @@ mod tests {
             "cuda",
         ])?)?;
         assert!(matches!(cuda.backend, BackendArg::Cuda));
+        let metal = parsed_judge(Cli::try_parse_from([
+            "jet",
+            "judge",
+            "--model-path",
+            "model.gguf",
+            "--backend",
+            "metal",
+        ])?)?;
+        assert!(matches!(metal.backend, BackendArg::Metal));
         Ok(())
     }
 

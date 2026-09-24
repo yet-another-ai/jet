@@ -2,9 +2,9 @@
 
 Jet pins llama.cpp as a Git submodule at commit
 `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` (the v0.4.1 line). The default build is CPU-only and
-disables OpenMP, BLAS, CUDA, Metal, Vulkan, HIP, SYCL, and RPC. The opt-in `cuda` and `vulkan`
-Cargo features independently enable those llama.cpp backends. The CLI defaults to automatic
-selection in CUDA, Vulkan, CPU order among compiled features with available devices.
+disables OpenMP, BLAS, CUDA, Metal, Vulkan, HIP, SYCL, and RPC. The opt-in `cuda`, `metal`, and
+`vulkan` Cargo features independently enable those llama.cpp backends. The CLI defaults to
+automatic selection in CUDA, Metal, Vulkan, CPU order among compiled features with available devices.
 
 Bindings matching that commit are checked into `jet-llama-sys`. Normal builds do not load
 libclang. To deliberately regenerate them after changing the pin:
@@ -119,6 +119,51 @@ hybrid/gather regression. Run GPU model tests serially to avoid memory interfere
 
 The native build locates Visual Studio's `Release` library subdirectories and links `advapi32`.
 No manual static-library copying or linker flags are required.
+
+## Metal validation
+
+On an Apple Silicon Mac with Xcode Command Line Tools, run the native compile and ordinary tests:
+
+```sh
+git submodule update --init --recursive
+mise install
+mise exec -- cargo build --release -p jet-cli --features metal,vision
+mise exec -- cargo test -p jet-engine --features metal
+mise exec -- cargo test -p jet-cli --features metal,vision
+```
+
+The Metal feature embeds shader source in the executable; llama.cpp compiles it on first use.
+Measure both process startup and warmed-up requests. Confirm the selected Metal device and
+offloaded layer count in the native log. Copy the release executable to another directory and
+run it there to check that no shader file is required relative to the source tree. `otool -L`
+should list system frameworks rather than build-directory libraries.
+
+With the pinned Qwen3 model, run Metal scoring, CPU numerical comparison, automatic selection,
+and thinking checks. Use a separate process for each ignored test to keep GPU memory bounded:
+
+```sh
+JET_MODEL_PATH="$PWD/models/Qwen3-0.6B-Q8_0.gguf" \
+  mise exec -- cargo test -p jet-engine --features metal qwen_metal \
+  -- --ignored --test-threads=1 --nocapture
+JET_QWEN35_MODEL_PATH="$PWD/models/Qwen3.5-0.8B-Q8_0.gguf" \
+  mise exec -- cargo test -p jet-engine --features metal qwen35_metal \
+  -- --ignored --test-threads=1 --nocapture
+```
+
+For vision, set `JET_VISION_MODEL_PATH` and `JET_VISION_MMPROJ_PATH` to matching GGUF files and run:
+
+```sh
+JET_VISION_BACKEND=metal \
+JET_VISION_MODEL_PATH="$PWD/models/Qwen3.6-35B-A3B-Q4_K_M.gguf" \
+JET_VISION_MMPROJ_PATH="$PWD/models/mmproj-Qwen3.6-35B-A3B-Q8_0.gguf" \
+  mise exec -- cargo test -p jet-cli --features metal,vision --test vision_cli \
+  -- --ignored --test-threads=1 --nocapture
+```
+
+These tests verify output behavior; inspect native profiling to confirm the device-side score
+operations actually run on Metal. Record CPU/Metal score deltas, cold-start time, steady-state
+latency, and memory use before treating the backend as validated. Intel Mac, iOS, and universal
+binaries are outside the initial Apple Silicon target.
 
 Preparation regressions use the same Qwen3.5 fixture:
 

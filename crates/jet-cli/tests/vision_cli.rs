@@ -34,11 +34,12 @@ fn request(frame: &str, image: &str) -> String {
 
 fn backend() -> (String, &'static str) {
     let value = std::env::var("JET_VISION_BACKEND").unwrap_or_else(|_| "cpu".to_owned());
-    let context_tokens = if value == "vulkan" || value == "cuda" || value == "auto" {
-        "2048"
-    } else {
-        "4096"
-    };
+    let context_tokens =
+        if value == "vulkan" || value == "cuda" || value == "metal" || value == "auto" {
+            "2048"
+        } else {
+            "4096"
+        };
     (value, context_tokens)
 }
 

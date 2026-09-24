@@ -339,7 +339,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=ROOT / "models/mmproj-Qwen3.6-35B-A3B-Q8_0.gguf",
     )
-    parser.add_argument("--backend", choices=("auto", "cuda", "vulkan", "cpu"), default="auto")
+    parser.add_argument("--backend", choices=("auto", "cuda", "metal", "vulkan", "cpu"), default="auto")
     parser.add_argument(
         "--iwad", type=Path, help="Own Doom IWAD; defaults to bundled Freedoom2"
     )

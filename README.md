@@ -2,7 +2,8 @@
 
 Jet is a local decisions engine. It scores a fixed set of structured candidates with teacher
 forcing instead of generating free-form text. The default CPU-only build runs on CPU. Optional
-CUDA and Vulkan backends offload the model, KV cache, and supported operations to a local GPU.
+CUDA, Metal, and Vulkan backends offload the model, KV cache, and supported operations to a local
+GPU.
 
 Jet supports `noul`, `choice`, and zero-based `score` questions through a Rust API and a JSONL
 command-line interface. It does not provide HTTP serving, NPU execution, or general free-text
@@ -35,14 +36,35 @@ Download the pinned Qwen3 test model:
 ### Backend selection
 
 The CLI defaults to `--backend auto`. It selects the first available backend compiled into the
-binary in this order: CUDA, Vulkan, CPU. Use `--backend cuda`, `--backend vulkan`, or
-`--backend cpu` to require a specific backend. An explicit GPU selection fails when that feature
-or a matching device is unavailable. `EngineConfig::auto` provides the same selection for Rust
-callers; `EngineConfig::cpu`, `cuda`, and `vulkan` select explicitly.
+binary in this order: CUDA, Metal, Vulkan, CPU. Use `--backend cuda`, `--backend metal`,
+`--backend vulkan`, or `--backend cpu` to require a specific backend. An explicit GPU selection
+fails when that feature or a matching device is unavailable. `EngineConfig::auto` provides the same selection for Rust
+callers; `EngineConfig::cpu`, `cuda`, `metal`, and `vulkan` select explicitly.
 
-Build with both GPU backends using `--features cuda,vulkan`. On a machine with both GPU backends,
+Build with CUDA and Vulkan together using `--features cuda,vulkan`. On a machine with both backends,
 the `auto` choice uses CUDA. Model loading binds the selected GPU device explicitly, so a
 Vulkan request cannot silently use a CUDA device. The initial CUDA integration selects one GPU.
+
+### Metal
+
+On macOS, build with Xcode Command Line Tools and the opt-in Metal feature. The initial target is
+Apple Silicon; confirm the minimum macOS deployment version on the target Mac.
+
+```sh
+mise exec -- cargo build --release -p jet-cli --features metal,vision
+./target/release/jet judge --backend metal \
+  --model-path models/Qwen3-0.6B-Q8_0.gguf \
+  --input tests/fixtures/decisions.jsonl --output -
+```
+
+The build statically links llama.cpp's Metal backend and embeds its shader source. Metal compiles
+that source at runtime, so the first model load can take longer. `--backend auto` uses Metal when
+its feature and a device are available; `--backend cpu` forces CPU execution. Metal uses the same
+`--gpu-layers`, `--cpu-moe-layers`, and `--no-mmap` options as the other GPU backends. Mac validation
+commands are in [development.md](docs/development.md#metal-validation).
+
+On an Apple Silicon Mac, `mise run package:metal` builds the `metal,vision` release CLI and
+produces `dist/jet-metal-macos-arm64.tar.gz` with a SHA-256 file.
 
 ### CUDA
 
