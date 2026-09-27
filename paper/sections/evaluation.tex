@@ -221,6 +221,8 @@ DeepSeek-V3 (671B)~\cite{deepseek-v3-results} & 88.5 & MMLU exact match in the c
 \end{tabular}
 \end{table}
 
+\input{figures/mmlu-throughput}
+
 On full MMLU, JET is 1.58 percentage points below Jev 1.13. This comparison
 places local inference from a reusable pretrained model close to the evaluated
 dedicated decision model in decision accuracy. Shared benchmark coverage does
@@ -267,8 +269,6 @@ of the same configuration. It is not the measured throughput of the full-set
 run. Jev uses the full-MMLU accuracy and separately reported API rate.
 Published larger-model scores remain in Table~\ref{tab:mmlu-comparison}
 because corresponding throughput measurements are unavailable.
-
-\input{figures/mmlu-throughput}
 
 \subsection{Numerical Equivalence and Reproducibility}
 \label{sec:repeatability}
