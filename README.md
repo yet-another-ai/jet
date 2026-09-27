@@ -61,12 +61,6 @@ mise exec -- cargo build --release -p jet-cli --features metal,vision
   --input tests/fixtures/decisions.jsonl --output -
 ```
 
-The build statically links llama.cpp's Metal backend and embeds its shader source. Metal compiles
-that source at runtime, so the first model load can take longer. `--backend auto` uses Metal when
-its feature and a device are available; `--backend cpu` forces CPU execution. Metal uses the same
-`--gpu-layers`, `--cpu-moe-layers`, and `--no-mmap` options as the other GPU backends. Mac validation
-commands are in [development.md](docs/development.md#metal-validation).
-
 On an Apple Silicon Mac, `mise run package:metal` builds the `metal,vision` release CLI and
 produces `dist/jet-metal-macos-arm64.tar.gz` with a SHA-256 file.
 
@@ -151,10 +145,7 @@ inference. `--no-mmap` instead loads weights into allocated memory. The Rust equ
 `EngineConfig::gpu_layers`, `cpu_moe_layers`, and `use_mmap`.
 CPU graph segments reuse a scorer-owned worker pool across requests and between scoring and
 thinking contexts. Workers sleep between segments rather than being recreated at each CPU/GPU
-transition. See the [profiling results](docs/performance.md) for the measured effect.
-Placement must also leave space for caches and computation buffers; increasing context length,
-sequence slots, or enabling thinking changes the memory requirement. See the
-[Qwen3.6 measurements](docs/accuracy.md#qwen36-q4-cpuvulkan-offload) for the tested settings.
+transition.
 
 For hybrid models such as Qwen3.5, batched execution prefills each question once and reuses its
 unchanged prefix while scoring candidate continuations serially. Two sequence slots are sufficient
@@ -197,12 +188,6 @@ With the Vulkan backend, bounded thinking uses a separate single-sequence contex
 logits row to the CPU sampler. Both contexts use the same configured weight placement. Once
 thinking closes, batched candidate scoring runs in the main context, with full-vocabulary softmax
 and target-token gathering on the backend holding the output weights.
-
-Add `--timings /tmp/jet-timings.json` to write cumulative engine stage timings and workload counters
-to a separate JSON file. The path must differ from the input and output paths; `-` is not supported.
-This leaves response JSONL and `usage` unchanged. Collection is disabled by default. See the
-[timing definitions](docs/development.md#stage-timings) when comparing model loading, prefill,
-candidate scoring, and total scorer time.
 
 Each non-empty input line is one request. The request deliberately has no `model` field:
 
@@ -249,8 +234,3 @@ and device are available.
 The [Doom demo](demos/doom/README.md) connects this interface to a running game: 160×100 frames,
 nine discrete actions, and asynchronous inference capped at two requests per second. It uses
 ViZDoom's bundled Freedoom2 assets by default and supports your own Doom IWAD.
-
-See [docs/scoring.md](docs/scoring.md) for scoring semantics and
-[docs/development.md](docs/development.md) for validation commands. The reproducible BoolQ/MMLU
-accuracy workflow is documented in [tests/accuracy/README.md](tests/accuracy/README.md); downloaded
-datasets and derived evaluation files are excluded from Git.
