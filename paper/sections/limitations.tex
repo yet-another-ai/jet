@@ -1,0 +1,58 @@
+\section{Discussion and Limitations}
+\label{sec:limitations}
+\subsection{Implications for Local Decision Inference}
+The measurements support inference specialization as a practical route to local
+structured decisions. Small models provide a CPU-only deployment option;
+consumer GPUs improve execution rate; and selective CPU expert placement extends
+the model capacity available to a memory-constrained GPU. The resulting design
+space permits applications to select model quality and resource requirements
+without changing the decision interface. Full GPU placement yields the strongest
+recorded request rate for the larger model, while offloading enables execution
+on the lower-capacity A770 at increased cost.
+
+These findings establish feasibility for the tested workloads and hardware.
+They do not imply uniform performance across consumer devices, constant latency
+as candidate sets grow, or accurate decisions from every supported model.
+The present implementation also serializes recurrent continuations, leaving
+independent-request concurrency as a potential optimization subject to state
+isolation and numerical validation.
+
+\subsection{Comparison with Dedicated Decision Models}
+Jev is a relevant comparison target for functionality, decision quality, and
+execution efficiency. Establishing parity requires matched states, candidate
+meanings, answer types, and evaluation rules, together with a pinned Jev version.
+The Qwen3.6-35B-A3B and Jev 1.13 accuracy results both cover the full MMLU
+test set. Prompting, scoring, and aggregation remain potential sources of
+difference. A matched
+performance comparison should distinguish local
+inference costs from remote service latency and report warm p50/p95 latency,
+fixed-concurrency throughput, startup overhead, and failure rates. A same-model
+constrained-generation baseline is additionally needed to separate inference
+method from model capability.
+
+Probability calibration is a further distinction: predictive confidence need
+not agree with empirical correctness~\cite{calibration}. JET normalizes likelihoods
+over the candidate set; these values are not calibrated correctness estimates.
+NLL provides a probabilistic diagnostic but does not replace calibration curves,
+Brier scores, or an evaluation of selective prediction. Claims about uncertainty
+quality consequently require evidence beyond output-type validity and top-1
+accuracy.
+
+\subsection{Threats to Validity}
+The principal Qwen3.6-35B-A3B and Jev accuracy results cover full MMLU.
+Execution ablations and smaller-model comparisons use fixed subsets, and timing
+repetitions are limited.
+Quantization, placement, hardware, and execution versions differ between studies;
+results from separate tables are not interchangeable. The prefix comparison
+bundles reuse and cache-management changes, so it does not isolate parallel
+probing. Candidate wording, token length, and answer priors can influence
+likelihood ranking, and pretrained-model training data may overlap benchmark
+content.
+
+Sampler-free selection eliminates sampling variance but not numerical variation
+across kernels, devices, or batch layouts. Exact agreement is therefore reported
+only for tested configurations. The multimodal interface has been implemented,
+but quantitative visual accuracy and closed-loop control evaluation remain
+outstanding. Finally, raw experiment artifacts are retained outside version
+control; independent replication requires those artifacts or regeneration under
+the documented configurations.

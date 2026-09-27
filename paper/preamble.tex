@@ -1,0 +1,36 @@
+% Standard packages keep the template independent of a conference style.
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  citecolor=green!35!black,
+  urlcolor=blue!50!black,
+  pdfauthor={Shenghao Ding},
+  pdftitle={JET: Justification Evaluation in Transformer}
+}
+\lstset{
+  basicstyle=\small\ttfamily,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  frame=single
+}
+\newtheorem{definition}{Definition}
+\newcommand{\jet}{\textsc{JET}}
+\newcommand{\draftnote}[1]{\par\smallskip\noindent
+  {\color{blue!45!black}\textbf{Draft note:} #1}\par\smallskip}

@@ -293,3 +293,17 @@ specifiers = [
 
 [tools.rust.options]
 components = "clippy,rustfmt"
+
+[[tools.tinytex]]
+version = "2026.09"
+backend = "vfox:tinytex"
+specifiers = ["latest"]
+
+[tools.tinytex."platforms.linux-x64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
+
+[tools.tinytex."platforms.macos-arm64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tgz"
+
+[tools.tinytex."platforms.macos-x64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tgz"

@@ -6,6 +6,7 @@ rust = { version = "1.98", channel = "stable", components = "rustfmt,clippy" }
 apm = "latest"
 lefthook = "latest"
 glab = "latest"
+tinytex = "latest"
 
 [tools."http:llvm"]
 version = "22.1.8"
@@ -27,3 +28,13 @@ run = 'pwsh -File scripts/package-cuda.ps1'
 [tasks."package:metal"]
 description = "Build and package Jet for Apple Silicon Metal"
 run = 'sh scripts/package-metal.sh'
+
+[tasks.paper]
+description = "Build the English technical report"
+dir = "paper"
+run = "latexmk main.tex"
+
+[tasks."paper:clean"]
+description = "Remove generated report files"
+dir = "paper"
+run = "latexmk -C main.tex"

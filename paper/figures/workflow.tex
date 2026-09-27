@@ -1,0 +1,39 @@
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw=black!65, rounded corners=2pt, fill=black!3,
+    align=center, font=\footnotesize, minimum height=0.85cm, text width=8.0cm},
+  branch/.style={box,text width=6.0cm,minimum height=1.1cm},
+  flow/.style={-{Stealth[length=2mm]},thick,draw=black!70},
+  note/.style={font=\scriptsize,align=center,fill=white,inner sep=2pt}
+]
+\node[box] (request) at (0,0)
+  {\textbf{Request validation}\\State, typed questions, candidates, optional images};
+\node[box] (prepare) at (0,-2.0)
+  {\textbf{Context and candidate preparation}\\Semantic rendering, chat template, tokenization\\Optional image encoding and visual projection};
+\node[box] (prefix) at (0,-4.0)
+  {\textbf{Shared-prefix prefill}\\Retain question state; score candidate first tokens};
+\node[branch] (kv) at (-3.5,-6.2)
+  {\textbf{KV-cache text models}\\Fork prefix state; batch candidate probes\\Partition into waves when required};
+\node[branch] (serial) at (3.5,-6.2)
+  {\textbf{Hybrid/recurrent or vision path}\\Preserve prefix; reset working sequence\\Evaluate candidate continuations serially};
+\node[box] (score) at (0,-8.5)
+  {\textbf{Likelihood aggregation}\\Extract target-token log-probabilities\\Sum per candidate; normalize over candidates};
+\node[box] (answer) at (0,-10.5)
+  {\textbf{Typed response}\\Choice selection or probability aggregation\\Probabilities, usage, and sequence cleanup};
+\draw[flow] (request) -- (prepare);
+\draw[flow] (prepare) -- (prefix);
+\draw[flow] (prefix.south) -- ++(0,-0.32) -| (kv.north);
+\draw[flow] (prefix.south) -- ++(0,-0.32) -| (serial.north);
+\draw[flow] (kv.south) -- ++(0,-0.35) -| (score.north);
+\draw[flow] (serial.south) -- ++(0,-0.35) -| (score.north);
+\draw[flow] (score) -- (answer);
+\end{tikzpicture}
+\caption{End-to-end sampler-free workflow, executed locally on CPU, GPU, or a
+mixed placement. Candidate tokens are supplied rather than sampled. Text
+preparation may overlap scoring of the preceding question on the supported
+Vulkan hybrid path. Optional text-only reasoning, omitted from the principal
+path above, generates a trace before scoring and freezes it into the shared
+prefix; that mode includes sampling. Invalid requests produce errors.}
+\label{fig:workflow}
+\end{figure}

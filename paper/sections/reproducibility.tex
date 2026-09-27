@@ -1,0 +1,112 @@
+\section{Implementation and Reproduction Details}
+\label{sec:reproducibility}
+\subsection{Evaluation Protocol and Runtime Settings}
+The primary experiments were conducted on September 21--23, 2026. The mixed
+workload contains 256 label-balanced BoolQ validation examples and five MMLU
+test examples from each of 57 subjects, for 541 requests. Sampling uses seed
+20260921. The RTX 4090 comparison uses a fixed 285-question MMLU subset.
+Data preparation verifies source checksums. JET uses zero-shot semantic
+candidate scoring; the separate manually reported Jev 1.13 evaluation uses the
+complete MMLU test set (89.06\%) and reports 2.86 requests/s via API. Jev does not
+expose configurable thinking or few-shot settings. API concurrency and detailed
+timing boundaries are not available in the supplied measurement.
+
+The mixed CPU/GPU experiment uses an i9-13900K, 64 GiB RAM, and a 16 GiB
+Arc A770. Qwen3.6-35B-A3B Q4\_K\_M places the first 11 layers' routed experts
+on CPU, using eight CPU threads, two sequence slots, 2,048 context tokens per
+sequence, microbatch/output rows of 256, allocated weights
+(\texttt{--no-mmap}), and disabled thinking. Each worker-lifetime variant has
+one full run. A separate 32-request diagnostic probe is not an accuracy sample.
+
+The RTX 4090 experiment uses full GPU placement, two sequence slots,
+microbatch/output rows of 256, eight CPU threads, eight input requests per
+chunk, allocated weights, and disabled thinking. Runs execute sequentially in
+fresh processes; approximately ten seconds of loading are included. All three
+variants execute 285 prefills, 60,680 prefill tokens, 9,283 continuation tokens,
+and 1,472 decoder calls. Preparation overlaps scoring, so phase times are not
+additive. Exploratory runs affected by concurrent compilation are excluded.
+
+The prefix comparison uses the preserved \texttt{ac0477b} binary as baseline.
+Both versions use eight input requests per chunk, nine sequence slots, 2,048
+context tokens per sequence, token batch 2,048, microbatch 512, and output-row
+limit 256. The baseline runs once per model; the new version runs twice, with
+model order reversed in the second round and no explicit warm-up. New execution
+uses 541 prefills and 128,583 prefill tokens; the baseline schedule implies
+1,652 prefills and 378,526 tokens. Continuations comprise 9,795 tokens across
+2,369 decoder calls. Optional thinking uses a 256-token quota; complete-process
+time rises from 69.51 to 644.23 seconds and combined NLL from 2.0977 to 2.2883.
+
+\subsection{Source and Model Versions}
+The implementation description follows repository commit
+\texttt{4ff0ab63018e} and llama.cpp submodule commit
+\texttt{b29c606e28a0}. Benchmark binaries are separate artifacts;
+these source identifiers do not imply that every reported experiment ran at
+that revision. The experiment records provide individual dates, settings, commands, and
+artifact locations. Internal records are indexed in \path{paper/evidence.md}.
+
+The Qwen3.6 text model is the Q4\_K\_M conversion from
+\texttt{ggml-org/Qwen3.6-35B-A3B-GGUF}, revision
+\texttt{baec3ebee244827cda0f4557eafa8b28f7545fa6}.
+Its file size is 20,419,565,568 bytes and its SHA-256 is
+\par\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}
+671e47e0ec53c665d048b98c3ecbfd5236b5ca9c3e02ed19fc8f81f7b85140c7
+\end{lstlisting}
+\end{minipage}\par
+The text benchmark does not load a vision projector. Model download scripts pin
+and verify the remaining evaluation weights and the optional matching projector.
+
+\subsection{Experimental Artifacts}
+All paths below are relative to \texttt{tests/accuracy/generated/}. These
+artifacts are excluded from Git; a source checkout alone does not contain them.
+\begin{itemize}
+  \item \path{vulkan-prefix-benchmark-20260922/}: old/new binary comparisons,
+  response files, stage counters, and two new runs for each Qwen3.5 model.
+  \item \path{qwen36-35b-a3b-q4-offload-20260922/}: original mixed CPU/Vulkan
+  placement study, model provenance, and full-workload results.
+  \item \path{qwen36-profile-20260922/full-pool541/}: persistent-worker
+  full-workload run; its parent directory contains diagnostic and comparison data.
+  \item \path{qwen36-preparation-20260923/}: RTX 4090 results.
+  Run directories are \path{baseline-repeat/}, \path{final-cached-sync/}, and
+  \path{final-pipeline/}. These paths are documented in the performance notes;
+  they were not available in the local artifact set used to prepare this draft.
+\end{itemize}
+The prefix summaries and persistent-worker accuracy report were verified
+against locally retained machine-readable artifacts. RTX 4090 measurements
+are sourced from the versioned performance notes. The claim-to-source mapping
+is provided in \path{paper/evidence.md}.
+
+\subsection{Reproduction Commands}
+The default sampled accuracy workflow is:
+\par\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}
+./scripts/download-test-model.sh
+JET_BACKEND=vulkan ./scripts/run-accuracy-eval.sh
+\end{lstlisting}
+\end{minipage}\par
+It requires the Vulkan build dependencies documented in the repository and uses
+the pinned Qwen3-0.6B fixture. After preparing the standard inputs and building
+a release Vulkan binary, the recorded larger-model placement can be rerun with:
+\par\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}
+./scripts/download-accuracy-models.sh --qwen36
+python3 scripts/benchmark-model.py \
+  --model-path models/Qwen3.6-35B-A3B-Q4_K_M.gguf \
+  --model-id qwen/qwen3.6-35b-a3b-q4_k_m \
+  --output-dir tests/accuracy/generated/report-rerun \
+  --runs 1 \
+  --extra-args --cpu-moe-layers 11 --threads 8 \
+  --max-sequences 2 --micro-batch 256 \
+  --max-output-rows 256 --no-mmap --thinking disabled
+\end{lstlisting}
+\end{minipage}\par
+Use a new output directory for each configuration. Reproducing the
+before/after results additionally requires the preserved binaries or their
+corresponding source snapshots; running the current binary alone does not
+recreate those baselines.
+
+For new measurements, retain complete command lines, model and projector hashes,
+dataset manifests, prompts and candidate order, seeds, hardware and driver
+versions, build features, placement, batch settings, and execution mode.
+Report warm-up and repetition policy explicitly. Keep complete scorer time
+separate from its enclosed phases and account for overlap in preparation timing.

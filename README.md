@@ -16,6 +16,10 @@ answers and maps the winner back to the original boolean, choice key, or score i
 
 ## Build
 
+The English technical report template lives in [paper/](paper/README.md). Install its
+LaTeX toolchain with `mise install tinytex`, then run `mise run paper` to generate
+`paper/build/main.pdf`.
+
 Initialize the pinned llama.cpp submodule and install the toolchain:
 
 ```sh

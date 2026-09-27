@@ -6,3 +6,6 @@
 __pycache__/
 *.gguf
 .DS_Store
+
+# LaTeX report (including local PDF previews)
+/paper/build/

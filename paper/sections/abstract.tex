@@ -1,0 +1,8 @@
+JET adapts pretrained language and vision-language models to typed decision tasks
+without additional training. It scores semantic candidates without token sampling,
+using shared-prefix caching and architecture-aware candidate scheduling to reduce
+redundant computation. Experiments demonstrate practical local deployment on
+desktop CPUs and consumer GPUs, reaching 87.48\% accuracy on full MMLU at
+3.69 requests per second. Execution optimizations provide up to 2.23-fold speedups
+with identical responses. Optional thinking offers a task-dependent
+accuracy--throughput trade-off.

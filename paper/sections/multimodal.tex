@@ -1,0 +1,18 @@
+\subsection{Multimodal Inference}
+\label{sec:multimodal}
+The vision path conditions the same finite-candidate decision on images as well
+as text. It uses a compatible vision-language model and its matching visual
+projector, then scores textual candidate answers against the resulting context.
+The initial implementation requires disabled thinking. Image count, encoded
+size, decoded pixels, and visual-token limits are bounded; context occupancy
+includes visual embeddings. The JSON Lines interface accepts PNG or JPEG input
+as local paths or Base64 data, while the Rust API accepts image bytes. An invalid
+image fails its request without preventing later requests from running.
+
+A Doom controller provides an application example. It supplies 160-by-100 RGB
+screenshots, HUD observations, and recent actions, then selects among nine
+admissible controls. Hidden enemy positions and map geometry are excluded.
+The controller permits one outstanding request, rejects stale observations,
+and executes action deadlines independently of inference. This demonstrates
+image-conditioned integration; visual decision accuracy and episode-level
+control performance have not been quantitatively evaluated.
