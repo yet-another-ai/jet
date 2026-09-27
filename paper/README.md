@@ -1,8 +1,11 @@
 # JET: Justification Evaluation in Transformer
 
-An English technical report draft, following the reference project's `mise + TinyTeX +
-latexmk` workflow and split-section layout. The style uses standard LaTeX packages;
-there is no conference-specific or copied `arxiv.sty` dependency.
+An English technical report draft using the single-column
+[arxiv-style preprint template](https://github.com/kourgeorge/arxiv-style), with a
+`mise + TinyTeX + latexmk` workflow and split-section layout. The unmodified
+`arxiv.sty` is vendored from upstream commit
+[`920514696f6e7270cab0558fd97c44515c63b4c4`](https://github.com/kourgeorge/arxiv-style/tree/920514696f6e7270cab0558fd97c44515c63b4c4);
+its MIT license is included in `arxiv-LICENSE.txt`.
 
 ## Build
 
@@ -49,28 +52,33 @@ An existing TeX Live installation with the same packages can instead run
 ## Edit
 
 - `main.tex`: title, author metadata, section order, and bibliography.
+- `arxiv.sty`: vendored preprint template; controls fonts, page geometry, and headings.
 - `preamble.tex`: typography, math, tables, figures, listings, links, and draft notes.
 - `sections/*.tex`: independently editable report sections.
+- `sections/statements.tex`: author statements, including AI-assisted writing disclosure.
 - `references.bib`: BibTeX references; cite with `\cite{key}`.
 - `figures/workflow.tex`: editable TikZ vector diagram of the local decision workflow.
-- `figures/mmlu-results.json`: accuracy and throughput measurements for the comparison figure.
-- `figures/generate_mmlu_chart.py`: regenerate the native TikZ plot after changing its data:
-  `python3 paper/figures/generate_mmlu_chart.py`, then `mise run paper`.
+- `figures/mmlu-results.json`: accuracy and throughput data for Figure 2.
+- `figures/generate_mmlu_chart.py`: regenerate the TikZ accuracy--throughput
+  comparison with `python3 paper/figures/generate_mmlu_chart.py`, then rebuild
+  with `mise run paper`.
 
 Use `\label` and `\ref` for equations, sections, figures, and tables. Add figures
-with `\includegraphics`; keep source figures outside `build/`. The template contains
-a scoring equation, a table, a code listing, and a citation to exercise the toolchain.
+with `\includegraphics`; keep source figures outside `build/`.
 
-The report is organized as Introduction, Background and Related Work, Decision
-Algorithm, System Architecture, Experimental Evaluation, Discussion and Limitations,
-and Conclusion, followed by reproduction details. Local deployment on consumer
-CPU/GPU configurations is a central evaluation theme.
+The report is organized as Introduction, Related Work, Decision Method,
+Efficient Inference, Experimental Evaluation, Discussion and Limitations,
+and Conclusion, followed by Statements, references, and a short experimental protocol.
+Local deployment on consumer CPU/GPU configurations is a central evaluation theme.
 
 The draft compares full-MMLU results for JET / Qwen3.6-35B-A3B (87.48%) and
 Jev 1.13 (89.06%, 2.86 req/s via API) with published larger-model scores, formalizes sampler-free candidate
-scoring, describes cache/state scheduling and the multimodal path, and consolidates
+scoring, describes prefix sharing and state isolation, and consolidates
 existing accuracy and performance measurements. See [evidence.md](evidence.md) for
 the mapping from quantitative claims to source records and the remaining experiments.
+The 3.693 req/s RTX 4090 rate was measured on a 285-question subset, separately
+from the full-MMLU accuracy result. Engineering details, commands, and artifact
+provenance belong in the repository documentation rather than the manuscript.
 
 No inference benchmarks were rerun to write this draft. Results retain their original
 sample sizes, hardware, executor versions, and timing boundaries. The report does not

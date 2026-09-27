@@ -1,48 +1,30 @@
 \section{Introduction}
 \label{sec:introduction}
-Many software workloads require a decision over a finite set of admissible
-outputs. Examples include routing requests, selecting tools, assigning ordinal
-scores, and choosing control actions. Although language models can express these
-decisions through generated text, the surrounding program ultimately consumes a
-typed value. Finite output spaces therefore motivate inference procedures that
-evaluate admissible answers directly.
+Many applications require a choice among a finite set of answers, such as a
+category, a rating, or a control action. A language model can make such a choice
+by generating text, but it can also evaluate the candidate answers directly.
+Direct evaluation avoids answer parsing and restricts the result to the allowed
+set.
 
-Jev exemplifies this direction through a dedicated decision model. TypeSafe
-describes a specialized architecture, parallel inference, and Reinforcement
-Learning for Calibrated Decisions (RLCD)~\cite{jev-introduction}. This approach
-raises a complementary question: can pretrained generative models support
-accurate and efficient typed decisions through inference specialization alone?
-Answering this question would enable applications to reuse existing model
-weights and select a deployment configuration appropriate to local resources.
+Dedicated decision models such as Jev use specialized training for these
+tasks~\cite{jev-introduction}. We examine a complementary approach: efficient
+decision inference from existing pretrained models, without additional training.
+JET (Justification Evaluation in Transformer) scores each answer by its
+conditional likelihood and converts the scores into a choice, a binary
+probability, or an ordinal estimate.
 
-We introduce JET (Justification Evaluation in Transformer), an inference engine for structured decisions from supported
-pretrained language and vision-language models. JET treats each admissible
-answer as a semantic continuation, evaluates its conditional likelihood, and
-returns either the highest-scoring choice, a boolean probability, or an expected
-ordinal score in the required output type. This procedure
-requires neither additional training nor a task-specific classification head.
-With reasoning generation disabled, it also requires no token sampler.
-Optional thinking lets applications trade throughput for potential accuracy gains
-by generating a reasoning trace before scoring the same candidate set.
+The contribution is an inference system for local execution. JET shares the
+question prefix across candidates, isolates recurrent state during candidate
+evaluation, and overlaps input preparation with model computation. These methods
+reduce repeated work while retaining the likelihood-based decision rule.
+CPU and GPU placement allow models to run under different memory constraints.
 
-Local deployment on consumer hardware is a central design objective. JET supports
-CPU inference, full GPU execution, and mixed CPU/GPU placement, allowing model
-capacity to be traded against latency and available memory. Shared-prefix
-execution amortizes context processing across candidate answers; model-aware
-scheduling preserves recurrent-state isolation; and CPU preparation can overlap
-GPU scoring. These mechanisms target the resource constraints of desktop
-systems rather than requiring a dedicated inference cluster.
-
-This report makes four contributions: a training-free formulation of typed
-decision inference from pretrained models; a sampler-free selection procedure
-with explicit numerical reproducibility conditions; a shared-prefix execution
-strategy with architecture-dependent candidate scheduling; and an extension to
-image-conditioned decisions. We evaluate the resulting system through accuracy
-and performance experiments on consumer CPU and GPU configurations. The results include
-2.18--2.23-fold speedups for hybrid prefix reuse and a 30.8\% reduction in
-complete-process time from preparation optimizations on an RTX 4090.
-
-The experiments establish local deployment feasibility and quantify specific
-systems improvements. A reference comparison includes a manually measured Jev
-MMLU score and published results for larger models. Matched calibration, latency,
-and throughput measurements remain necessary to establish full system parity.
+We evaluate decision accuracy and throughput jointly on MMLU and BoolQ using
+consumer hardware. The comparison covers model choice, CPU/GPU placement,
+execution optimizations, and optional reasoning, with Jev as a reference
+(Figure~\ref{fig:mmlu-throughput}). Full-MMLU evaluation measures decision
+quality; controlled experiments on fixed subsets measure execution improvements.
+The observed 2.18--2.23-fold speedups and 30.8\% reduction in RTX 4090 process
+time preserve outputs in the tested comparisons. These results assess the
+quality and cost of local decisions; differing evaluation and timing protocols
+do not establish parity with Jev.

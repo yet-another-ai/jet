@@ -1,43 +1,19 @@
-\section{Background and Related Work}
+\section{Related Work}
 \label{sec:background}
-\paragraph{Pretrained sequence models.}
-The Transformer introduced attention-based sequence modeling~\cite{transformer}.
-JET reuses the conditional distributions of supported pretrained models,
-including attention-only and hybrid recurrent architectures, without modifying
-their training objectives.
+Pretrained sequence models assign conditional probabilities to token
+sequences~\cite{transformer}. Ranking candidate answers by likelihood is an
+established evaluation method, supported by tools such as the Language Model
+Evaluation Harness~\cite{lm-harness}. Unlike constrained decoding, which limits
+the tokens allowed during generation, JET evaluates supplied answers directly.
+Its contribution concerns execution of this method rather than a new scoring
+objective.
 
-\paragraph{Structured decision models.}
-Jev exposes typed probabilistic decisions and emphasizes calibration through
-decision-specific training~\cite{jev-introduction}. JET investigates a
-training-free adaptation of existing model distributions to a similar class of
-bounded decisions. Output validity, decision accuracy, and calibration are
-separate properties: selecting an admissible value constrains the output domain,
-but does not establish semantic correctness or calibrated uncertainty.
+Sharing inference state can reduce repeated computation. PagedAttention enables
+cache sharing in language-model serving~\cite{pagedattention}. JET applies prefix
+reuse to finite candidate sets and distinguishes attention caches from recurrent
+state, which requires isolation between candidate continuations.
 
-\paragraph{Candidate scoring and constrained decoding.}
-A causal language model assigns a conditional likelihood to any tokenized
-candidate continuation. Likelihood-based evaluation is also supported by the
-Language Model Evaluation Harness~\cite{lm-harness}. Evaluating a finite set of such continuations permits
-answer selection without sampling. Constrained decoding instead restricts the
-valid next tokens during answer generation. JET explicitly scores every
-candidate, making its computation dependent on candidate count and length.
-Teacher forcing changes the evaluation procedure, not the model's autoregressive
-factorization. The contribution lies in the decision interface and execution
-system rather than in a new likelihood-ranking objective.
-
-\paragraph{Inference-state sharing.}
-KV-cache reuse is an established mechanism for reducing inference overhead.
-PagedAttention supports flexible cache sharing within and across requests in
-vLLM~\cite{pagedattention}. JET uses llama.cpp sequence-memory operations to
-specialize state reuse for finite-candidate evaluation. Its scheduling distinguishes
-attention-only models, which support batched candidate branches, from hybrid
-recurrent models, for which the evaluated implementation preserves correctness
-through serial continuation execution.
-
-\paragraph{Local inference runtimes.}
-llama.cpp provides quantized model execution and CPU/GPU placement across
-multiple hardware backends~\cite{llamacpp}. JET builds its Vulkan and CUDA
-integration on this runtime, specializing the request representation and
-candidate-evaluation schedule for structured decisions. This dependency supplies
-the low-level inference foundation for the consumer-hardware configurations
-evaluated in Section~\ref{sec:local-deployment}.
+Jev targets structured decisions through specialized training and emphasizes
+calibrated outputs~\cite{jev-introduction,jev-docs}. JET instead reuses pretrained
+model likelihoods. Both approaches restrict the output space, but valid outputs
+do not by themselves imply accurate decisions or calibrated probabilities.

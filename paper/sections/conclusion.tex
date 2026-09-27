@@ -1,18 +1,17 @@
 \section{Conclusion}
 \label{sec:conclusion}
-JET adapts pretrained language and vision-language models to typed decisions
-through sampler-free candidate likelihood evaluation. Its execution design
-combines shared prefixes, model-aware continuation scheduling, and preparation
-overlap to reduce inference overhead while preserving outputs in the evaluated
-comparisons. The results demonstrate practical local deployment on consumer
-systems, including CPU-only execution, full GPU placement on an RTX 4090, and
-mixed execution of a larger model on a desktop CPU and 16\,GiB Arc A770.
+JET adapts pretrained language and vision-language models to finite decisions
+through candidate likelihood evaluation without additional training.
+The accuracy--throughput comparison in Figure~\ref{fig:mmlu-throughput} shows
+the range of local deployment choices, from CPU-only execution to full and mixed
+GPU placement. Qwen3.6-35B-A3B reaches 87.48\% on full MMLU and 3.69 requests/s
+on a separately timed subset. Jev provides a reference for decision quality and
+request rate, although differences in evaluation and timing prevent a controlled
+performance ranking.
 
-Optional thinking provides a further accuracy--throughput trade-off, with gains
-that depend on the task and require empirical validation.
-
-The measured 2.18--2.23-fold prefix-execution speedups and 30.8\% reduction in
-RTX 4090 process time show that inference design materially affects the cost of
-structured decisions without retraining model weights. Future evaluation should
-establish matched comparisons with dedicated decision models, characterize
-calibration and latency distributions, and quantify multimodal decision quality.
+The 2.18--2.23-fold speedups from prefix reuse and cache management, and the
+30.8\% reduction in RTX 4090 process time, show that inference optimizations
+reduce cost while preserving outputs in the tested configurations. Optional
+reasoning changes the accuracy--throughput trade-off and requires task-specific
+validation. Future work should measure calibration, latency distributions, and
+multimodal decision quality, and compare decision systems under matched conditions.

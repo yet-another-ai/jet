@@ -1,193 +1,220 @@
 [
   {
-    "group": "Qwen3-0.6B",
+    "group": "JET / Qwen3-0.6B",
     "label": "CPU, JSON-label baseline",
     "accuracy": 22.11,
     "req_s": null,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3-0.6B",
+    "group": "JET / Qwen3-0.6B",
     "label": "CPU, semantic scoring",
     "accuracy": 38.25,
     "req_s": 2.46,
     "wall_s": null,
     "requests": 541,
     "scope": "mixed",
-    "approximate": true
+    "approximate": true,
+    "show_in_figure": true,
+    "figure_label": "CPU only"
   },
   {
-    "group": "Qwen3-0.6B",
+    "group": "JET / Qwen3-0.6B",
     "label": "A770, CPU softmax",
     "accuracy": 39.65,
     "req_s": 7.63,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3-0.6B",
+    "group": "JET / Qwen3-0.6B",
     "label": "A770, GPU full-row softmax",
     "accuracy": 39.65,
     "req_s": null,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3-0.6B",
+    "group": "JET / Qwen3-0.6B",
     "label": "A770, target gather",
     "accuracy": 39.65,
     "req_s": 7.78,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": true,
+    "figure_label": "A770, GPU inference"
   },
   {
-    "group": "Qwen3-0.6B",
+    "group": "JET / Qwen3-0.6B",
     "label": "A770, thinking enabled",
     "accuracy": 37.19,
     "req_s": 0.84,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-0.8B (Arc A770)",
-    "label": "Initial model evaluation",
+    "group": "JET / Qwen3.5-0.8B",
+    "label": "A770, Initial model evaluation",
     "accuracy": 36.49,
     "req_s": 2.22,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-0.8B (Arc A770)",
-    "label": "Prefix comparison: baseline",
+    "group": "JET / Qwen3.5-0.8B",
+    "label": "A770, Prefix comparison: baseline",
     "accuracy": 36.49,
     "req_s": null,
     "wall_s": 242.54,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-0.8B (Arc A770)",
-    "label": "Prefix reuse: run 1",
+    "group": "JET / Qwen3.5-0.8B",
+    "label": "A770, Prefix reuse: run 1",
     "accuracy": 36.49,
     "req_s": null,
     "wall_s": 108.06,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": true,
+    "figure_label": "A770, GPU inference"
   },
   {
-    "group": "Qwen3.5-0.8B (Arc A770)",
-    "label": "Prefix reuse: run 2",
+    "group": "JET / Qwen3.5-0.8B",
+    "label": "A770, Prefix reuse: run 2",
     "accuracy": 36.49,
     "req_s": null,
     "wall_s": 109.1,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-2B (Arc A770)",
-    "label": "Initial model evaluation",
+    "group": "JET / Qwen3.5-2B",
+    "label": "A770, Initial model evaluation",
     "accuracy": 53.68,
     "req_s": 1.71,
     "wall_s": null,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-2B (Arc A770)",
-    "label": "Prefix comparison: baseline",
+    "group": "JET / Qwen3.5-2B",
+    "label": "A770, Prefix comparison: baseline",
     "accuracy": 53.68,
     "req_s": null,
     "wall_s": 313.34,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-2B (Arc A770)",
-    "label": "Prefix reuse: run 1",
+    "group": "JET / Qwen3.5-2B",
+    "label": "A770, Prefix reuse: run 1",
     "accuracy": 53.68,
     "req_s": null,
     "wall_s": 143.41,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": true,
+    "figure_label": "A770, GPU inference"
   },
   {
-    "group": "Qwen3.5-2B (Arc A770)",
-    "label": "Prefix reuse: run 2",
+    "group": "JET / Qwen3.5-2B",
+    "label": "A770, Prefix reuse: run 2",
     "accuracy": 53.68,
     "req_s": null,
     "wall_s": 143.44,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.5-2B (Arc A770)",
-    "label": "Full-GPU placement comparison",
+    "group": "JET / Qwen3.5-2B",
+    "label": "A770, Full-GPU placement comparison",
     "accuracy": 53.68,
     "req_s": null,
     "wall_s": 146.85,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.6-35B-A3B",
+    "group": "JET / Qwen3.6-35B-A3B",
     "label": "A770 + CPU, temporary workers",
     "accuracy": 87.37,
     "req_s": null,
     "wall_s": 647.607,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.6-35B-A3B",
+    "group": "JET / Qwen3.6-35B-A3B",
     "label": "A770 + CPU, persistent workers",
     "accuracy": 87.37,
     "req_s": null,
     "wall_s": 599.949,
     "requests": 541,
-    "scope": "mixed"
+    "scope": "mixed",
+    "show_in_figure": true,
+    "figure_label": "A770 + CPU, expert offloading"
   },
   {
-    "group": "Qwen3.6-35B-A3B",
+    "group": "JET / Qwen3.6-35B-A3B",
     "label": "RTX 4090, uncached preparation",
     "accuracy": 87.7193,
     "req_s": 2.557,
     "wall_s": null,
     "requests": 285,
-    "scope": "mmlu"
+    "scope": "mmlu",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.6-35B-A3B",
+    "group": "JET / Qwen3.6-35B-A3B",
     "label": "RTX 4090, cached preparation",
     "accuracy": 87.7193,
     "req_s": 3.544,
     "wall_s": null,
     "requests": 285,
-    "scope": "mmlu"
+    "scope": "mmlu",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.6-35B-A3B",
+    "group": "JET / Qwen3.6-35B-A3B",
     "label": "RTX 4090, pipelined preparation",
     "accuracy": 87.7193,
     "req_s": 3.693,
     "wall_s": null,
     "requests": 285,
-    "scope": "mmlu"
+    "scope": "mmlu",
+    "show_in_figure": false
   },
   {
-    "group": "Qwen3.6-35B-A3B",
+    "group": "JET / Qwen3.6-35B-A3B",
     "label": "RTX 4090, full MMLU",
     "accuracy": 87.48,
     "req_s": 3.693,
     "wall_s": null,
     "requests": 14042,
-    "scope": "mmlu"
+    "scope": "mmlu",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, GPU inference"
   },
   {
     "group": "Jev 1.13",
@@ -196,6 +223,8 @@
     "req_s": 2.86,
     "wall_s": null,
     "requests": 14042,
-    "scope": "api"
+    "scope": "api",
+    "show_in_figure": true,
+    "figure_label": "Hosted API"
   }
 ]

@@ -85,6 +85,10 @@ maps. This corrects the earlier draft's boolean/index output description.
   prefix runs and the response-equivalent GPU full-row-softmax configuration.
 - CPU/A770 throughput covers mixed BoolQ/MMLU; RTX 4090 throughput covers MMLU
   alone. JET includes both subset and full-MMLU accuracy; Jev uses full MMLU.
+- Figure 2 selects the best-performing disabled-thinking configuration per model
+  and deployment using `show_in_figure`; `figure_label` supplies reader-facing
+  deployment names. Historical measurements remain in the data file. The RTX 4090
+  entry uses full-MMLU accuracy and separately measured subset throughput.
 - Missing rates remain null. Where wall time is known but no rate is published,
   rate = 541 / complete-process seconds. Approximate CPU rate is marked as such.
 - No throughput is imputed for external model-card results, invalid state-isolation
@@ -93,15 +97,27 @@ maps. This corrects the earlier draft's boolean/index output description.
   MMLU accuracy. The report describes a task-dependent opportunity to exchange
   throughput for accuracy, not a universal MMLU improvement.
 
+## Editorial revision
+
+The editorial revision simplifies prose and removes unrelated engineering
+descriptions. It preserves the original five displayed equations, five experimental
+tables, the complete workflow diagram (Figure 1), and all 22 configurations in the
+accuracy--throughput comparison (Figure 2). Figure sources and measurements are
+unchanged. Quantitative results and their experimental qualifications are retained;
+source records above provide implementation details and artifact provenance.
+The revised text explicitly separates the 87.48% full-MMLU accuracy from the
+3.693 req/s rate measured on the 285-question execution study.
+
 ## Token-to-decision algorithm
 
-The Decision Algorithm section expands the core method from vocabulary logits to
-token probabilities, sequence log-likelihoods, candidate-set normalization, and
-typed output aggregation. It is checked against `target_log_probability` in
+The Decision Method section retains the full mathematical chain: vocabulary
+softmax, stable token log-probabilities, sequence likelihood and log-score,
+candidate-set normalization, and output aggregation. All five displayed equations
+from the original draft are retained. These definitions were checked against `target_log_probability` in
 `crates/jet-engine/src/llama.rs`, device target-log-probability extraction in the
 same file, `normalize_log_probabilities` in `crates/jet-core/src/math.rs`, and
 answer construction in `crates/jet-engine/src/evaluator.rs`. Answer scoring uses
 teacher-forced candidate tokens, full-vocabulary normalization, no temperature,
 no end-of-turn score, and no length normalization. Optional reasoning is generated
-once and becomes shared conditioning context. The numerical example is
-illustrative, not a new benchmark.
+once and becomes shared conditioning context. The numerical example illustrates
+candidate normalization and is not an experimental measurement.

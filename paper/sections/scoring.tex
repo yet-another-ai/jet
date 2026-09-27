@@ -1,53 +1,42 @@
-\section{Decision Algorithm}
+\section{Decision Method}
 \label{sec:scoring}
-JET converts a language model's next-token predictions into a distribution over
-caller-specified answers. The procedure has three stages: vocabulary normalization,
-sequence likelihood evaluation, and candidate-set normalization. Answer tokens
-are supplied by the candidate descriptions and evaluated with teacher forcing;
-they are not sampled from the model. Thus, the method uses the probabilities
-underlying token generation without requiring an answer to be generated first.
-
-\subsection{From Logits to Token Probabilities}
-Let $x$ be the rendered assistant prefix and $\mathcal{C}$ the set of candidate
-labels. For each $c\in\mathcal{C}$, tokenize its quoted semantic answer as
-$y_c=(y_{c,1},\ldots,y_{c,m_c})$. Let $\mathcal{V}$ denote the model vocabulary
-and $z_{c,t,v}$ the logit for token $v$ after conditioning on $(x,y_{c,<t})$.
-A full-vocabulary softmax defines the probability of the candidate's next token:
+\subsection{Token Probabilities}
+Let $x$ be the question context and $\mathcal{C}$ a finite set of candidate
+alternatives. The quoted answer text for each $c$ is represented by a token
+sequence $y_c=(y_{c,1},\ldots,y_{c,m_c})$, following the model's assistant
+prefix. Tokenization preserves the boundary between context and answer.
+Let $\mathcal{V}$ be the model vocabulary
+and $z_{c,t,v}$ the logit for token $v$ given $(x,y_{c,<t})$.
+The probability of each supplied candidate token is
 \begin{equation}
   p_{c,t}=p_\theta(y_{c,t}\mid x,y_{c,<t})
   =\frac{\exp(z_{c,t,y_{c,t}})}
          {\sum_{v\in\mathcal{V}}\exp(z_{c,t,v})}.
   \label{eq:token-probability}
 \end{equation}
-The denominator includes the entire vocabulary, even when only a few tokens
-appear among the candidates. Gathering a target token's probability therefore
-occurs after vocabulary normalization. No sampling temperature or top-$k$/top-$p$
-filtering is applied to answer scoring.
+The denominator includes the full vocabulary. Tokens are evaluated under
+teacher forcing, without sampling, temperature rescaling, or top-$k$/top-$p$
+filtering. The answer text, rather than an arbitrary option label, determines
+the score.
 
-For numerical stability, the corresponding log-probability is evaluated as
+For numerical stability, the log-probability $\ell_{c,t}=\log p_{c,t}$ is
+written as
 \begin{equation}
   \ell_{c,t}=z_{c,t,y_{c,t}}-a_{c,t}
   -\log\sum_{v\in\mathcal{V}}\exp(z_{c,t,v}-a_{c,t}),
   \qquad a_{c,t}=\max_{v\in\mathcal{V}}z_{c,t,v}.
   \label{eq:token-log-probability}
 \end{equation}
-Equation~\ref{eq:token-log-probability} describes the CPU log-softmax calculation;
-the device path computes softmax, gathers the target probability, and takes its
-logarithm. These paths implement the same mathematical score, subject to their
-floating-point arithmetic. The prefix output predicts $y_{c,1}$; subsequent
-outputs predict each next token after consuming the preceding candidate tokens.
-This alignment scores every answer token exactly once.
 
-\subsection{From Token Probabilities to Candidate Probabilities}
-The autoregressive chain rule gives the likelihood of a candidate token sequence:
+\subsection{Candidate Likelihoods}
+The autoregressive chain rule gives the sequence likelihood and its logarithm:
 \begin{equation}
   L_c=p_\theta(y_c\mid x)=\prod_{t=1}^{m_c}p_{c,t},
   \qquad
   s(c\mid x)=\log L_c=\sum_{t=1}^{m_c}\ell_{c,t}.
   \label{eq:score}
 \end{equation}
-Accumulating log-probabilities avoids multiplying many small probabilities.
-JET then normalizes the sequence likelihoods over the supplied candidate labels:
+Normalizing these likelihoods over the candidate set gives
 \begin{equation}
   q(c\mid x,\mathcal{C})
   =\frac{L_c}{\sum_{d\in\mathcal{C}}L_d}
@@ -56,73 +45,44 @@ JET then normalizes the sequence likelihoods over the supplied candidate labels:
   \quad M=\max_{d\in\mathcal{C}}s(d\mid x).
   \label{eq:probability}
 \end{equation}
-The two normalizations serve different purposes: the first converts vocabulary
-logits into next-token probabilities; the second converts complete candidate
-scores into the distribution returned by the decision interface. For example,
-if two candidate sequences have likelihoods $0.06$ and $0.02$, their returned
-probabilities are $0.75$ and $0.25$, respectively. These illustrative values are
-not experimental measurements.
+Equations~\ref{eq:token-probability} and~\ref{eq:probability} normalize over
+different sets: vocabulary tokens and complete candidate answers, respectively.
+For example, candidate likelihoods of $0.06$ and $0.02$ give normalized
+probabilities of $0.75$ and $0.25$.
+This distribution is relative to the supplied answers. Scores omit end-of-turn
+tokens and are not length-normalized or summed over alternative phrasings.
+Answer wording, token length, and the candidate set therefore affect the result.
+Adding or duplicating a candidate also changes the normalized distribution.
+Normalization alone does not establish probability calibration.
 
-The distribution $q$ is relative to the supplied candidate labels; it is not a
-calibrated probability of correctness. JET does not score an end-of-turn token,
-apply length normalization, or sum over alternative phrasings of an answer.
-Consequently, token length and candidate wording affect sequence likelihood,
-and adding or duplicating a candidate changes the normalized distribution.
-
-\subsection{Decision Rule and Evaluation Procedure}
-For named choices, the decision is
+\subsection{Decision Rules}
+For a categorical decision, JET selects
 \begin{equation}
   \hat c=\operatorname*{arg\,max}_{c\in\mathcal{C}}q(c\mid x,\mathcal{C})
   =\operatorname*{arg\,max}_{c\in\mathcal{C}}s(c\mid x),
   \label{eq:decision}
 \end{equation}
-with ties resolved by a fixed ordering of the original choice keys.
-JET exposes three typed decision primitives. Boolean questions (\texttt{noul})
-score descriptions of false and true and return
-$q(\mathrm{true}\mid x,\mathcal{C})$. Named-choice questions (\texttt{choice})
-score the candidate descriptions and return the original key of the
-highest-scoring candidate. Ordinal questions (\texttt{score}) evaluate ordered
-level descriptions and return the expected zero-based level index,
+with ties resolved by a fixed ordering. A binary question uses
+$\mathcal{C}=\{\mathrm{false},\mathrm{true}\}$ and returns
+$q(\mathrm{true}\mid x,\mathcal{C})$. An ordinal question with $K$ ordered
+levels returns the expected index,
 $\sum_{i=0}^{K-1} i\,q(i\mid x,\mathcal{C})$, which may be fractional.
-Choice and score responses also include their candidate probability maps.
+These rules require no additional classification head or task-specific training.
 
-A direct implementation renders and tokenizes the question and candidate
-answers, evaluates each candidate under its own preceding tokens, accumulates
-Equation~\ref{eq:score}, and applies Equation~\ref{eq:probability} followed by
-the requested decision rule. It needs neither retraining nor an additional
-classification head. The shared-prefix and scheduling mechanisms in
-Section~\ref{sec:implementation} accelerate this procedure without changing its
-mathematical objective. If optional thinking is enabled, a single generated
-reasoning trace is incorporated into $x$ before scoring every candidate.
+Candidate labels are distinct from answer text. Different labels with identical
+text receive the same likelihood and use the fixed tie-breaking rule; binary
+and ordinal answer descriptions must be distinct. In evaluation, any label with
+the gold answer text is accepted, and its probability is summed with those of
+equivalent labels when computing gold negative log-likelihood.
 
-Logical usage counts the question prompt once and all scored candidate tokens.
-Physical prefill and continuation counters instead describe execution work; prefix
-reuse can reduce those counters without changing public usage.
+\subsection{Optional Reasoning and Determinism}
+JET can generate a reasoning trace once per question and include it in the
+context shared by all candidates. Candidate evaluation remains fixed conditional
+on that trace, but the complete procedure then includes sampling. The main
+execution comparisons disable reasoning generation.
 
-\subsection{Semantic Candidates and Output Types}
-JET first renders context, instructions, and candidate descriptions with Tera,
-then applies the model's embedded chat template. Objects are rendered with sorted
-keys; arrays preserve order. Special-token-like text is escaped. Each candidate
-is encoded as a quoted JSON string, and full prompt-plus-candidate tokenization
-checks that the assistant boundary is preserved. Boundary validation ensures that likelihood evaluation uses the intended
-conditional token sequence.
-
-Choice labels are distinct from semantic answers. Two keys may share the same
-answer text; they receive identical continuations and deterministic key
-tie-breaking. Duplicate answers are rejected for boolean and ordinal questions.
-The evaluator accepts labels whose answer text equals the gold text and sums
-their probabilities when computing gold negative log-likelihood. Runtime and
-input failures are reported explicitly rather than converted into decisions.
-
-\subsection{Determinism and Conditional Reasoning}
-The main path contains no token sampler: candidate tokens are supplied, scores
-are normalized, and a deterministic rule selects or aggregates the typed result. This establishes
-algorithmic determinism given fixed numerical model outputs. It does not assert
-bitwise identity across hardware, quantization, kernels, or batch layouts.
-Section~\ref{sec:repeatability} reports the observed agreement and its boundaries.
-
-Optional bounded thinking generates a trace once per question and freezes it
-before all candidate evaluations. The candidate scorer remains sampler-free
-conditional on that trace, but the complete reasoning-enabled path includes
-sampling and lies outside the sampler-free claim. All principal performance
-comparisons in this report disable thinking.
+Without reasoning generation, the decision rule is deterministic for fixed
+model outputs. Floating-point differences across devices and execution settings
+can still change probabilities and decisions. Section~\ref{sec:repeatability}
+reports the observed agreement; it does not imply bitwise reproducibility across
+hardware.

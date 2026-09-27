@@ -1,28 +1,26 @@
 \section{Experimental Evaluation}
 \label{sec:evaluation}
 \subsection{Experimental Setup}
-We evaluate decision quality, local deployment cost, and execution efficiency
-using MMLU and BoolQ decision tasks~\cite{boolq,mmlu}. Full-MMLU evaluations compare JET and Jev; sampled evaluation sets support
-model-selection and execution-optimization experiments.
-The principal comparisons disable reasoning generation; optional thinking is
-examined separately. Dataset construction, runtime settings, and reproduction
-commands are provided in Appendix~\ref{sec:reproducibility}.
+We use MMLU and BoolQ~\cite{boolq,mmlu} to examine three questions: what
+decision quality pretrained models provide, whether they can support local
+inference on consumer hardware, and how execution optimizations affect cost
+at fixed decision quality. Full-MMLU evaluations compare JET and Jev; fixed
+subsets support model comparisons and execution studies. The principal
+comparisons disable reasoning generation; optional reasoning is examined
+separately. Appendix~\ref{sec:reproducibility} describes the data and settings.
 
 Accuracy is measured by agreement with the reference answer: choice predictions
 use the highest-probability label, and BoolQ thresholds the true probability at 0.5. Gold negative
 log-likelihood (NLL) is computed from the normalized candidate distribution.
-The custom zero-shot prompt and semantic scoring protocol differ from standard
-leaderboard procedures. The results therefore characterize the evaluated JET
-configurations rather than official benchmark scores for the underlying models.
+The zero-shot prompt and semantic scoring protocol differ from standard
+leaderboard procedures; the results characterize the evaluated JET configurations.
 
 Complete-process wall time includes initialization, model loading, evaluation,
 and shutdown. Reported throughput is the number of requests divided by this
 elapsed time. It is distinct from saturated serving throughput; similarly,
 amortized time per request is distinct from a latency percentile. Fresh processes
 may reuse operating-system and shader caches. Run counts and configuration
-changes are reported for each comparison. Accuracy and NLL characterize the
-scoring method; execution-time comparisons identify the optimizations enabled
-in each configuration.
+changes are reported for each comparison.
 
 \subsection{Local Deployment on Consumer Systems}
 \label{sec:local-deployment}
@@ -35,16 +33,15 @@ in 69.51 seconds (7.78 requests/s). The smaller model's limited accuracy, report
 below, distinguishes basic deployment feasibility from suitability for demanding
 decision tasks.
 
-The larger Qwen3.6-35B-A3B model demonstrates how local resource allocation can
-support higher decision quality. On an RTX 4090 with full GPU placement, it
-achieves 87.48\% accuracy on full MMLU with a throughput of 3.69 requests/s. On a desktop
-with an i9-13900K, 64\,GiB RAM, and a 16\,GiB Arc A770, expert offloading enables
-execution despite model weights exceeding device memory. The latter configuration
-achieves 87.37\% on its 285-question MMLU subset at an amortized cost of 1.109
-seconds per request over the mixed workload. These are separate experiments,
-not a controlled hardware comparison. Together they demonstrate that high-quality
-local decisions are feasible within the measured consumer configurations, with
-latency determined by model size, placement, and execution efficiency.
+Qwen3.6-35B-A3B achieves 87.48\% accuracy on full MMLU with full GPU placement
+on an RTX 4090. A separate 285-question experiment with this configuration
+reaches 3.69 requests/s; this is not a timing measurement of the full-MMLU run.
+On an i9-13900K with 64\,GiB RAM and a 16\,GiB Arc A770, CPU expert offloading
+allows execution despite weights exceeding GPU memory. This configuration
+achieves 87.37\% on its 285-question MMLU subset, with an amortized cost of
+1.109 seconds per request over the mixed workload. These separate experiments
+show that high-quality local decisions are feasible on the measured consumer
+systems, but they do not form a controlled hardware comparison.
 
 \subsection{Memory-Constrained CPU/GPU Execution}
 \label{sec:offload}
@@ -96,7 +93,7 @@ Preparation time is worker time; wait is the consumer's visible preparation stal
 \toprule
 Configuration & Wall (s) & Req./s & Prepare (s) & Wait (s) \\
 \midrule
-Preserved old binary & 111.460 & 2.557 & 33.451 & --- \\
+Uncached preparation & 111.460 & 2.557 & 33.451 & --- \\
 Cached, synchronous & 80.420 & 3.544 & 3.640 & --- \\
 Cached, pipelined & 77.183 & 3.693 & 3.853 & 0.464 \\
 \bottomrule
@@ -113,13 +110,12 @@ The comparison preserves model computation and changes preparation scheduling.
 These subset results do not imply a full-MMLU score.
 
 \subsection{Decision Quality and Model Selection}
-The initial Qwen3-0.6B Q8\_0 CPU comparison replaced a canonical-JSON prompt with
-opaque output labels by a human-readable Tera prompt and semantic candidate
-answers. On the same inputs, BoolQ improved from 128/256 (50.00\%) to 143/256
-(55.86\%), and MMLU from 63/285 (22.11\%) to 109/285 (38.25\%). The old MMLU
-configuration chose label A on 283 of 285 examples. Because both rendering and
-answer representation changed, this is a combined prompt-contract comparison,
-not an isolated ablation of semantic scoring.
+A Qwen3-0.6B Q8\_0 CPU comparison replaced a structured prompt with opaque
+output labels by a readable prompt and semantic candidate answers. On the same
+inputs, BoolQ improved from 128/256 (50.00\%) to 143/256 (55.86\%), and MMLU
+from 63/285 (22.11\%) to 109/285 (38.25\%). The old MMLU configuration chose
+label A on 283 of 285 examples. Both prompt presentation and answer
+representation changed, so this comparison does not isolate semantic scoring.
 
 Table~\ref{tab:models} reports disabled-thinking decision quality on the same
 541 requests using Vulkan on the Arc A770. The small models use Q8\_0 weights
@@ -146,30 +142,57 @@ Qwen3.6-35B-A3B & Q4\_K\_M & 89.84 & 87.37 & 0.3553 \\
 \end{tabular}
 \end{table}
 
-The 2B model improves combined accuracy over the smaller models, and the 35B MoE
-extends the attainable accuracy to 87.37\% on the MMLU subset. The latter result
-is obtained on a 16\,GiB consumer GPU with CPU expert offloading, demonstrating
-that the local deployment interface accommodates materially different model
-capacities. Model size alone does not predict the accuracy of an individual task,
-as the two sub-billion-parameter configurations illustrate.
+The 2B model improves combined accuracy over the smaller models, while the
+35B mixture-of-experts model reaches 87.37\% on the MMLU subset using a
+16\,GiB consumer GPU with CPU expert offloading. Model size alone does not
+predict accuracy on each task, as the two sub-billion-parameter models show.
 
-The Qwen3 Vulkan target-gather run takes 69.51 seconds versus approximately
-220 seconds for the recorded CPU run, an approximate 3.17-fold end-to-end
-speedup. Moving normalization to GPU improves time only modestly in this small
-model. Target gathering reduces the Vulkan computation buffer from 449.02 to
-317.39 MiB relative to the full-row GPU-softmax experiment, with no top-1 changes
-and a maximum candidate-probability difference of $7.1\times10^{-8}$ across 541
-examples. This does not establish normalization as the dominant bottleneck.
+Qwen3 GPU execution with selective probability transfer takes 69.51 seconds,
+compared with approximately 220 seconds on CPU: a 3.17-fold end-to-end speedup.
+Moving normalization to the GPU gives only a modest improvement for this small
+model. Collecting only candidate-token probabilities reduces the Vulkan
+computation buffer from 449.02 to 317.39 MiB relative to collecting the full
+vocabulary probability vector. Across 541 examples, top-1 predictions are
+unchanged and the maximum candidate-probability difference is
+$7.1\times10^{-8}$. These results do not identify normalization as the main
+bottleneck.
+
+\subsection{Shared-Prefix Execution}
+\label{sec:prefix-results}
+The controlled comparison evaluates hybrid prefix reuse and metadata-only cache
+resets against independent candidate execution on the Arc A770. Both versions
+use the same models and scoring procedure.
+
+\begin{table}[htbp]
+\centering\small
+\caption{Prefix-reuse and cache-management comparison on 541 requests.
+The speedup uses the mean of the two new complete-process times.}
+\label{tab:prefix}
+\begin{tabular}{lrrrr}
+\toprule
+Q8\_0 model & Before (s) & After runs (s) & Mean (s) & Speedup \\
+\midrule
+Qwen3.5-0.8B & 242.54 & 108.06 / 109.10 & 108.58 & $2.23\times$ \\
+Qwen3.5-2B & 313.34 & 143.41 / 143.44 & 143.43 & $2.18\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All 541 response objects, including probabilities and usage, are exactly equal
+to the fresh baseline in both new runs for each model. Prefix reuse reduces prefix-token work by 66.03\%, based on instrumented
+new-execution counts and schedule-derived baseline counts. The comparison bundles prefix reuse and cache reset changes, and
+does not isolate either contribution or measure the speedup of parallel probes.
 
 \subsection{MMLU Comparison with Larger Models and Jev}
 \label{sec:mmlu-comparison}
 Table~\ref{tab:mmlu-comparison} places the JET results alongside a manually
 measured Jev score and published results for larger instruction-tuned models.
 On the complete MMLU test set, JET with Qwen3.6-35B-A3B on an RTX 4090
-achieves 87.48\%. A manual evaluation of Jev 1.13 yields 89.06\%, with a manually measured API throughput of 2.86 requests/s. The evaluated Jev decision interface is sampler-free and does not expose
-configurable thinking or few-shot settings. This is an experimental result, not
-a provider-published benchmark. Published larger-model results retain their
-source evaluation protocols.
+achieves 87.48\%. The author's manual evaluation of Jev 1.13 yields 89.06\%,
+with a separately reported API throughput of 2.86 requests/s. Jev's evaluated
+interface is sampler-free and exposes no configurable reasoning or few-shot
+settings. These Jev results are the author's measurements. Published
+larger-model results retain their source evaluation protocols.
 
 \begin{table}[htbp]
 \centering\small
@@ -207,10 +230,9 @@ provide additional context under their respective evaluation protocols; they do
 not establish how those models would perform under JET's candidate-scoring method.
 
 \paragraph{Functional and performance comparison with Jev.}
-Both systems expose sampler-free decision interfaces over caller-specified
-alternatives. Sampler-free selection is therefore a shared property rather than
-a distinction between JET and Jev. JET contributes a way to obtain this behavior
-from reusable pretrained models with local execution. Both expose boolean probabilities, named choices, and rubric scores. JET
+Both systems provide sampler-free decisions over supplied alternatives,
+including boolean probabilities, named choices, and rubric scores. JET obtains
+this behavior from reusable pretrained models with local execution. JET
 computes its score as the expectation of zero-based level indices and returns
 candidate probability maps for choice and score questions. Jev additionally
 reports separate confidence values for those question types; JET's normalized
@@ -219,71 +241,60 @@ parallel evaluation of independent questions; JET's hybrid path evaluates
 candidate continuations serially while sharing their prefix~\cite{jev-docs,jev-workflows}.
 
 The manual Jev 1.13 measurement reports 2.86 requests/s via API. JET reaches
-3.69 requests/s locally on the RTX 4090, including process startup and model
-loading. These observations establish local deployment at a comparable reported
-request rate, but differing workloads and timing boundaries preclude a controlled
-speedup claim. Figure~\ref{fig:mmlu-throughput} consolidates the measured quality
-and throughput results. Published larger-model reference scores remain in
-Table~\ref{tab:mmlu-comparison}, since corresponding throughput measurements
-are unavailable. JET exposes local placement, model choice, and optional thinking;
-the evaluated Jev interface does not expose a thinking mode. No Jev hardware
-configuration is inferred from its API throughput.
+3.69 requests/s locally on the RTX 4090 on the 285-question subset, including
+startup and model loading. The reported rates show that local execution can
+support a similar request rate, but differences in workloads and timing
+boundaries preclude a controlled speedup claim. JET exposes local placement,
+model choice, and optional reasoning; the evaluated Jev interface does not
+expose a reasoning mode. Its hardware configuration is unknown.
+
+Figure~\ref{fig:mmlu-throughput} summarizes the best-performing evaluated
+JET configuration for each model and hardware deployment, with reasoning
+disabled, alongside Jev. Early prompt baselines, intermediate optimization
+variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix,
+worker, and preparation comparisons improve throughput without changing
+responses. Within JET, the largest evaluated model provides the highest MMLU
+accuracy, while smaller models can offer higher throughput. Optional reasoning
+does not improve MMLU accuracy in the measured small-model experiment. These
+results distinguish gains from model capability and execution efficiency,
+with task-dependent benefits from extra reasoning.
+
+The figure combines distinct experiments: CPU and Arc A770 throughput covers
+mixed BoolQ/MMLU workloads, whereas RTX 4090 throughput covers MMLU alone.
+For the full-MMLU row, 87.48\% accuracy is measured on the complete test set,
+but the plotted 3.693 requests/s is taken from the separate 285-question run
+of the same configuration. It is not the measured throughput of the full-set
+run. Jev uses the full-MMLU accuracy and separately reported API rate.
+Published larger-model scores remain in Table~\ref{tab:mmlu-comparison}
+because corresponding throughput measurements are unavailable.
 
 \input{figures/mmlu-throughput}
 
-\subsection{Shared-Prefix Execution}
-\label{sec:prefix-results}
-The controlled comparison evaluates hybrid prefix reuse and metadata-only cache
-resets against independent candidate execution on the Arc A770. Both versions
-use the same models and scoring procedure.
-
-\begin{table}[htbp]
-\centering\small
-\caption{Prefix-reuse and cache-management comparison on 541 requests.
-The speedup uses the mean of the two new complete-process times.}
-\label{tab:prefix}
-\begin{tabular}{lrrrr}
-\toprule
-Q8\_0 model & Before (s) & After runs (s) & Mean (s) & Speedup \\
-\midrule
-Qwen3.5-0.8B & 242.54 & 108.06 / 109.10 & 108.58 & $2.23\times$ \\
-Qwen3.5-2B & 313.34 & 143.41 / 143.44 & 143.43 & $2.18\times$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-All 541 response objects, including probabilities and usage, are exactly equal
-to the fresh baseline in both new runs for each model. Prefix reuse reduces prefix-token work by 66.03\%, based on instrumented
-new-execution counts and schedule-derived baseline counts. The comparison bundles prefix reuse and cache reset changes, and
-does not isolate either contribution or measure the speedup of parallel probes.
-
 \subsection{Numerical Equivalence and Reproducibility}
 \label{sec:repeatability}
-The prefix, threadpool, and preparation comparisons demonstrate exact response
-agreement within their tested configurations. These comparisons support numerical equivalence for the evaluated transformations
-and environments. Cross-platform invariance does not follow from these observations. In the recorded
+The prefix, CPU-worker, and preparation comparisons preserve exact responses
+in their tested configurations. This does not imply agreement across platforms. In the recorded
 Qwen3-0.6B CPU/Vulkan comparison, 14 of 541 top-1 predictions change and the
 maximum absolute candidate-probability difference is 0.2998.
 
-Independent reference execution tests the preservation of candidate-state
-semantics. An earlier hybrid sibling-fork schedule changed 9 of 20 diagnostic
-answers relative to independent candidate execution. The corrected schedule
-matches top-1 decisions on that diagnostic slice, with maximum probability
-difference $1.12\times10^{-7}$. A later independent-request batching experiment
-also exceeded the unchanged numerical tolerance and was not retained. Current
-hybrid results use the serial continuation schedule described above.
+Independent candidate execution provides a reference for testing state
+isolation. An initial hybrid schedule changed 9 of 20 diagnostic answers.
+Restoring independent candidate states recovered agreement on all top-1
+decisions in that slice, with a maximum probability difference of
+$1.12\times10^{-7}$. A separate experiment batching independent requests
+exceeded the same numerical tolerance and was not retained. These checks
+support the use of serial candidate continuations in the reported hybrid
+experiments.
 
 \subsection{Optional Thinking: Accuracy--Throughput Trade-off}
 \label{sec:thinking-results}
-JET can optionally generate a reasoning trace before evaluating candidates,
-allowing applications to spend additional computation to improve decision quality.
-This provides an explicit accuracy--throughput trade-off without changing model
-weights or the typed decision interface. The benefit is task-dependent: on the
+Optional reasoning generates a trace before candidate evaluation, exchanging
+computation for a possible improvement in quality without changing model
+weights. The benefit is task-dependent: on the
 Qwen3-0.6B workload, enabling thinking reduces throughput from 7.78 to 0.84
 requests/s while raising BoolQ accuracy from 55.47\% to 65.23\% and combined
 accuracy from 47.13\% to 50.46\%. MMLU accuracy instead decreases from 39.65\%
-to 37.19\%. Thus, optional thinking expands the available operating modes, but
-its use should be guided by validation on the target task. Candidate evaluation
+to 37.19\%. Optional reasoning therefore requires validation on the target task. Candidate evaluation
 remains sampler-free conditional on the generated trace; the complete reasoning
 path includes generation and does not inherit the sampler-free reproducibility
 claim.

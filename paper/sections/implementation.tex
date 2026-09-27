@@ -1,79 +1,45 @@
-\section{System Architecture}
+\section{Efficient Inference}
 \label{sec:implementation}
 \input{figures/workflow}
-\subsection{End-to-End Execution}
-The workspace separates protocol and normalization utilities (\texttt{jet-core}),
-engine orchestration (\texttt{jet-engine}), native bindings
-(\texttt{jet-llama-sys}), and the command-line interface (\texttt{jet-cli}).
-Figure~\ref{fig:workflow} summarizes the local execution workflow. Each question
-passes through semantic rendering, template application,
-tokenization, prefix execution, candidate evaluation, and typed answer assembly.
-The Vulkan and CUDA backends are developed on top of llama.cpp and its ggml
-execution backends~\cite{llamacpp}. JET builds and links the corresponding
-backends from a pinned llama.cpp submodule. Model loading, quantized tensor
-operations, and native GPU kernels are provided by this upstream runtime; JET
-adds decision-specific scoring, prefix-state management, candidate scheduling,
-and host-side orchestration. The default build supports CPU execution; CUDA,
-Metal, Vulkan, and vision are optional build features. The measurements below concern CPU and Vulkan paths,
-not a comparative study of all supported backends.
+JET implements candidate scoring using llama.cpp~\cite{llamacpp}.
+Figure~\ref{fig:workflow} summarizes the decision process. The main efficiency
+measures are shared-prefix evaluation, reduced data transfer, and overlap
+between input preparation and scoring.
 
-\subsection{Shared-Prefix Candidate Probing}
-We use \emph{probe} to mean evaluating a supplied candidate continuation, not
-training a probing classifier. Let a question have $K$ candidates and a prefix
-of $P$ tokens. Independent evaluation processes that prefix $K$ times. If all
-candidates can reuse one prefix state, the number of prefix tokens processed
-falls from $KP$ to $P$. This token-count argument does not imply a proportional
-wall-time reduction: model computation, memory movement, candidate lengths, and
-batch geometry also contribute.
+\subsection{Shared-Prefix Evaluation}
+For $K$ candidates sharing a prefix of $P$ tokens, independent evaluation
+processes $KP$ prefix tokens. Reusing the prefix state reduces this count to
+$P$ when all candidates can share one evaluation. The reduction in execution
+time also depends on candidate lengths, batching, and memory movement.
 
-For pure KV-cache models, JET prefills a question once when its candidates fit
-the sequence budget, copies the sequence memory, and evaluates candidate
-continuations in native batches. Larger workloads run in waves without
-truncating the question. All candidate tokens are known, permitting
-teacher-forced continuation evaluation rather than repeated sampled generation.
-The phrase parallel probing describes this supported batch schedule; it does
-not imply unlimited simultaneous candidates or a single forward pass for every
-request size.
+For attention-only models, candidate continuations can be evaluated in
+batches using the shared prefix. Because the candidates are supplied in
+advance, all continuation tokens are available for teacher-forced evaluation.
+Batch size is limited by available sequence capacity; larger candidate sets
+are evaluated in groups without truncating the question. This does not imply
+unlimited parallelism or one forward pass for every request size.
 
-Hybrid recurrent models require a different schedule. Sequence 0 holds the
-unchanged prefix. Its final output scores each candidate's first token. Before
-advancing a remaining continuation, JET resets sequence 1 and copies the prefix
-state into it. Only that candidate sequence advances; shared recurrent state is
-preserved through the native backend's copy-on-write behavior. Two sequence slots
-suffice, including when there are more than two candidates. A one-token answer
-requires no continuation decode. This retains prefix reuse while avoiding the
-incorrect sibling-state interaction observed in an earlier batched schedule.
+Hybrid models also maintain recurrent state. JET evaluates their continuations
+sequentially, restoring the unchanged prefix state before each candidate.
+This isolates candidates from one another while preserving prefix reuse.
+One stored prefix and one working state suffice, regardless of candidate count.
+The prefix output directly supplies the first-token probabilities; single-token
+candidates require no further model evaluation.
 
-After a scoring wave or serial question completes, JET releases sequence
-metadata instead of synchronously zeroing the entire allocated cache. Attention
-masks exclude old KV entries and the backend initializes fresh recurrent state
-when decoding a new sequence. Initial native context allocation still performs
-its normal buffer initialization.
+\subsection{Data Transfer and Computation}
+GPU scoring computes probabilities over the full vocabulary but transfers only
+the log-probabilities needed for the candidates. This reduces data transfer
+without changing the scoring rule.
 
-\subsection{Probability Extraction and Preparation Overlap}
-The batched GPU scoring path performs full-vocabulary softmax, target-token
-gather, and log computation on the backend holding the output weights. It returns
-target values rather than full vocabulary rows. The gather width can grow between
-questions to cover distinct first tokens independently of the sequence-slot
-count. This reduces transfer and buffer requirements without changing the
-candidate definition.
+For the evaluated hybrid configuration with reasoning disabled, CPU preparation
+of the next question overlaps GPU scoring of the current question. Candidate
+evaluation within each question remains sequential.
 
-Native chat-template objects and tokenizer buffers are retained across requests.
-For disabled-thinking, batched Vulkan hybrid execution, a persistent CPU worker
-prepares upcoming questions behind a bounded queue while the GPU scores the
-current question. Results and errors remain in input order. Preparation overlap
-does not make recurrent candidate execution parallel, and
-\texttt{--batch-requests} controls the input chunk rather than the native
-inference batch. Synchronous execution remains available for comparison.
-
-\subsection{Placement on Consumer Hardware}
-GPU layer placement and CPU expert placement are explicit configuration choices.
-For models larger than available VRAM, routed experts can remain on CPU while
-attention, shared experts, and other layers execute on GPU. These are computation
-placements, not per-token streaming of selected expert weights from disk.
-A scorer-owned sleeping CPU worker pool persists across graph segments and is
-shared by the sequential scoring and thinking contexts. The mixed CPU/Vulkan
-results in Section~\ref{sec:offload} show why worker lifetime matters when CPU
-expert segments repeatedly interrupt GPU execution.
+When a mixture-of-experts model exceeds GPU memory, routed experts can execute
+on the CPU while attention and other components execute on the GPU.
+Expert weights remain in memory; this placement does not stream selected
+weights from disk for each token. Reusing CPU workers reduces repeated startup
+overhead when execution alternates between CPU and GPU computation.
+Section~\ref{sec:offload} evaluates this mixed placement on consumer hardware.
 
 \input{sections/multimodal}

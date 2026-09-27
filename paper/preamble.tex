@@ -1,11 +1,14 @@
-% Standard packages keep the template independent of a conference style.
+% The arxiv style provides fonts, page geometry, headings, and page headers.
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage{lmodern}
-\usepackage[margin=1in]{geometry}
+% Keep code and URLs in scalable Latin Modern while retaining the template fonts.
+\renewcommand{\ttdefault}{lmtt}
+% Let large figures occupy a float page near their discussion.
+\renewcommand{\floatpagefraction}{0.5}
 \usepackage{microtype}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{graphicx}
+\usepackage{float}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta}
 \usepackage{booktabs}
