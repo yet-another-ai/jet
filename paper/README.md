@@ -71,14 +71,15 @@ Efficient Inference, Experimental Evaluation, Discussion and Limitations,
 and Conclusion, followed by Statements, references, and a short experimental protocol.
 Local deployment on consumer CPU/GPU configurations is a central evaluation theme.
 
-The draft compares six JET models on full MMLU using an RTX 4090, from
+The draft compares two JET models on an Arc A770 and six on an RTX 4090
+using full MMLU. The RTX 4090 comparison ranges from
 Qwen3.5-0.8B (32.42%, 9.79 req/s) to Qwen3.5-27B (85.09%, 2.21 req/s), and
 Qwen3.6-35B-A3B (82.62%, 4.17 req/s). Jev 1.13 (89.06%, 2.86 req/s via API)
 and published larger-model scores provide context. The report formalizes sampler-free candidate
 scoring, describes prefix sharing and state isolation, and consolidates
 existing accuracy and performance measurements. See [evidence.md](evidence.md) for
 the mapping from quantitative claims to source records and the remaining experiments.
-The full-set RTX 4090 rates are measured on the same 14,042 requests as their
+The full-set Arc A770 and RTX 4090 rates are each measured on the same 14,042 requests as their
 accuracy scores. The separate 3.693 req/s preparation result uses a 285-question
 subset. Engineering details, commands, and artifact
 provenance belong in the repository documentation rather than the manuscript.

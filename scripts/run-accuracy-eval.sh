@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-model_path=${JET_MODEL_PATH:-models/Qwen3-0.6B-Q8_0.gguf}
-model_id=${JET_MODEL_ID:-qwen/qwen3-0.6b-q8_0}
+model_path=${JET_MODEL_PATH:-models/Qwen3.5-0.8B-Q8_0.gguf}
+model_id=${JET_MODEL_ID:-qwen/qwen3.5-0.8b-q8_0}
 work_dir=${JET_ACCURACY_DIR:-tests/accuracy/generated}
 boolq_limit=${JET_BOOLQ_LIMIT:-256}
 mmlu_per_subject=${JET_MMLU_PER_SUBJECT:-5}

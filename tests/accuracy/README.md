@@ -10,13 +10,14 @@ intentionally ignored by Git. The preparation script verifies the normalized Boo
 MMLU archive with pinned SHA-256 digests before using them.
 
 Run the reproducible default sample (256 balanced BoolQ examples and 5 examples from each of the
-57 MMLU subjects):
+57 MMLU subjects) after downloading the Qwen3.5-0.8B Q8_0 model:
 
 ```sh
+./scripts/download-accuracy-models.sh
 ./scripts/run-accuracy-eval.sh
 ```
 
-The default remains the pinned Qwen3-0.6B test model. Download the two Qwen3.5 Q8_0 evaluation
+The default is Qwen3.5-0.8B Q8_0. Download both Qwen3.5 Q8_0 evaluation
 models with:
 
 ```sh
@@ -82,6 +83,20 @@ Run `scripts/benchmark-model.py` with these `requests.jsonl` and `gold.jsonl`
 files, a model path, and `--backend cuda` or `--backend vulkan`. The RTX 4090
 full-set study used `--runs 1 --backend vulkan --batch-requests 8 --extra-args
 --max-sequences 2 --micro-batch 256 --max-output-rows 256 --threads 8 --no-mmap`.
+
+To run the two Qwen3.5 Arc A770 model configurations on all 14,042
+MMLU questions, use `bash scripts/run-a770-full-mmlu.sh`. It runs the models
+sequentially, preserves the benchmark harness's responses, reports, timings,
+and provenance under `tests/accuracy/generated/a770-*-mmlu-full-*`, and skips
+only runs with 14,042 responses and no evaluation failures. Both models
+fit entirely on the GPU. Set `JET_A770_RUN_TAG` to give a new campaign its own
+output directories, and `JET_A770_BINARY` to select a validated executable.
+Build the executable from the current source before running: an older binary
+rejected duplicate choice texts and small positive Vulkan log-probabilities
+caused by floating-point rounding. Those failures invalidated an earlier
+full-set attempt, which is excluded from the paper.
+The generated JSONL uses LF on Linux; the earlier RTX 4090 Windows records
+used CRLF, so byte hashes differ even when the JSON objects match.
 
 The primary metric is top-1 accuracy. Mean negative log-likelihood of the gold label is included as
 a diagnostic. These results are not directly comparable to the official MMLU leaderboard because

@@ -9,24 +9,25 @@ Detailed configurations and recorded measurements are provided in the
 \href{https://github.com/yet-another-ai/jet/blob/main/docs/accuracy.md}{accuracy notes}
 and \href{https://github.com/yet-another-ai/jet/blob/main/docs/performance.md}{performance notes}.
 
-The primary experiments were conducted on September 21--24, 2026; a later
-single-model CUDA check ran on September 28.
+The primary experiments were conducted on September 21--28, 2026; the Arc A770
+full-set study and a single-model CUDA check ran on September 28.
 The sampled workload comprises 256 label-balanced BoolQ validation examples
 and five MMLU test examples from each of 57 subjects, totaling 541 requests
 (seed 20260921). The RTX 4090 preparation comparison uses a fixed 285-question
-MMLU subset. The model comparison uses all 14,042 MMLU test questions across
+MMLU subset. The Arc A770 and RTX 4090 model comparisons use all 14,042 MMLU test questions across
 57 subjects. Data preparation verifies source checksums.
 JET uses zero-shot semantic candidate scoring, with reasoning
 disabled unless stated otherwise. Models up to Qwen3.5-9B use Q8\_0 weights;
 Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M. GPU experiments use Vulkan. The Qwen3.6 text
 benchmark does not load a visual projector.
 
-The mixed-placement study uses an i9-13900K, 64\,GiB RAM, and a 16\,GiB
-Arc A770, with routed experts from the first 11 layers on CPU. It uses eight
-CPU threads, two sequence slots, 2,048 context tokens per sequence, a
-microbatch size of 256, and an output-row limit of 256. Model weights are
-allocated in memory without memory mapping. Each configuration has one complete
-run. A separate 32-request diagnostic probe is not an accuracy sample.
+The Arc A770 full-MMLU study uses an i9-13900K, 64\,GiB RAM, and a 16\,GiB
+GPU. Qwen3.5-0.8B and Qwen3.5-2B use full GPU placement,
+eight CPU threads, two sequence slots, a microbatch size of 256, an output-row
+limit of 256, eight requests per chunk, and no memory mapping. Each has one
+complete run with 14,042 responses and zero failures. Both use the same
+input, gold labels, evaluator, and executable. This executable differs from
+the earlier RTX 4090 benchmark binary.
 
 The RTX 4090 study uses full GPU placement, eight CPU threads, two sequence
 slots, a microbatch size of 256, an output-row limit of 256, and eight input
@@ -63,14 +64,10 @@ Optimized execution uses 541 prefix evaluations and 128,583 prefix tokens;
 the baseline schedule implies 1,652 prefix evaluations and 378,526 prefix
 tokens. Continuations comprise 9,795 tokens across 2,369 decoder calls.
 
-Optional reasoning uses a 256-token budget. For Qwen3-0.6B, enabling reasoning
-increases complete-process time from 69.51 to 644.23 seconds and combined NLL
-from 2.0977 to 2.2883.
-
 Reported JET timings cover complete processes, including model loading.
 RTX 4090 model loading contributes approximately ten seconds. Preparation
 overlaps scoring, so the phase times are not additive.
-The full-MMLU rates in Table~\ref{tab:full-mmlu} are measured on the same
+The full-MMLU rates in Tables~\ref{tab:models} and~\ref{tab:full-mmlu} are measured on the same
 requests as their corresponding accuracy scores. The separate 3.69 requests/s
 rate in Table~\ref{tab:preparation} comes from the earlier 285-question
 preparation experiment.
@@ -84,7 +81,7 @@ in every reported experiment. Reproducing the before-and-after comparisons
 requires the preserved executables or their corresponding source snapshots;
 running the current version alone does not reproduce those baselines.
 
-Raw artifacts are excluded from the repository. Prefix and mixed-placement
+Raw artifacts are excluded from the repository. Prefix
 records were checked locally. The full-MMLU records include local responses,
 reports, and provenance; the earlier 285-question RTX 4090 preparation study
 relies on recorded performance notes because its raw artifacts were unavailable

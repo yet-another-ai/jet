@@ -40,6 +40,5 @@ on the CPU while attention and other components execute on the GPU.
 Expert weights remain in memory; this placement does not stream selected
 weights from disk for each token. Reusing CPU workers reduces repeated startup
 overhead when execution alternates between CPU and GPU computation.
-Section~\ref{sec:offload} evaluates this mixed placement on consumer hardware.
 
 \input{sections/multimodal}

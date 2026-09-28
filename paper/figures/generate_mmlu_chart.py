@@ -25,7 +25,8 @@ for r in rows:
         lines.append(rf'\node[anchor=west,font=\footnotesize\bfseries] at (0,{y}) {{{r["group"]}}};')
         last_group = r['group']
         y -= 0.43
-    color = {'mixed': 'blue!65!black', 'mmlu': 'teal!75!black', 'api': 'orange!80!black'}[r['scope']]
+    color = ('blue!65!black' if r.get('deployment') == 'a770' else
+             {'mmlu': 'teal!75!black', 'api': 'orange!80!black'}[r['scope']])
     lines.append(rf'\node[anchor=west] at (0.1,{y}) {{{r["figure_label"]}}};')
     lines.append(rf'\draw[black!12] (6.3,{y}) -- (9.9,{y});')
     lines.append(rf'\draw[black!12] (11.5,{y}) -- (14.6,{y});')
@@ -44,6 +45,6 @@ for r in rows:
     lines.append(rf'\node[anchor=east] at (15.5,{y}) {{{label}}};')
     y -= 0.43
 lines += [r'\end{tikzpicture}',
-          r'\caption{MMLU accuracy and throughput for selected JET configurations with reasoning disabled, and Jev 1.13. Blue: CPU/Arc A770; teal: RTX 4090; orange: hosted API. A770 expert offloading executes some model experts on CPU. JET CPU/A770 accuracy uses an MMLU subset and throughput covers the mixed BoolQ/MMLU workload. RTX 4090 accuracy and throughput come from the same full-MMLU run for each model. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
+          r'\caption{Full-MMLU accuracy and throughput for selected JET configurations with reasoning disabled, and Jev 1.13. Blue: Arc A770; teal: RTX 4090; orange: hosted API. Each JET point combines accuracy and complete-process throughput from the same 14,042-question run. The A770 and RTX 4090 runs use different binaries. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
           r'\label{fig:mmlu-throughput}', r'\end{figure}']
 (ROOT / 'mmlu-throughput.tex').write_text('\n'.join(lines) + '\n')

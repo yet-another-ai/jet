@@ -4,10 +4,10 @@
 We use MMLU and BoolQ~\cite{boolq,mmlu} to examine three questions: what
 decision quality pretrained models provide, whether they can support local
 inference on consumer hardware, and how execution optimizations affect cost
-at fixed decision quality. The full-MMLU study compares six JET models on the
-same test set; fixed subsets support controlled execution studies. The principal
-comparisons disable reasoning generation; optional reasoning is examined
-separately. Appendix~\ref{sec:reproducibility} describes the data and settings.
+at fixed decision quality. The full-MMLU study compares two models on the Arc
+A770 and six on the RTX 4090; fixed subsets support controlled execution studies. The principal
+comparisons disable reasoning generation. Appendix~\ref{sec:reproducibility}
+describes the data and settings.
 
 Accuracy is measured by agreement with the reference answer: choice predictions
 use the highest-probability label, and BoolQ thresholds the true probability at 0.5. Gold negative
@@ -24,61 +24,19 @@ changes are reported for each comparison.
 
 \subsection{Local Deployment on Consumer Systems}
 \label{sec:local-deployment}
-The evaluated configurations span CPU-only inference, a desktop CPU with a
-16\,GiB consumer GPU, and full placement on an RTX 4090. These configurations
-establish a practical deployment range without server-class accelerators.
-The Qwen3-0.6B CPU baseline completes 541 decisions in approximately 220 seconds
-(2.46 requests/s), while its Arc A770 configuration completes the same workload
-in 69.51 seconds (7.78 requests/s). The smaller model's limited accuracy, reported
-below, distinguishes basic deployment feasibility from suitability for demanding
-decision tasks.
+The evaluated configurations span full placement on a 16\,GiB Arc A770 and
+an RTX 4090. These configurations establish a practical deployment range
+without server-class accelerators.
 
 On full MMLU with Vulkan and full GPU placement on an RTX 4090, Qwen3.5-27B achieves
 85.09\% at 2.21 requests/s and Qwen3.6-35B-A3B achieves 82.62\% at
 4.17 requests/s. Section~\ref{sec:mmlu-comparison} reports the complete model
 comparison. An earlier 285-question preparation experiment measures a separate
 execution optimization under the same hardware.
-On an i9-13900K with 64\,GiB RAM and a 16\,GiB Arc A770, CPU expert offloading
-allows execution despite weights exceeding GPU memory. This configuration
-achieves 87.37\% on its 285-question MMLU subset, with an amortized cost of
-1.109 seconds per request over the mixed workload. These separate experiments
-show that high-quality local decisions are feasible on the measured consumer
-systems, but they do not form a controlled hardware comparison.
-
-\subsection{Memory-Constrained CPU/GPU Execution}
-\label{sec:offload}
-An Intel Core i9-13900K with 64 GiB RAM and a 16 GiB Arc A770 runs
-Qwen3.6-35B-A3B Q4\_K\_M with partial CPU expert offloading.
-Approximately 14.10 GiB of weights reside on GPU and 4.91 GiB on CPU;
-caches and compute buffers add to these weight totals.
-
-\begin{table}[htbp]
-\centering\small
-\caption{Mixed CPU/Vulkan worker-lifetime comparison, Qwen3.6-35B-A3B
-Q4\_K\_M, 541 requests. One complete run per version.}
-\label{tab:pool}
-\begin{tabular}{lrr}
-\toprule
-Measurement & Temporary workers & Persistent workers \\
-\midrule
-Wall time (s) & 647.607 & 599.949 \\
-Amortized wall time (s/request) & 1.1971 & 1.1090 \\
-Scorer time (s/request) & 1.1896 & 1.1014 \\
-Total prefill time (s) & 442.901 & 400.351 \\
-Total continuation time (s) & 193.959 & 188.811 \\
-Correct answers & 479/541 & 479/541 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Persistent sleeping workers reduce complete-process time by 7.36\% and preserve
-byte-identical responses. BoolQ accuracy is 230/256 (89.84\%), MMLU accuracy is
-249/285 (87.37\%), and combined gold NLL is 0.35531. A separate matched
-32-request probe also favors persistent workers, reducing scorer cost from
-1.198 to 1.103 seconds/request. The full run's sampled peak device residency is
-14.90 GiB. Although this configuration exceeds a 0.5-second/request target, it demonstrates
-that a model with approximately 19\,GiB of weights can support local decisions on
-a 16\,GiB consumer GPU when combined with desktop CPU memory and computation.
+The Arc A770 full-MMLU runs below cover two models that fit entirely in its
+16\,GiB of memory. Their accuracy and throughput refer to the same complete
+14,042-question workload. The RTX 4090 runs use a separate machine and binary;
+the measured rates are not a controlled hardware speedup comparison.
 
 \subsection{Preparation Overlap under Full GPU Placement}
 \label{sec:preparation}
@@ -113,52 +71,33 @@ Complete-set model accuracy and throughput are reported separately in
 Table~\ref{tab:full-mmlu}.
 
 \subsection{Decision Quality and Model Selection}
-A Qwen3-0.6B Q8\_0 CPU comparison replaced a structured prompt with opaque
-output labels by a readable prompt and semantic candidate answers. On the same
-inputs, BoolQ improved from 128/256 (50.00\%) to 143/256 (55.86\%), and MMLU
-from 63/285 (22.11\%) to 109/285 (38.25\%). The old MMLU configuration chose
-label A on 283 of 285 examples. Both prompt presentation and answer
-representation changed, so this comparison does not isolate semantic scoring.
-
 Table~\ref{tab:models} reports disabled-thinking decision quality on the same
-541 requests using Vulkan on the Arc A770. The small models use Q8\_0 weights
-and full GPU placement; Qwen3.6 uses Q4\_K\_M with CPU expert offloading.
-The scoring formulation is unchanged by the prefix, worker-pool, and preparation
+14,042 MMLU requests using Vulkan on the Arc A770. Both models use Q8\_0
+weights and full GPU placement.
+The scoring formulation is unchanged by the prefix and preparation
 optimizations. Response-equivalence checks in Sections~\ref{sec:prefix-results}
 and~\ref{sec:repeatability} support retaining these accuracy results across the
 corresponding execution changes. Runtime effects are evaluated separately.
 
 \begin{table}[htbp]
 \centering\small
-\caption{Decision quality on 256 BoolQ and 285 MMLU questions, Arc A770,
-thinking disabled. NLL is averaged over all 541 questions.}
+\caption{Full MMLU test set on Arc A770, 14,042 requests per model, thinking
+disabled. Complete-process wall time includes model loading and shutdown.
+One run per model, with no repeat-run variance estimate.}
 \label{tab:models}
-\begin{tabular}{llrrr}
+\begin{tabular}{llrrrr}
 \toprule
-Model & Quantization & BoolQ (\%) & MMLU (\%) & NLL \\
+Model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
 \midrule
-Qwen3-0.6B & Q8\_0 & 55.47 & 39.65 & 2.0977 \\
-Qwen3.5-0.8B & Q8\_0 & 68.75 & 36.49 & 1.0740 \\
-Qwen3.5-2B & Q8\_0 & 74.22 & 53.68 & 0.9052 \\
-Qwen3.6-35B-A3B & Q4\_K\_M & 89.84 & 87.37 & 0.3553 \\
+Qwen3.5-0.8B & Q8\_0 & 4,615 & 32.87 & 3,015.29 & 4.66 \\
+Qwen3.5-2B & Q8\_0 & 6,807 & 48.48 & 4,219.81 & 3.33 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The 2B model improves combined accuracy over the smaller models, while the
-35B mixture-of-experts model reaches 87.37\% on the MMLU subset using a
-16\,GiB consumer GPU with CPU expert offloading. Model size alone does not
-predict accuracy on each task, as the two sub-billion-parameter models show.
-
-Qwen3 GPU execution with selective probability transfer takes 69.51 seconds,
-compared with approximately 220 seconds on CPU: a 3.17-fold end-to-end speedup.
-Moving normalization to the GPU gives only a modest improvement for this small
-model. Collecting only candidate-token probabilities reduces the Vulkan
-computation buffer from 449.02 to 317.39 MiB relative to collecting the full
-vocabulary probability vector. Across 541 examples, top-1 predictions are
-unchanged and the maximum candidate-probability difference is
-$7.1\times10^{-8}$. These results do not identify normalization as the main
-bottleneck.
+The 2B model has higher full-MMLU accuracy than the 0.8B model on the A770,
+while the 0.8B model is faster. The 285-question results used in earlier optimization studies
+are not substituted for these full-set accuracy estimates.
 
 \subsection{Shared-Prefix Execution}
 \label{sec:prefix-results}
@@ -286,35 +225,29 @@ The manual Jev 1.13 measurement reports 2.86 requests/s via API. On full MMLU,
 JET reaches 4.17 requests/s with Qwen3.6-35B-A3B or 2.21 requests/s with
 Qwen3.5-27B on the RTX 4090, including startup and model loading. The reported
 rates show a local accuracy--throughput choice, but differences in timing
-boundaries preclude a controlled speedup claim. JET exposes local placement,
-model choice, and optional reasoning; the evaluated Jev interface does not
+boundaries preclude a controlled speedup claim. JET exposes local placement
+and model choice; the evaluated Jev interface does not
 expose a reasoning mode. Its hardware configuration is unknown.
 
 Figure~\ref{fig:mmlu-throughput} summarizes selected evaluated
 JET configurations for each model and hardware deployment, with reasoning
 disabled, alongside Jev. Early prompt baselines, intermediate optimization
-variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix,
-worker, and preparation comparisons improve throughput without changing
+variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix
+and preparation comparisons improve throughput without changing
 responses. Within the RTX 4090 full-set comparison, Qwen3.5-27B provides the
 highest MMLU accuracy, while Qwen3.6-35B-A3B provides greater throughput.
-Optional reasoning
-does not improve MMLU accuracy in the measured small-model experiment. These
-results distinguish gains from model capability and execution efficiency,
-with task-dependent benefits from extra reasoning.
+These results distinguish gains from model capability and execution efficiency.
 
-The figure combines distinct experiments: CPU and Arc A770 throughput covers
-mixed BoolQ/MMLU workloads, whereas the RTX 4090 points show accuracy and
-throughput from the same full-MMLU runs. Jev uses full-MMLU accuracy and a
-separately reported API rate.
+The Arc A770 and RTX 4090 points each show accuracy and throughput from the
+same full-MMLU run. They use different binaries and hardware. Jev uses
+full-MMLU accuracy and a separately reported API rate.
 Published larger-model scores remain in Table~\ref{tab:mmlu-comparison}
 because corresponding throughput measurements are unavailable.
 
 \subsection{Numerical Equivalence and Reproducibility}
 \label{sec:repeatability}
-The prefix, CPU-worker, and preparation comparisons preserve exact responses
-in their tested configurations. This does not imply agreement across platforms. In the recorded
-Qwen3-0.6B CPU/Vulkan comparison, 14 of 541 top-1 predictions change and the
-maximum absolute candidate-probability difference is 0.2998.
+The prefix and preparation comparisons preserve exact responses
+in their tested configurations. This does not imply agreement across platforms.
 
 Independent candidate execution provides a reference for testing state
 isolation. An initial hybrid schedule changed 9 of 20 diagnostic answers.
@@ -324,16 +257,3 @@ $1.12\times10^{-7}$. A separate experiment batching independent requests
 exceeded the same numerical tolerance and was not retained. These checks
 support the use of serial candidate continuations in the reported hybrid
 experiments.
-
-\subsection{Optional Thinking: Accuracy--Throughput Trade-off}
-\label{sec:thinking-results}
-Optional reasoning generates a trace before candidate evaluation, exchanging
-computation for a possible improvement in quality without changing model
-weights. The benefit is task-dependent: on the
-Qwen3-0.6B workload, enabling thinking reduces throughput from 7.78 to 0.84
-requests/s while raising BoolQ accuracy from 55.47\% to 65.23\% and combined
-accuracy from 47.13\% to 50.46\%. MMLU accuracy instead decreases from 39.65\%
-to 37.19\%. Optional reasoning therefore requires validation on the target task. Candidate evaluation
-remains sampler-free conditional on the generated trace; the complete reasoning
-path includes generation and does not inherit the sampler-free reproducibility
-claim.

@@ -6,7 +6,7 @@ rust = { version = "1.98", channel = "stable", components = "rustfmt,clippy" }
 apm = "latest"
 lefthook = "latest"
 glab = "latest"
-tinytex = "latest"
+tinytex = "2026.09"
 
 [tools."http:llvm"]
 version = "22.1.8"

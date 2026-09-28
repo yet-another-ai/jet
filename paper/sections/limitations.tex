@@ -1,12 +1,10 @@
 \section{Discussion and Limitations}
 \label{sec:limitations}
-The results support local decision inference on the tested CPU and GPU
+The results support local decision inference on the tested GPU
 configurations. Figure~\ref{fig:mmlu-throughput} summarizes accuracy and
 throughput across the selected models and deployments. The separate execution
-studies show that optimizations can raise throughput at unchanged accuracy,
-while optional reasoning can change both. CPU-only execution offers a low-resource option; full GPU
-placement gives the strongest measured rate for the larger model, while mixed
-placement allows its weights to exceed GPU memory at increased execution cost.
+studies show that optimizations can raise throughput at unchanged accuracy.
+Full GPU placement supports the measured models on the two devices.
 Performance still depends on model size, candidate count and length, and hardware.
 
 The model comparison evaluates the complete MMLU test set but has one run per

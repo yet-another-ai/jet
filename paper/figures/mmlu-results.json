@@ -1,68 +1,5 @@
 [
   {
-    "group": "JET / Qwen3-0.6B",
-    "label": "CPU, JSON-label baseline",
-    "accuracy": 22.11,
-    "req_s": null,
-    "wall_s": null,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3-0.6B",
-    "label": "CPU, semantic scoring",
-    "accuracy": 38.25,
-    "req_s": 2.46,
-    "wall_s": null,
-    "requests": 541,
-    "scope": "mixed",
-    "approximate": true,
-    "show_in_figure": true,
-    "figure_label": "CPU only"
-  },
-  {
-    "group": "JET / Qwen3-0.6B",
-    "label": "A770, CPU softmax",
-    "accuracy": 39.65,
-    "req_s": 7.63,
-    "wall_s": null,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3-0.6B",
-    "label": "A770, GPU full-row softmax",
-    "accuracy": 39.65,
-    "req_s": null,
-    "wall_s": null,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3-0.6B",
-    "label": "A770, target gather",
-    "accuracy": 39.65,
-    "req_s": 7.78,
-    "wall_s": null,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": true,
-    "figure_label": "A770, GPU inference"
-  },
-  {
-    "group": "JET / Qwen3-0.6B",
-    "label": "A770, thinking enabled",
-    "accuracy": 37.19,
-    "req_s": 0.84,
-    "wall_s": null,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": false
-  },
-  {
     "group": "JET / Qwen3.5-0.8B",
     "label": "A770, Initial model evaluation",
     "accuracy": 36.49,
@@ -90,7 +27,7 @@
     "wall_s": 108.06,
     "requests": 541,
     "scope": "mixed",
-    "show_in_figure": true,
+    "show_in_figure": false,
     "figure_label": "A770, GPU inference"
   },
   {
@@ -105,8 +42,21 @@
   },
   {
     "group": "JET / Qwen3.5-0.8B",
+    "label": "Arc A770, full MMLU, Vulkan",
+    "accuracy": 32.8657,
+    "correct": 4615,
+    "req_s": 4.657,
+    "wall_s": 3015.29,
+    "requests": 14042,
+    "scope": "mmlu",
+    "deployment": "a770",
+    "show_in_figure": true,
+    "figure_label": "Arc A770, full MMLU"
+  },
+  {
+    "group": "JET / Qwen3.5-0.8B",
     "label": "RTX 4090, full MMLU, Vulkan",
-    "accuracy": 32.4170,
+    "accuracy": 32.417,
     "req_s": 9.791,
     "wall_s": 1434.163,
     "requests": 14042,
@@ -142,7 +92,7 @@
     "wall_s": 143.41,
     "requests": 541,
     "scope": "mixed",
-    "show_in_figure": true,
+    "show_in_figure": false,
     "figure_label": "A770, GPU inference"
   },
   {
@@ -167,6 +117,19 @@
   },
   {
     "group": "JET / Qwen3.5-2B",
+    "label": "Arc A770, full MMLU, Vulkan",
+    "accuracy": 48.476,
+    "correct": 6807,
+    "req_s": 3.328,
+    "wall_s": 4219.811,
+    "requests": 14042,
+    "scope": "mmlu",
+    "deployment": "a770",
+    "show_in_figure": true,
+    "figure_label": "Arc A770, full MMLU"
+  },
+  {
+    "group": "JET / Qwen3.5-2B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 48.5543,
     "req_s": 9.728,
@@ -180,7 +143,7 @@
     "group": "JET / Qwen3.5-4B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 66.3937,
-    "req_s": 7.070,
+    "req_s": 7.07,
     "wall_s": 1986.136,
     "requests": 14042,
     "scope": "mmlu",
@@ -202,33 +165,12 @@
     "group": "JET / Qwen3.5-27B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 85.0876,
-    "req_s": 2.210,
+    "req_s": 2.21,
     "wall_s": 6353.754,
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
     "figure_label": "RTX 4090, full MMLU"
-  },
-  {
-    "group": "JET / Qwen3.6-35B-A3B",
-    "label": "A770 + CPU, temporary workers",
-    "accuracy": 87.37,
-    "req_s": null,
-    "wall_s": 647.607,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3.6-35B-A3B",
-    "label": "A770 + CPU, persistent workers",
-    "accuracy": 87.37,
-    "req_s": null,
-    "wall_s": 599.949,
-    "requests": 541,
-    "scope": "mixed",
-    "show_in_figure": true,
-    "figure_label": "A770 + CPU, expert offloading"
   },
   {
     "group": "JET / Qwen3.6-35B-A3B",
