@@ -9,7 +9,8 @@ placement gives the strongest measured rate for the larger model, while mixed
 placement allows its weights to exceed GPU memory at increased execution cost.
 Performance still depends on model size, candidate count and length, and hardware.
 
-The execution studies use fixed subsets and few repetitions. Model versions,
+The model comparison evaluates the complete MMLU test set but has one run per
+model, so it provides no repeat-run variance estimate. Model versions,
 quantization, placement, and timing boundaries differ across studies, so their
 results cannot be treated as a controlled hardware comparison. The prefix study
 changes both state reuse and cache management; it does not isolate their

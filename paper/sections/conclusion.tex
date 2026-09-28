@@ -4,8 +4,11 @@ JET adapts pretrained language and vision-language models to finite decisions
 through candidate likelihood evaluation without additional training.
 The accuracy--throughput comparison in Figure~\ref{fig:mmlu-throughput} shows
 the range of local deployment choices, from CPU-only execution to full and mixed
-GPU placement. Qwen3.6-35B-A3B reaches 87.48\% on full MMLU and 3.69 requests/s
-on a separately timed subset. Jev provides a reference for decision quality and
+GPU placement. In the six-model full-MMLU Vulkan comparison on an RTX 4090,
+Qwen3.5-27B has the highest accuracy, 85.09\% at 2.21 requests/s.
+Qwen3.6-35B-A3B reaches 82.62\% at 4.17 requests/s, offering 1.89 times
+the throughput at 2.47 percentage points lower accuracy.
+Jev provides a reference for decision quality and
 request rate, although differences in evaluation and timing prevent a controlled
 performance ranking.
 

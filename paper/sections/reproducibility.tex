@@ -9,14 +9,16 @@ Detailed configurations and recorded measurements are provided in the
 \href{https://github.com/yet-another-ai/jet/blob/main/docs/accuracy.md}{accuracy notes}
 and \href{https://github.com/yet-another-ai/jet/blob/main/docs/performance.md}{performance notes}.
 
-The primary experiments were conducted on September 21--23, 2026.
+The primary experiments were conducted on September 21--24, 2026; a later
+single-model CUDA check ran on September 28.
 The sampled workload comprises 256 label-balanced BoolQ validation examples
 and five MMLU test examples from each of 57 subjects, totaling 541 requests
-(seed 20260921). The RTX 4090 execution comparison uses a fixed 285-question
-MMLU subset. Data preparation verifies source checksums.
+(seed 20260921). The RTX 4090 preparation comparison uses a fixed 285-question
+MMLU subset. The model comparison uses all 14,042 MMLU test questions across
+57 subjects. Data preparation verifies source checksums.
 JET uses zero-shot semantic candidate scoring, with reasoning
-disabled unless stated otherwise. Smaller models use Q8\_0 weights;
-Qwen3.6-35B-A3B uses Q4\_K\_M. GPU experiments use Vulkan. The Qwen3.6 text
+disabled unless stated otherwise. Models up to Qwen3.5-9B use Q8\_0 weights;
+Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M. GPU experiments use Vulkan. The Qwen3.6 text
 benchmark does not load a visual projector.
 
 The mixed-placement study uses an i9-13900K, 64\,GiB RAM, and a 16\,GiB
@@ -34,6 +36,24 @@ the same workload: 285 prefix evaluations, 60,680 prefix tokens, 9,283
 continuation tokens, and 1,472 decoder calls. Runs execute sequentially in fresh
 processes; exploratory runs affected by concurrent compilation are excluded.
 
+The full-MMLU study ran on September 23--24, 2026, using the RTX 4090 and
+Vulkan. Each of six models had one fresh-process run with 14,042 requests,
+eight input requests per chunk, two sequence slots, microbatch size 256,
+output-row limit 256, eight CPU threads, and no memory mapping. All runs used
+byte-identical request and gold files and the same executable, verified by
+SHA-256. Each run produced 14,042 responses and zero evaluation failures.
+The complete input files can be regenerated from the pinned MMLU archive with
+\texttt{prepare-accuracy-data.py} using \texttt{--boolq-limit 0 --mmlu-all
+--ascii-json}; the generated file hashes match the measured inputs.
+The evaluator treats identical answer texts under different MMLU option labels
+as equivalent. Per-run response, timing, provenance, and subject-level reports
+are retained locally outside version control.
+A later CUDA run of Qwen3.6-35B-A3B on September 28 uses the same input,
+gold, scoring protocol, and RTX 4090 but a newer executable. It processes
+14,042 requests with no evaluation failures; its executable and source revision
+are recorded separately. The CUDA and Vulkan runs are not a controlled
+same-binary backend comparison.
+
 The shared-prefix comparison uses a preserved baseline executable. Both
 versions use eight input requests per chunk, nine sequence slots, 2,048 context
 tokens per sequence, token batches of 2,048, a microbatch size of 512, and an
@@ -50,8 +70,10 @@ from 2.0977 to 2.2883.
 Reported JET timings cover complete processes, including model loading.
 RTX 4090 model loading contributes approximately ten seconds. Preparation
 overlaps scoring, so the phase times are not additive.
-The 3.69 requests/s rate comes from the 285-question experiment;
-the separate full-MMLU result of 87.48\% has no independently supplied timing.
+The full-MMLU rates in Table~\ref{tab:full-mmlu} are measured on the same
+requests as their corresponding accuracy scores. The separate 3.69 requests/s
+rate in Table~\ref{tab:preparation} comes from the earlier 285-question
+preparation experiment.
 Jev 1.13's manually measured 89.06\% full-MMLU accuracy and 2.86 requests/s API
 throughput lack documented concurrency and detailed timing boundaries. Its
 interface does not expose configurable reasoning or few-shot settings.
@@ -63,6 +85,7 @@ requires the preserved executables or their corresponding source snapshots;
 running the current version alone does not reproduce those baselines.
 
 Raw artifacts are excluded from the repository. Prefix and mixed-placement
-records were checked locally; RTX 4090 measurements rely
-on recorded performance notes because their raw artifacts were unavailable
+records were checked locally. The full-MMLU records include local responses,
+reports, and provenance; the earlier 285-question RTX 4090 preparation study
+relies on recorded performance notes because its raw artifacts were unavailable
 for independent verification during manuscript preparation.

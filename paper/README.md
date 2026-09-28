@@ -71,16 +71,23 @@ Efficient Inference, Experimental Evaluation, Discussion and Limitations,
 and Conclusion, followed by Statements, references, and a short experimental protocol.
 Local deployment on consumer CPU/GPU configurations is a central evaluation theme.
 
-The draft compares full-MMLU results for JET / Qwen3.6-35B-A3B (87.48%) and
-Jev 1.13 (89.06%, 2.86 req/s via API) with published larger-model scores, formalizes sampler-free candidate
+The draft compares six JET models on full MMLU using an RTX 4090, from
+Qwen3.5-0.8B (32.42%, 9.79 req/s) to Qwen3.5-27B (85.09%, 2.21 req/s), and
+Qwen3.6-35B-A3B (82.62%, 4.17 req/s). Jev 1.13 (89.06%, 2.86 req/s via API)
+and published larger-model scores provide context. The report formalizes sampler-free candidate
 scoring, describes prefix sharing and state isolation, and consolidates
 existing accuracy and performance measurements. See [evidence.md](evidence.md) for
 the mapping from quantitative claims to source records and the remaining experiments.
-The 3.693 req/s RTX 4090 rate was measured on a 285-question subset, separately
-from the full-MMLU accuracy result. Engineering details, commands, and artifact
+The full-set RTX 4090 rates are measured on the same 14,042 requests as their
+accuracy scores. The separate 3.693 req/s preparation result uses a 285-question
+subset. Engineering details, commands, and artifact
 provenance belong in the repository documentation rather than the manuscript.
+A later Qwen3.6-35B-A3B CUDA full-set check measured 82.57% and 4.96 req/s
+with a newer executable; it is reported separately from the uniform Vulkan
+model comparison.
 
-No inference benchmarks were rerun to write this draft. Results retain their original
+The primary full-MMLU runs were performed September 23--24, 2026, with a
+separate CUDA check on September 28. Results retain their original
 sample sizes, hardware, executor versions, and timing boundaries. The report does not
 claim measured parity with Jev, calibrated probabilities, or cross-device bitwise
 reproducibility.

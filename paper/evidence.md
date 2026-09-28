@@ -1,11 +1,12 @@
-# Evidence map for the first report draft
+# Evidence map for the report
 
 Prepared against Jet `4ff0ab63018e79e5f4639aef97924f4e26bb0405`, with native
 submodule `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`. These identify the source
-snapshot consulted, not every historical benchmark binary. No new model runs
-were performed for the report. Figures are rounded from the recorded experiments.
+snapshot consulted, not every historical benchmark binary. The full-MMLU runs
+below were performed on September 23--24, 2026, after the first draft.
+Figures are rounded from the recorded experiments.
 
-| Report claim/table | Checked-in source | Conditions and interpretation |
+| Report claim/table | Source record | Conditions and interpretation |
 | --- | --- | --- |
 | Semantic prompt comparison | `docs/accuracy.md`, Accuracy baseline | Same 541 examples, Qwen3-0.6B Q8_0 CPU; prompt and candidate representation change together. |
 | Small-model decision-quality results | `docs/accuracy.md`, Disabled-thinking model comparison | Arc A770, Q8_0, corrected hybrid execution before serial prefix reuse; fresh-process timing. |
@@ -15,6 +16,7 @@ were performed for the report. Figures are rounded from the recorded experiments
 | 35B MoE placement/accuracy | `docs/accuracy.md`, Qwen3.6 Q4 CPU/Vulkan offload | 541 examples, 11 CPU expert layers, i9-13900K/64 GiB/16 GiB A770. |
 | 7.36% worker improvement | `docs/performance.md`, Full 541-request validation | Single full run/version, byte-identical responses; separate 32-case probe supports direction. Local full-pool541 report cross-checked. |
 | 4090 execution-ablation table | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
+| Full-MMLU model comparison | Local `tests/accuracy/generated/qwen35-*-4090-mmlu-full-20260924/` and `qwen36-4090-mmlu-full-fixed-20260923/` | Six complete 14,042-question RTX 4090 Vulkan runs, one/model, same binary/input/gold; each has 14,042 responses and zero evaluation failures. Summary below. |
 | CPU/Vulkan 14 changed predictions | `docs/accuracy.md`, text after bounded-thinking comparison | Explicit counterexample to cross-backend bitwise/decision invariance. |
 | Hybrid correctness and rejected batching | `docs/accuracy.md`, Hybrid recurrent batching correctness; `docs/performance.md`, Deferred independent-request experiment | Evidence for retaining serial recurrent continuations; not evidence of a universal native-backend bug. |
 | Thinking quality/cost | `docs/accuracy.md`, 256-token bounded-thinking comparison | Separate sampled-generation condition, excluded from sampler-free claim. |
@@ -28,11 +30,11 @@ unpublished architecture or claim measured parity. Internal records are tracked 
 Before external circulation: archive raw artifacts and
 binary/source provenance; add matched-subset Jev and constrained-generation baselines,
 repeated latency/throughput measurements, calibration, and visual evaluation.
-The author subsequently recovered the RTX 4090 Qwen3.6-35B-A3B full-MMLU
-result from another machine: 87.48%. The corresponding configuration is shown
-at 3.693 req/s using its recorded optimized execution rate, as requested by the
-author; this is not a newly supplied timing for the full-set run. No new inference
-was run. Jev 1.13 full-MMLU accuracy is corrected from 89% to 89.06%.
+An earlier author-supplied Qwen3.6-35B-A3B full-MMLU estimate lacked raw
+responses and evaluation metadata. The manuscript uses the auditable local
+full-set result of 11,601/14,042 (82.62%). The earlier estimate cannot be
+reconciled as a repeat measurement under verified identical conditions.
+Jev 1.13 full-MMLU accuracy is 89.06% as supplied by the author.
 The 0.271 seconds/request for 4090 is 77.183 / 285, an amortized
 complete-process cost, not a measured latency percentile.
 
@@ -43,6 +45,60 @@ configures `GGML_CUDA`/`GGML_VULKAN` and links the upstream `ggml-cuda`/
 `ggml-vulkan` libraries. JET's decision-specific orchestration is distinguished
 from the upstream model runtime and GPU kernels. The report title is now
 “JET: Justification Evaluation in Transformer”.
+
+## Full-MMLU RTX 4090 runs
+
+The local `tests/accuracy/generated/qwen35-full-mmlu-comparison-20260924.md`
+lists the five Qwen3.5 runs and Qwen3.6 baseline. Each retained benchmark
+directory contains `requests.jsonl`, `gold.jsonl`, `provenance.json`,
+`summary.json`, `run-01/responses.jsonl`, and `run-01/report.json`.
+These files are ignored by Git; the manuscript's aggregate data is preserved in
+`figures/mmlu-results.json` and its full-MMLU table. All six runs used
+binary SHA-256 `d0b01369a2c4fc08f2ba135ff9bed95a9d0bc0139f81da45d58cd7680f7de707`,
+the same benchmark harness and evaluator hashes,
+input SHA-256 `5393a9f78039744f999e7c403a0bac0fd7b26931f513e3f9e8dc8ef34d69cf7c`,
+and gold SHA-256 `6f0e61960c7459f6738805a4c2e2f89b9287171d798760ea140f8b3bb57cf209`.
+The evaluator accepts distinct option labels with identical answer text as
+equivalent. Each run has one successful completion and no failed requests.
+Filtering the Qwen3.6 full-run responses to the historical 285-question input
+recovered 250/285 correct and all 285 of the same top-1 choices as the
+separate subset run. This verifies that its higher subset percentage comes
+from the question selection under those two measured runs.
+`python scripts/prepare-accuracy-data.py --boolq-limit 0 --mmlu-all
+--ascii-json --output-dir tests/accuracy/generated-mmlu-full-ascii` reproduced
+both original input hashes from the pinned MMLU archive on September 28, 2026.
+
+| Model | Correct / 14,042 | Accuracy | Wall (s) | Req./s |
+| --- | ---: | ---: | ---: | ---: |
+| Qwen3.5-0.8B Q8_0 | 4,552 | 32.42% | 1,434.16 | 9.79 |
+| Qwen3.5-2B Q8_0 | 6,818 | 48.55% | 1,443.47 | 9.73 |
+| Qwen3.5-4B Q8_0 | 9,323 | 66.39% | 1,986.14 | 7.07 |
+| Qwen3.5-9B Q8_0 | 10,344 | 73.66% | 2,466.26 | 5.69 |
+| Qwen3.5-27B Q4_K_M | 11,948 | 85.09% | 6,353.75 | 2.21 |
+| Qwen3.6-35B-A3B Q4_K_M | 11,601 | 82.62% | 3,370.71 | 4.17 |
+
+The shared invocation is `python scripts/benchmark-model.py --binary
+E:/jet-target/release/jet.exe --model-path models/<model>.gguf --model-id
+<model-id> --input <full-MMLU-requests.jsonl> --gold
+<full-MMLU-gold.jsonl> --output-dir <new-directory> --runs 1 --backend vulkan
+--batch-requests 8 --extra-args --max-sequences 2 --micro-batch 256
+--max-output-rows 256 --threads 8 --no-mmap`. Exact commands and source
+revisions are in each `provenance.json`; Qwen3.5 model source revisions and
+checksums are in the local `qwen35-model-sources-20260924.json` file.
+The Qwen3.6 source revision and SHA-256 are pinned in
+`scripts/download-accuracy-models.sh`.
+
+The September 28 CUDA cross-check is retained in
+`tests/accuracy/generated/qwen36-4090-cuda-mmlu-full-20260928/`.
+It used the same request, gold, and evaluator hashes as the Vulkan full run,
+but executable SHA-256
+`fb8394921e604e8281cfae18b253d2b1608184c6f8e299896d4d6acff3057f83`
+at source commit `81828a89754977561b590d27ac1bfb60931fa473`.
+Its one successful run returned 14,042 responses, zero failures, and
+11,595 correct (82.57%) in 2,829.36 seconds (4.96 requests/s).
+There are 328 changed top-1 choices versus the older Vulkan binary's run;
+the six-model table therefore keeps its common Vulkan binary, and the CUDA
+wall-time difference is not presented as an isolated backend speedup.
 
 ## Larger-model and Jev comparison
 
@@ -59,7 +115,7 @@ from the upstream model runtime and GPU kernels. The report title is now
   comparison, MMLU exact match. The Qwen number is explicitly sourced to that
   comparison, not a new JET run. DeepSeek-V3 has 671B total / 37B activated
   parameters in the same source table.
-- Full-MMLU JET versus Jev score gap: 89.06 - 87.48 = 1.58 percentage points.
+- Best full-MMLU JET versus Jev score gap: 89.06 - 85.09 = 3.97 percentage points.
   Shared benchmark coverage does not establish identical prompting, scoring,
   aggregation, or statistical equivalence.
 
@@ -80,15 +136,15 @@ maps. This corrects the earlier draft's boolean/index output description.
 - The user supplied Jev 1.13 full-MMLU accuracy of 89.06% and API throughput of
   2.86 req/s. Neither number is a provider-published result. API concurrency and
   detailed timing boundaries were not supplied.
-- `figures/mmlu-results.json` contains 22 rows from the benchmark notes and the
-  subsequently supplied full-MMLU result, including repeated
+- `figures/mmlu-results.json` contains the historical benchmark rows, six
+  comparable Vulkan full-MMLU runs, and the later CUDA check, including repeated
   prefix runs and the response-equivalent GPU full-row-softmax configuration.
 - CPU/A770 throughput covers mixed BoolQ/MMLU; RTX 4090 throughput covers MMLU
   alone. JET includes both subset and full-MMLU accuracy; Jev uses full MMLU.
-- Figure 2 selects the best-performing disabled-thinking configuration per model
-  and deployment using `show_in_figure`; `figure_label` supplies reader-facing
-  deployment names. Historical measurements remain in the data file. The RTX 4090
-  entry uses full-MMLU accuracy and separately measured subset throughput.
+- Figure 2 selects representative disabled-thinking configurations using
+  `show_in_figure`; `figure_label` supplies reader-facing deployment names.
+  Historical measurements remain in the data file. Each RTX 4090 full-MMLU
+  point combines accuracy and throughput from the same run.
 - Missing rates remain null. Where wall time is known but no rate is published,
   rate = 541 / complete-process seconds. Approximate CPU rate is marked as such.
 - No throughput is imputed for external model-card results, invalid state-isolation
@@ -99,14 +155,10 @@ maps. This corrects the earlier draft's boolean/index output description.
 
 ## Editorial revision
 
-The editorial revision simplifies prose and removes unrelated engineering
-descriptions. It preserves the original five displayed equations, five experimental
-tables, the complete workflow diagram (Figure 1), and all 22 configurations in the
-accuracy--throughput comparison (Figure 2). Figure sources and measurements are
-unchanged. Quantitative results and their experimental qualifications are retained;
-source records above provide implementation details and artifact provenance.
-The revised text explicitly separates the 87.48% full-MMLU accuracy from the
-3.693 req/s rate measured on the 285-question execution study.
+The editorial revision simplified prose and retained the original five displayed
+equations and workflow diagram. This update adds a full-MMLU model table and
+six measured RTX 4090 points to the accuracy--throughput figure. The 285-question
+preparation study remains separate from the full-set model comparison.
 
 ## Token-to-decision algorithm
 

@@ -70,9 +70,18 @@ This requires the Vulkan build dependencies described in
 Jet automatically uses isolated candidate waves for Qwen3.5's hybrid recurrent state; no extra CLI
 flag is required for the correctness-safe path.
 
-Override sample sizes with `JET_BOOLQ_LIMIT` and `JET_MMLU_PER_SUBJECT`. For example, the complete
-MMLU test set has unequal subject sizes, so use the preparation script directly if a sampling rule
-other than a fixed count per subject is needed.
+Override sample sizes with `JET_BOOLQ_LIMIT` and `JET_MMLU_PER_SUBJECT`. For the complete
+14,042-question MMLU test set, prepare MMLU alone with:
+
+```sh
+python scripts/prepare-accuracy-data.py --boolq-limit 0 --mmlu-all --ascii-json \
+  --output-dir tests/accuracy/generated-mmlu-full
+```
+
+Run `scripts/benchmark-model.py` with these `requests.jsonl` and `gold.jsonl`
+files, a model path, and `--backend cuda` or `--backend vulkan`. The RTX 4090
+full-set study used `--runs 1 --backend vulkan --batch-requests 8 --extra-args
+--max-sequences 2 --micro-batch 256 --max-output-rows 256 --threads 8 --no-mmap`.
 
 The primary metric is top-1 accuracy. Mean negative log-likelihood of the gold label is included as
 a diagnostic. These results are not directly comparable to the official MMLU leaderboard because

@@ -104,6 +104,17 @@
     "show_in_figure": false
   },
   {
+    "group": "JET / Qwen3.5-0.8B",
+    "label": "RTX 4090, full MMLU, Vulkan",
+    "accuracy": 32.4170,
+    "req_s": 9.791,
+    "wall_s": 1434.163,
+    "requests": 14042,
+    "scope": "mmlu",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, full MMLU"
+  },
+  {
     "group": "JET / Qwen3.5-2B",
     "label": "A770, Initial model evaluation",
     "accuracy": 53.68,
@@ -153,6 +164,50 @@
     "requests": 541,
     "scope": "mixed",
     "show_in_figure": false
+  },
+  {
+    "group": "JET / Qwen3.5-2B",
+    "label": "RTX 4090, full MMLU, Vulkan",
+    "accuracy": 48.5543,
+    "req_s": 9.728,
+    "wall_s": 1443.475,
+    "requests": 14042,
+    "scope": "mmlu",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, full MMLU"
+  },
+  {
+    "group": "JET / Qwen3.5-4B",
+    "label": "RTX 4090, full MMLU, Vulkan",
+    "accuracy": 66.3937,
+    "req_s": 7.070,
+    "wall_s": 1986.136,
+    "requests": 14042,
+    "scope": "mmlu",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, full MMLU"
+  },
+  {
+    "group": "JET / Qwen3.5-9B",
+    "label": "RTX 4090, full MMLU, Vulkan",
+    "accuracy": 73.6647,
+    "req_s": 5.694,
+    "wall_s": 2466.263,
+    "requests": 14042,
+    "scope": "mmlu",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, full MMLU"
+  },
+  {
+    "group": "JET / Qwen3.5-27B",
+    "label": "RTX 4090, full MMLU, Vulkan",
+    "accuracy": 85.0876,
+    "req_s": 2.210,
+    "wall_s": 6353.754,
+    "requests": 14042,
+    "scope": "mmlu",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, full MMLU"
   },
   {
     "group": "JET / Qwen3.6-35B-A3B",
@@ -207,14 +262,24 @@
   },
   {
     "group": "JET / Qwen3.6-35B-A3B",
-    "label": "RTX 4090, full MMLU",
-    "accuracy": 87.48,
-    "req_s": 3.693,
-    "wall_s": null,
+    "label": "RTX 4090, full MMLU, Vulkan",
+    "accuracy": 82.6164,
+    "req_s": 4.166,
+    "wall_s": 3370.707,
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
     "figure_label": "RTX 4090, GPU inference"
+  },
+  {
+    "group": "JET / Qwen3.6-35B-A3B",
+    "label": "RTX 4090, full MMLU, CUDA, newer executable",
+    "accuracy": 82.5737,
+    "req_s": 4.963,
+    "wall_s": 2829.358,
+    "requests": 14042,
+    "scope": "mmlu",
+    "show_in_figure": false
   },
   {
     "group": "Jev 1.13",

@@ -4,8 +4,8 @@
 We use MMLU and BoolQ~\cite{boolq,mmlu} to examine three questions: what
 decision quality pretrained models provide, whether they can support local
 inference on consumer hardware, and how execution optimizations affect cost
-at fixed decision quality. Full-MMLU evaluations compare JET and Jev; fixed
-subsets support model comparisons and execution studies. The principal
+at fixed decision quality. The full-MMLU study compares six JET models on the
+same test set; fixed subsets support controlled execution studies. The principal
 comparisons disable reasoning generation; optional reasoning is examined
 separately. Appendix~\ref{sec:reproducibility} describes the data and settings.
 
@@ -33,9 +33,11 @@ in 69.51 seconds (7.78 requests/s). The smaller model's limited accuracy, report
 below, distinguishes basic deployment feasibility from suitability for demanding
 decision tasks.
 
-Qwen3.6-35B-A3B achieves 87.48\% accuracy on full MMLU with full GPU placement
-on an RTX 4090. A separate 285-question experiment with this configuration
-reaches 3.69 requests/s; this is not a timing measurement of the full-MMLU run.
+On full MMLU with Vulkan and full GPU placement on an RTX 4090, Qwen3.5-27B achieves
+85.09\% at 2.21 requests/s and Qwen3.6-35B-A3B achieves 82.62\% at
+4.17 requests/s. Section~\ref{sec:mmlu-comparison} reports the complete model
+comparison. An earlier 285-question preparation experiment measures a separate
+execution optimization under the same hardware.
 On an i9-13900K with 64\,GiB RAM and a 16\,GiB Arc A770, CPU expert offloading
 allows execution despite weights exceeding GPU memory. This configuration
 achieves 87.37\% on its 285-question MMLU subset, with an amortized cost of
@@ -107,7 +109,8 @@ time. Overall, wall time falls 30.8\% and workload throughput rises 44.4\%.
 The final amortized cost is approximately 0.271 seconds/request, but the
 measurement supplies neither p50/p95 latency nor saturated concurrent throughput.
 The comparison preserves model computation and changes preparation scheduling.
-These subset results do not imply a full-MMLU score.
+Complete-set model accuracy and throughput are reported separately in
+Table~\ref{tab:full-mmlu}.
 
 \subsection{Decision Quality and Model Selection}
 A Qwen3-0.6B Q8\_0 CPU comparison replaced a structured prompt with opaque
@@ -185,10 +188,51 @@ does not isolate either contribution or measure the speedup of parallel probes.
 
 \subsection{MMLU Comparison with Larger Models and Jev}
 \label{sec:mmlu-comparison}
-Table~\ref{tab:mmlu-comparison} places the JET results alongside a manually
+Table~\ref{tab:full-mmlu} reports complete-process measurements on the same
+14,042 MMLU test questions using an RTX 4090 and Vulkan. Each model has one
+fresh-process run with reasoning disabled. These full-set measurements replace
+subset estimates when comparing model quality and end-to-end throughput.
+
+\begin{table}[htbp]
+\centering\small
+\caption{Full MMLU test set on RTX 4090, 14,042 requests per model. Wall time
+includes model loading and shutdown; throughput is requests divided by wall time.
+One run per model, with no repeat-run variance estimate.}
+\label{tab:full-mmlu}
+\begin{tabular}{llrrrr}
+\toprule
+JET model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
+\midrule
+Qwen3.5-0.8B & Q8\_0 & 4,552 & 32.42 & 1,434.16 & 9.79 \\
+Qwen3.5-2B & Q8\_0 & 6,818 & 48.55 & 1,443.47 & 9.73 \\
+Qwen3.5-4B & Q8\_0 & 9,323 & 66.39 & 1,986.14 & 7.07 \\
+Qwen3.5-9B & Q8\_0 & 10,344 & 73.66 & 2,466.26 & 5.69 \\
+Qwen3.5-27B & Q4\_K\_M & 11,948 & 85.09 & 6,353.75 & 2.21 \\
+Qwen3.6-35B-A3B & Q4\_K\_M & 11,601 & 82.62 & 3,370.71 & 4.17 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Qwen3.5-27B answers 347 more questions correctly than Qwen3.6-35B-A3B,
+while the latter processes approximately 1.89 times as many requests per second.
+The architectures and model generations differ, so this contrast does not
+isolate the effect of parameter count. On the historical 285-question subset,
+the complete-run Qwen3.6 responses preserve all 285 top-1 choices from the
+separate subset run, including 250 correct. Its 87.72\% subset score exceeds
+its full-set score by 5.10 percentage points, illustrating why that slice is
+not an accuracy estimate for the full test set.
+
+A subsequent full-set CUDA run of Qwen3.6-35B-A3B on the same RTX 4090 and
+identical input files scores 11,595/14,042 (82.57\%) in 2,829.36 seconds
+(4.96 requests/s). It uses a newer executable than the Vulkan model comparison;
+328 top-1 choices differ from that Vulkan run. The wall-time difference cannot
+therefore be attributed to the GPU backend alone. We retain the same-binary
+Vulkan runs in Table~\ref{tab:full-mmlu} and Figure~\ref{fig:mmlu-throughput}.
+
+Table~\ref{tab:mmlu-comparison} places selected JET results alongside a manually
 measured Jev score and published results for larger instruction-tuned models.
-On the complete MMLU test set, JET with Qwen3.6-35B-A3B on an RTX 4090
-achieves 87.48\%. The author's manual evaluation of Jev 1.13 yields 89.06\%,
+On the complete MMLU test set, JET with Qwen3.5-27B on an RTX 4090
+achieves 85.09\%. The author's manual evaluation of Jev 1.13 yields 89.06\%,
 with a separately reported API throughput of 2.86 requests/s. Jev's evaluated
 interface is sampler-free and exposes no configurable reasoning or few-shot
 settings. These Jev results are the author's measurements. Published
@@ -205,12 +249,9 @@ measurements of those models running in JET.}
 System / model & MMLU (\%) & Evaluation basis \\
 \midrule
 \multicolumn{3}{l}{\emph{Full-MMLU evaluations}} \\
-JET / Qwen3.6-35B-A3B, RTX 4090 & 87.48 & Full MMLU test set; local execution \\
+JET / Qwen3.5-27B, RTX 4090 & 85.09 & Full MMLU test set; local execution \\
+JET / Qwen3.6-35B-A3B, RTX 4090 & 82.62 & Full MMLU test set; local execution \\
 Jev 1.13 & 89.06 & Full MMLU test set; native decision interface \\
-\midrule
-\multicolumn{3}{l}{\emph{JET execution studies: 285-question subsets}} \\
-Qwen3.6-35B-A3B Q4\_K\_M, A770 & 87.37 & 249/285; mixed CPU/GPU placement \\
-Qwen3.6-35B-A3B Q4\_K\_M, RTX 4090 & 87.72 & 250/285; full GPU placement \\
 \midrule
 \multicolumn{3}{l}{\emph{Published larger-model references}} \\
 Llama 3.1 70B Instruct~\cite{llama31-card} & 83.6 & 5-shot; subject-macro accuracy \\
@@ -223,9 +264,8 @@ DeepSeek-V3 (671B)~\cite{deepseek-v3-results} & 88.5 & MMLU exact match in the c
 
 \input{figures/mmlu-throughput}
 
-On full MMLU, JET is 1.58 percentage points below Jev 1.13. This comparison
-places local inference from a reusable pretrained model close to the evaluated
-dedicated decision model in decision accuracy. Shared benchmark coverage does
+The highest JET full-MMLU score in this study is 3.97 percentage points below
+the author's Jev 1.13 result. Shared benchmark coverage does
 not ensure identical prompting, answer scoring, or aggregation, so the difference
 alone does not establish statistical equivalence. Published larger-model scores
 provide additional context under their respective evaluation protocols; they do
@@ -242,31 +282,30 @@ likelihoods are not presented as equivalent calibrated confidence estimates. Jev
 parallel evaluation of independent questions; JET's hybrid path evaluates
 candidate continuations serially while sharing their prefix~\cite{jev-docs,jev-workflows}.
 
-The manual Jev 1.13 measurement reports 2.86 requests/s via API. JET reaches
-3.69 requests/s locally on the RTX 4090 on the 285-question subset, including
-startup and model loading. The reported rates show that local execution can
-support a similar request rate, but differences in workloads and timing
+The manual Jev 1.13 measurement reports 2.86 requests/s via API. On full MMLU,
+JET reaches 4.17 requests/s with Qwen3.6-35B-A3B or 2.21 requests/s with
+Qwen3.5-27B on the RTX 4090, including startup and model loading. The reported
+rates show a local accuracy--throughput choice, but differences in timing
 boundaries preclude a controlled speedup claim. JET exposes local placement,
 model choice, and optional reasoning; the evaluated Jev interface does not
 expose a reasoning mode. Its hardware configuration is unknown.
 
-Figure~\ref{fig:mmlu-throughput} summarizes the best-performing evaluated
-JET configuration for each model and hardware deployment, with reasoning
+Figure~\ref{fig:mmlu-throughput} summarizes selected evaluated
+JET configurations for each model and hardware deployment, with reasoning
 disabled, alongside Jev. Early prompt baselines, intermediate optimization
 variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix,
 worker, and preparation comparisons improve throughput without changing
-responses. Within JET, the largest evaluated model provides the highest MMLU
-accuracy, while smaller models can offer higher throughput. Optional reasoning
+responses. Within the RTX 4090 full-set comparison, Qwen3.5-27B provides the
+highest MMLU accuracy, while Qwen3.6-35B-A3B provides greater throughput.
+Optional reasoning
 does not improve MMLU accuracy in the measured small-model experiment. These
 results distinguish gains from model capability and execution efficiency,
 with task-dependent benefits from extra reasoning.
 
 The figure combines distinct experiments: CPU and Arc A770 throughput covers
-mixed BoolQ/MMLU workloads, whereas RTX 4090 throughput covers MMLU alone.
-For the full-MMLU row, 87.48\% accuracy is measured on the complete test set,
-but the plotted 3.693 requests/s is taken from the separate 285-question run
-of the same configuration. It is not the measured throughput of the full-set
-run. Jev uses the full-MMLU accuracy and separately reported API rate.
+mixed BoolQ/MMLU workloads, whereas the RTX 4090 points show accuracy and
+throughput from the same full-MMLU runs. Jev uses full-MMLU accuracy and a
+separately reported API rate.
 Published larger-model scores remain in Table~\ref{tab:mmlu-comparison}
 because corresponding throughput measurements are unavailable.
 

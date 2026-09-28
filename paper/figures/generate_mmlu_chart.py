@@ -13,8 +13,8 @@ lines = [r'\begin{figure}[H]', r'\centering',
 for value in (0, 20, 40, 60, 80, 100):
     x = 6.3 + 3.6 * value / 100
     lines.append(rf'\node[font=\scriptsize,text=black!65] at ({x},0.3) {{{value}}};')
-for value in (0, 2, 4, 6, 8):
-    x = 11.5 + 3.1 * value / 8
+for value in (0, 2, 4, 6, 8, 10):
+    x = 11.5 + 3.1 * value / 10
     lines.append(rf'\node[font=\scriptsize,text=black!65] at ({x},0.3) {{{value}}};')
 y = -0.2
 last_group = None
@@ -36,7 +36,7 @@ for r in rows:
     if rate is None and r.get('wall_s') is not None:
         rate = r['requests'] / r['wall_s']
     if rate is not None:
-        x = 11.5 + 3.1 * rate / 8
+        x = 11.5 + 3.1 * rate / 10
         lines.append(rf'\fill[{color}] ({x:.4f},{y}) circle (2pt);')
         label = ('\\(\\sim\\)' if r.get('approximate') else '') + f'{rate:.2f}'
     else:
@@ -44,6 +44,6 @@ for r in rows:
     lines.append(rf'\node[anchor=east] at (15.5,{y}) {{{label}}};')
     y -= 0.43
 lines += [r'\end{tikzpicture}',
-          r'\caption{MMLU accuracy and throughput for the best-performing evaluated JET configuration per model and deployment, with reasoning disabled, and Jev 1.13. Blue: CPU/Arc A770. Teal: RTX 4090. Orange: hosted API. A770 expert offloading executes some model experts on CPU. JET CPU/A770 accuracy uses an MMLU subset; throughput covers the mixed BoolQ/MMLU workload. RTX 4090 accuracy uses full MMLU, while its throughput comes from a separate 285-question run of the same configuration. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
+          r'\caption{MMLU accuracy and throughput for selected JET configurations with reasoning disabled, and Jev 1.13. Blue: CPU/Arc A770; teal: RTX 4090; orange: hosted API. A770 expert offloading executes some model experts on CPU. JET CPU/A770 accuracy uses an MMLU subset and throughput covers the mixed BoolQ/MMLU workload. RTX 4090 accuracy and throughput come from the same full-MMLU run for each model. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
           r'\label{fig:mmlu-throughput}', r'\end{figure}']
 (ROOT / 'mmlu-throughput.tex').write_text('\n'.join(lines) + '\n')

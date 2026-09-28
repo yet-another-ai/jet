@@ -36,6 +36,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("tests/accuracy/generated"))
     parser.add_argument("--boolq-limit", type=int, default=256)
     parser.add_argument("--mmlu-per-subject", type=int, default=5)
+    parser.add_argument("--mmlu-all", action="store_true",
+                        help="Include every MMLU test row, preserving subject and row order")
+    parser.add_argument("--ascii-json", action="store_true",
+                        help="Escape non-ASCII characters in JSONL for byte-identical full-set records")
     parser.add_argument("--seed", type=int, default=20_260_921)
     return parser.parse_args()
 
@@ -192,8 +196,8 @@ def boolq_examples(path: Path, limit: int, seed: int) -> list[tuple[dict, dict]]
     return examples
 
 
-def mmlu_examples(directory: Path, per_subject: int, seed: int) -> list[tuple[dict, dict]]:
-    if per_subject <= 0:
+def mmlu_examples(directory: Path, per_subject: int | None, seed: int) -> list[tuple[dict, dict]]:
+    if per_subject is not None and per_subject <= 0:
         raise ValueError("--mmlu-per-subject must be positive")
     examples = []
     labels = ("A", "B", "C", "D")
@@ -201,13 +205,12 @@ def mmlu_examples(directory: Path, per_subject: int, seed: int) -> list[tuple[di
         subject = path.name.removesuffix("_test.csv")
         with path.open(encoding="utf-8", newline="") as source:
             rows = list(csv.reader(source))
-        if per_subject > len(rows):
+        if per_subject is not None and per_subject > len(rows):
             raise ValueError(
                 f"--mmlu-per-subject={per_subject} exceeds {subject} size {len(rows)}"
             )
-        selected = select_indices(
-            range(len(rows)), per_subject, seed, f"mmlu:{subject}"
-        )
+        selected = (range(len(rows)) if per_subject is None else
+                    select_indices(range(len(rows)), per_subject, seed, f"mmlu:{subject}"))
         for index in selected:
             row = rows[index]
             if len(row) != 6 or row[5] not in labels:
@@ -240,10 +243,10 @@ def mmlu_examples(directory: Path, per_subject: int, seed: int) -> list[tuple[di
     return examples
 
 
-def write_jsonl(path: Path, values: Iterable[dict[str, Any]]) -> None:
+def write_jsonl(path: Path, values: Iterable[dict[str, Any]], *, ascii_json: bool = False) -> None:
     with path.open("w", encoding="utf-8") as output:
         for value in values:
-            output.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n")
+            output.write(json.dumps(value, ensure_ascii=ascii_json, separators=(",", ":")) + "\n")
 
 
 def main() -> int:
@@ -253,19 +256,26 @@ def main() -> int:
     mmlu_archive = downloads / "mmlu-data.tar"
     mmlu_test = args.data_dir / "mmlu-test"
 
-    download_boolq(boolq_path)
+    if args.boolq_limit != 0:
+        download_boolq(boolq_path)
     download_file(MMLU_URL, mmlu_archive, MMLU_SHA256)
     extract_mmlu_tests(mmlu_archive, mmlu_test)
 
-    examples = boolq_examples(boolq_path, args.boolq_limit, args.seed)
+    examples = (boolq_examples(boolq_path, args.boolq_limit, args.seed)
+                if args.boolq_limit != 0 else [])
     boolq_count = len(examples)
-    examples.extend(mmlu_examples(mmlu_test, args.mmlu_per_subject, args.seed))
+    examples.extend(mmlu_examples(
+        mmlu_test, None if args.mmlu_all else args.mmlu_per_subject, args.seed
+    ))
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    write_jsonl(args.output_dir / "requests.jsonl", (item[0] for item in examples))
-    write_jsonl(args.output_dir / "gold.jsonl", (item[1] for item in examples))
+    write_jsonl(args.output_dir / "requests.jsonl", (item[0] for item in examples),
+                ascii_json=args.ascii_json)
+    write_jsonl(args.output_dir / "gold.jsonl", (item[1] for item in examples),
+                ascii_json=args.ascii_json)
 
     manifest = {
         "seed": args.seed,
+        "ascii_json": args.ascii_json,
         "sources": {
             "boolq": {
                 "rows_endpoint": BOOLQ_ROWS_URL,
@@ -280,7 +290,8 @@ def main() -> int:
             "mmlu": {
                 "examples": len(examples) - boolq_count,
                 "subjects": 57,
-                "per_subject": args.mmlu_per_subject,
+                "per_subject": None if args.mmlu_all else args.mmlu_per_subject,
+                "all_test_rows": args.mmlu_all,
             },
         },
     }
