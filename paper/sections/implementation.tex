@@ -3,8 +3,7 @@
 \input{figures/workflow}
 JET implements candidate scoring using llama.cpp~\cite{llamacpp}.
 Figure~\ref{fig:workflow} summarizes the decision process. The main efficiency
-measures are shared-prefix evaluation, reduced data transfer, and overlap
-between input preparation and scoring.
+measures are shared-prefix evaluation and reduced data transfer.
 
 \subsection{Shared-Prefix Evaluation}
 For $K$ candidates sharing a prefix of $P$ tokens, independent evaluation
@@ -30,10 +29,6 @@ candidates require no further model evaluation.
 GPU scoring computes probabilities over the full vocabulary but transfers only
 the log-probabilities needed for the candidates. This reduces data transfer
 without changing the scoring rule.
-
-For the evaluated hybrid configuration with reasoning disabled, CPU preparation
-of the next question overlaps GPU scoring of the current question. Candidate
-evaluation within each question remains sequential.
 
 When a mixture-of-experts model exceeds GPU memory, routed experts can execute
 on the CPU while attention and other components execute on the GPU.

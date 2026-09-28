@@ -30,10 +30,9 @@
 \draw[flow] (score) -- (answer);
 \end{tikzpicture}
 \caption{End-to-end sampler-free workflow, executed locally on CPU, GPU, or a
-mixed placement. Candidate tokens are supplied rather than sampled. Text
-preparation may overlap scoring of the preceding question on the supported
-Vulkan hybrid path. Optional text-only reasoning, omitted from the principal
-path above, generates a trace before scoring and freezes it into the shared
-prefix; that mode includes sampling. Invalid requests produce errors.}
+mixed placement. Candidate tokens are supplied rather than sampled. Optional
+text-only reasoning, omitted from the principal path above, generates a trace
+before scoring and freezes it into the shared prefix; that mode includes
+sampling. Invalid requests produce errors.}
 \label{fig:workflow}
 \end{figure}

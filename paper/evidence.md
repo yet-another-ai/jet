@@ -12,7 +12,7 @@ Figures are rounded from the recorded experiments.
 | Arc A770 full-MMLU model comparison | Local `tests/accuracy/generated/a770-*-mmlu-full-20260928-fixed/` | Two Qwen3.5 Q8_0 models, 14,042 questions each, full GPU placement, one fresh-process run/model, zero failures. |
 | 2.18–2.23x prefix comparison | `docs/accuracy.md`, Vulkan serial-prefix reuse benchmark | One old run, two new runs/model; bundles prefix reuse and metadata resets. Local `vulkan-prefix-benchmark-20260922/summary.json` cross-checked. |
 | 66.03% fewer prefill tokens | Same prefix section | 378,526 old tokens derived from schedule; 128,583 new tokens instrumented. Not a wall-time estimate. |
-| 4090 execution-ablation table | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
+| Historical prototype preparation study (excluded from manuscript) | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
 | Full-MMLU model comparison | Local `tests/accuracy/generated/qwen35-*-4090-mmlu-full-20260924/` and `qwen36-4090-mmlu-full-fixed-20260923/` | Six complete 14,042-question RTX 4090 Vulkan runs, one/model, same binary/input/gold; each has 14,042 responses and zero evaluation failures. Summary below. |
 | Hybrid correctness and rejected batching | `docs/accuracy.md`, Hybrid recurrent batching correctness; `docs/performance.md`, Deferred independent-request experiment | Evidence for retaining serial recurrent continuations; not evidence of a universal native-backend bug. |
 | Multimodal design | `README.md`, Multimodal decisions; `demos/doom/README.md`; `crates/jet-engine/src/llama/vision.rs` | Implemented interface/demo; no quantitative visual-quality claim. |
@@ -30,8 +30,7 @@ responses and evaluation metadata. The manuscript uses the auditable local
 full-set result of 11,601/14,042 (82.62%). The earlier estimate cannot be
 reconciled as a repeat measurement under verified identical conditions.
 Jev 1.13 full-MMLU accuracy is 89.06% as supplied by the author.
-The 0.271 seconds/request for 4090 is 77.183 / 285, an amortized
-complete-process cost, not a measured latency percentile.
+The historical 285-question preparation study is excluded from the manuscript.
 
 The revised bibliography additionally cites the original Transformer paper,
 Guo et al. on calibration, the EleutherAI evaluation harness, and llama.cpp.
@@ -56,9 +55,7 @@ is excluded from the manuscript.
 | Qwen3.5-0.8B Q8_0 | 4,615 | 32.87% | 3,015.29 | 4.66 |
 | Qwen3.5-2B Q8_0 | 6,807 | 48.48% | 4,219.81 | 3.33 |
 
-The 285-question historical slice remains relevant only to controlled
-execution studies; the manuscript now uses these complete-set
-measurements for Arc A770 model quality and throughput.
+The manuscript uses these complete-set measurements for Arc A770 model quality and throughput.
 
 ## Full-MMLU RTX 4090 runs
 
@@ -170,8 +167,8 @@ maps. This corrects the earlier draft's boolean/index output description.
 
 The editorial revision simplified prose and retained the original five displayed
 equations and workflow diagram. This update adds full-MMLU model tables and
-two Arc A770 and six RTX 4090 points to the accuracy--throughput figure. The 285-question
-preparation study remains separate from the full-set model comparison.
+two Arc A770 and six RTX 4090 points to the accuracy--throughput figure. The
+prototype 285-question preparation study is excluded from the manuscript and figure data.
 
 ## Token-to-decision algorithm
 

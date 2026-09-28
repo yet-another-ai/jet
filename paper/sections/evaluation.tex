@@ -5,7 +5,7 @@ We use MMLU and BoolQ~\cite{boolq,mmlu} to examine three questions: what
 decision quality pretrained models provide, whether they can support local
 inference on consumer hardware, and how execution optimizations affect cost
 at fixed decision quality. The full-MMLU study compares two models on the Arc
-A770 and six on the RTX 4090; fixed subsets support controlled execution studies. The principal
+A770 and six on the RTX 4090; a fixed subset supports a controlled prefix-reuse study. The principal
 comparisons disable reasoning generation. Appendix~\ref{sec:reproducibility}
 describes the data and settings.
 
@@ -31,53 +31,18 @@ without server-class accelerators.
 On full MMLU with Vulkan and full GPU placement on an RTX 4090, Qwen3.5-27B achieves
 85.09\% at 2.21 requests/s and Qwen3.6-35B-A3B achieves 82.62\% at
 4.17 requests/s. Section~\ref{sec:mmlu-comparison} reports the complete model
-comparison. An earlier 285-question preparation experiment measures a separate
-execution optimization under the same hardware.
-The Arc A770 full-MMLU runs below cover two models that fit entirely in its
+comparison. The Arc A770 full-MMLU runs below cover two models that fit entirely in its
 16\,GiB of memory. Their accuracy and throughput refer to the same complete
 14,042-question workload. The RTX 4090 runs use a separate machine and binary;
 the measured rates are not a controlled hardware speedup comparison.
-
-\subsection{Preparation Overlap under Full GPU Placement}
-\label{sec:preparation}
-We compare uncached preparation, synchronous preparation caching, and pipelined
-preparation on an RTX 4090 with Vulkan and full GPU placement of Qwen3.6-35B-A3B.
-All three configurations evaluate the same MMLU subset.
-
-\begin{table}[htbp]
-\centering\small
-\caption{RTX 4090 preparation comparison, 285 MMLU questions.
-Preparation time is worker time; wait is the consumer's visible preparation stall.}
-\label{tab:preparation}
-\begin{tabular}{lrrrr}
-\toprule
-Configuration & Wall (s) & Req./s & Prepare (s) & Wait (s) \\
-\midrule
-Uncached preparation & 111.460 & 2.557 & 33.451 & --- \\
-Cached, synchronous & 80.420 & 3.544 & 3.640 & --- \\
-Cached, pipelined & 77.183 & 3.693 & 3.853 & 0.464 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Every variant returns 250/285 correct answers (87.7193\%), mean gold NLL
-0.44754, and zero failures. Response files are byte-identical. Caching reduces
-preparation time by 89.1\%; overlap saves a further 3.24 seconds of total wall
-time. Overall, wall time falls 30.8\% and workload throughput rises 44.4\%.
-The final amortized cost is approximately 0.271 seconds/request, but the
-measurement supplies neither p50/p95 latency nor saturated concurrent throughput.
-The comparison preserves model computation and changes preparation scheduling.
-Complete-set model accuracy and throughput are reported separately in
-Table~\ref{tab:full-mmlu}.
 
 \subsection{Decision Quality and Model Selection}
 Table~\ref{tab:models} reports disabled-thinking decision quality on the same
 14,042 MMLU requests using Vulkan on the Arc A770. Both models use Q8\_0
 weights and full GPU placement.
-The scoring formulation is unchanged by the prefix and preparation
-optimizations. Response-equivalence checks in Sections~\ref{sec:prefix-results}
-and~\ref{sec:repeatability} support retaining these accuracy results across the
-corresponding execution changes. Runtime effects are evaluated separately.
+The scoring formulation is unchanged by prefix reuse. Response-equivalence
+checks in Sections~\ref{sec:prefix-results} and~\ref{sec:repeatability}
+validate the tested execution change. Runtime effects are evaluated separately.
 
 \begin{table}[htbp]
 \centering\small
@@ -96,8 +61,7 @@ Qwen3.5-2B & Q8\_0 & 6,807 & 48.48 & 4,219.81 & 3.33 \\
 \end{table}
 
 The 2B model has higher full-MMLU accuracy than the 0.8B model on the A770,
-while the 0.8B model is faster. The 285-question results used in earlier optimization studies
-are not substituted for these full-set accuracy estimates.
+while the 0.8B model is faster. The full-set results provide the model-quality estimates used in this paper.
 
 \subsection{Shared-Prefix Execution}
 \label{sec:prefix-results}
@@ -155,13 +119,7 @@ Qwen3.6-35B-A3B & Q4\_K\_M & 11,601 & 82.62 & 3,370.71 & 4.17 \\
 Qwen3.5-27B answers 347 more questions correctly than Qwen3.6-35B-A3B,
 while the latter processes approximately 1.89 times as many requests per second.
 The architectures and model generations differ, so this contrast does not
-isolate the effect of parameter count. On the historical 285-question subset,
-the complete-run Qwen3.6 responses preserve all 285 top-1 choices from the
-separate subset run, including 250 correct. Its 87.72\% subset score exceeds
-its full-set score by 5.10 percentage points, illustrating why that slice is
-not an accuracy estimate for the full test set.
-
-A subsequent full-set CUDA run of Qwen3.6-35B-A3B on the same RTX 4090 and
+isolate the effect of parameter count. A subsequent full-set CUDA run of Qwen3.6-35B-A3B on the same RTX 4090 and
 identical input files scores 11,595/14,042 (82.57\%) in 2,829.36 seconds
 (4.96 requests/s). It uses a newer executable than the Vulkan model comparison;
 328 top-1 choices differ from that Vulkan run. The wall-time difference cannot
@@ -233,8 +191,7 @@ Figure~\ref{fig:mmlu-throughput} summarizes selected evaluated
 JET configurations for each model and hardware deployment, with reasoning
 disabled, alongside Jev. Early prompt baselines, intermediate optimization
 variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix
-and preparation comparisons improve throughput without changing
-responses. Within the RTX 4090 full-set comparison, Qwen3.5-27B provides the
+comparison improves throughput without changing responses. Within the RTX 4090 full-set comparison, Qwen3.5-27B provides the
 highest MMLU accuracy, while Qwen3.6-35B-A3B provides greater throughput.
 These results distinguish gains from model capability and execution efficiency.
 
@@ -246,8 +203,8 @@ because corresponding throughput measurements are unavailable.
 
 \subsection{Numerical Equivalence and Reproducibility}
 \label{sec:repeatability}
-The prefix and preparation comparisons preserve exact responses
-in their tested configurations. This does not imply agreement across platforms.
+The prefix comparison preserves exact responses
+in its tested configurations. This does not imply agreement across platforms.
 
 Independent candidate execution provides a reference for testing state
 isolation. An initial hybrid schedule changed 9 of 20 diagnostic answers.

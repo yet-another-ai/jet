@@ -69,7 +69,7 @@ with `\includegraphics`; keep source figures outside `build/`.
 The report is organized as Introduction, Related Work, Decision Method,
 Efficient Inference, Experimental Evaluation, Discussion and Limitations,
 and Conclusion, followed by Statements, references, and a short experimental protocol.
-Local deployment on consumer CPU/GPU configurations is a central evaluation theme.
+Local deployment on consumer GPUs is a central evaluation theme.
 
 The draft compares two JET models on an Arc A770 and six on an RTX 4090
 using full MMLU. The RTX 4090 comparison ranges from
@@ -80,8 +80,7 @@ scoring, describes prefix sharing and state isolation, and consolidates
 existing accuracy and performance measurements. See [evidence.md](evidence.md) for
 the mapping from quantitative claims to source records and the remaining experiments.
 The full-set Arc A770 and RTX 4090 rates are each measured on the same 14,042 requests as their
-accuracy scores. The separate 3.693 req/s preparation result uses a 285-question
-subset. Engineering details, commands, and artifact
+accuracy scores. Engineering details, commands, and artifact
 provenance belong in the repository documentation rather than the manuscript.
 A later Qwen3.6-35B-A3B CUDA full-set check measured 82.57% and 4.96 req/s
 with a newer executable; it is reported separately from the uniform Vulkan

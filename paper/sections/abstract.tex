@@ -1,14 +1,12 @@
 JET uses pretrained language and vision-language models to select among a finite set of answers
 without additional training. It evaluates candidate likelihoods directly and
-shares computation across candidates. Experiments on desktop CPUs and consumer
+shares computation across candidates. Experiments on consumer
 GPUs assess decision accuracy and execution cost. Full-set Vulkan comparisons
 on an Arc A770 and RTX 4090 cover all 14,042 MMLU test questions. Qwen3.5-27B reaches
 85.09\% at 2.21 requests/s, while Qwen3.6-35B-A3B reaches 82.62\% at
 4.17 requests/s.
-The accuracy--throughput comparison covers model,
-hardware choices, with Jev as an external reference.
-Controlled execution experiments show
-2.18--2.23-fold speedups from prefix reuse and cache management, and a 30.8\%
-reduction in process time from input preparation optimizations, with unchanged
-outputs.
+The accuracy--throughput comparison covers model and hardware choices, with
+Jev as an external reference. A controlled execution experiment shows
+2.18--2.23-fold speedups from prefix reuse and cache management, with unchanged
+outputs on the tested workload.
 These results support local decision inference from existing models.

@@ -174,36 +174,6 @@
   },
   {
     "group": "JET / Qwen3.6-35B-A3B",
-    "label": "RTX 4090, uncached preparation",
-    "accuracy": 87.7193,
-    "req_s": 2.557,
-    "wall_s": null,
-    "requests": 285,
-    "scope": "mmlu",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3.6-35B-A3B",
-    "label": "RTX 4090, cached preparation",
-    "accuracy": 87.7193,
-    "req_s": 3.544,
-    "wall_s": null,
-    "requests": 285,
-    "scope": "mmlu",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3.6-35B-A3B",
-    "label": "RTX 4090, pipelined preparation",
-    "accuracy": 87.7193,
-    "req_s": 3.693,
-    "wall_s": null,
-    "requests": 285,
-    "scope": "mmlu",
-    "show_in_figure": false
-  },
-  {
-    "group": "JET / Qwen3.6-35B-A3B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 82.6164,
     "req_s": 4.166,

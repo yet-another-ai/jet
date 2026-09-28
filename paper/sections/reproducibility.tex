@@ -13,9 +13,8 @@ The primary experiments were conducted on September 21--28, 2026; the Arc A770
 full-set study and a single-model CUDA check ran on September 28.
 The sampled workload comprises 256 label-balanced BoolQ validation examples
 and five MMLU test examples from each of 57 subjects, totaling 541 requests
-(seed 20260921). The RTX 4090 preparation comparison uses a fixed 285-question
-MMLU subset. The Arc A770 and RTX 4090 model comparisons use all 14,042 MMLU test questions across
-57 subjects. Data preparation verifies source checksums.
+(seed 20260921). The Arc A770 and RTX 4090 model comparisons use all
+14,042 MMLU test questions across 57 subjects. Data preparation verifies source checksums.
 JET uses zero-shot semantic candidate scoring, with reasoning
 disabled unless stated otherwise. Models up to Qwen3.5-9B use Q8\_0 weights;
 Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M. GPU experiments use Vulkan. The Qwen3.6 text
@@ -28,14 +27,6 @@ limit of 256, eight requests per chunk, and no memory mapping. Each has one
 complete run with 14,042 responses and zero failures. Both use the same
 input, gold labels, evaluator, and executable. This executable differs from
 the earlier RTX 4090 benchmark binary.
-
-The RTX 4090 study uses full GPU placement, eight CPU threads, two sequence
-slots, a microbatch size of 256, an output-row limit of 256, and eight input
-requests per chunk. Model weights are allocated in memory without memory
-mapping. Each of the three configurations has one complete run and evaluates
-the same workload: 285 prefix evaluations, 60,680 prefix tokens, 9,283
-continuation tokens, and 1,472 decoder calls. Runs execute sequentially in fresh
-processes; exploratory runs affected by concurrent compilation are excluded.
 
 The full-MMLU study ran on September 23--24, 2026, using the RTX 4090 and
 Vulkan. Each of six models had one fresh-process run with 14,042 requests,
@@ -65,12 +56,8 @@ the baseline schedule implies 1,652 prefix evaluations and 378,526 prefix
 tokens. Continuations comprise 9,795 tokens across 2,369 decoder calls.
 
 Reported JET timings cover complete processes, including model loading.
-RTX 4090 model loading contributes approximately ten seconds. Preparation
-overlaps scoring, so the phase times are not additive.
 The full-MMLU rates in Tables~\ref{tab:models} and~\ref{tab:full-mmlu} are measured on the same
-requests as their corresponding accuracy scores. The separate 3.69 requests/s
-rate in Table~\ref{tab:preparation} comes from the earlier 285-question
-preparation experiment.
+requests as their corresponding accuracy scores.
 Jev 1.13's manually measured 89.06\% full-MMLU accuracy and 2.86 requests/s API
 throughput lack documented concurrency and detailed timing boundaries. Its
 interface does not expose configurable reasoning or few-shot settings.
@@ -83,6 +70,4 @@ running the current version alone does not reproduce those baselines.
 
 Raw artifacts are excluded from the repository. Prefix
 records were checked locally. The full-MMLU records include local responses,
-reports, and provenance; the earlier 285-question RTX 4090 preparation study
-relies on recorded performance notes because its raw artifacts were unavailable
-for independent verification during manuscript preparation.
+reports, and provenance.
