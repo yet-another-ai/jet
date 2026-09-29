@@ -7,7 +7,7 @@ apm = "latest"
 lefthook = "latest"
 glab = "latest"
 uv = "0.12.13"
-tinytex = { version = "2026.09", os = ["linux", "macos"] }
+"vfox:tinytex" = { version = "2026.09" }
 
 [tools."http:llvm"]
 version = "22.1.8"
@@ -31,7 +31,7 @@ description = "Build and package Jet for Apple Silicon Metal"
 run = 'sh scripts/package-metal.sh'
 
 [tasks.paper]
-description = "Build the English technical report"
+description = "Build the technical report"
 dir = "paper"
 run = "latexmk main.tex"
 

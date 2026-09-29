@@ -12,7 +12,7 @@ its MIT license is included in `arxiv-LICENSE.txt`.
 From the repository root:
 
 ```sh
-mise install tinytex
+mise install vfox:tinytex
 mise run paper
 ```
 

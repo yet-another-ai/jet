@@ -291,32 +291,6 @@ specifiers = ["1.98"]
 [tools.rust.options]
 components = "clippy,rustfmt"
 
-[[tools.tinytex]]
-version = "2026.09"
-backend = "asdf:tinytex"
-specifiers = ["2026.09"]
-
-[tools.tinytex."platforms.linux-arm64"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
-
-[tools.tinytex."platforms.linux-arm64-musl"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
-
-[tools.tinytex."platforms.linux-x64"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
-
-[tools.tinytex."platforms.linux-x64-musl"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
-
-[tools.tinytex."platforms.macos-arm64"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tgz"
-
-[tools.tinytex."platforms.macos-x64"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tgz"
-
-[tools.tinytex."platforms.windows-x64"]
-url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
-
 [[tools.uv]]
 version = "0.12.13"
 backend = "aqua:astral-sh/uv"
@@ -363,3 +337,29 @@ checksum = "sha256:a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6
 url = "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/555670362"
 provenance = "github-attestations"
+
+[[tools."vfox:tinytex"]]
+version = "2026.09"
+backend = "vfox:tinytex"
+specifiers = ["2026.09"]
+
+[tools."vfox:tinytex"."platforms.linux-arm64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
+
+[tools."vfox:tinytex"."platforms.linux-arm64-musl"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
+
+[tools."vfox:tinytex"."platforms.linux-x64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
+
+[tools."vfox:tinytex"."platforms.linux-x64-musl"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
+
+[tools."vfox:tinytex"."platforms.macos-arm64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tgz"
+
+[tools."vfox:tinytex"."platforms.macos-x64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tgz"
+
+[tools."vfox:tinytex"."platforms.windows-x64"]
+url = "https://github.com/rstudio/tinytex-releases/releases/download/v2026.09/TinyTeX-v2026.09.tar.gz"
