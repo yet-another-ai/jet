@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-29",
+  "sources": [
+    {
+      "id": "boolq",
+      "repository": "google/boolq",
+      "config": "default",
+      "revision": "35b264d03638db9f4ce671b711558bf7ff0f80d5",
+      "license": "cc-by-sa-3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "homepage": "https://github.com/google-research-datasets/boolean-questions",
+      "citation": "Clark et al. (2019). BoolQ: Exploring the Surprising Difficulty of Natural Yes/No Questions.",
+      "card_url": "https://huggingface.co/datasets/google/boolq/blob/35b264d03638db9f4ce671b711558bf7ff0f80d5/README.md",
+      "train_limit": null,
+      "files": [
+        {
+          "path": "data/train-00000-of-00001.parquet",
+          "split": "train",
+          "bytes": 3685146,
+          "sha256": "4f028e992c0bd4df30b9f056f4946b64f5c23028034ff0ed5ea467d8538cc623"
+        },
+        {
+          "path": "data/validation-00000-of-00001.parquet",
+          "split": "validation",
+          "bytes": 1257630,
+          "sha256": "52355d11524b4b874a9b9dcc278feb10f672d52c4f4eff9872e695ede59820f8"
+        }
+      ]
+    },
+    {
+      "id": "arc_easy",
+      "repository": "allenai/ai2_arc",
+      "config": "ARC-Easy",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "license": "cc-by-sa-4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "homepage": "https://allenai.org/data/arc",
+      "citation": "Clark et al. (2018). Think you have Solved Question Answering? Try ARC, the AI2 Reasoning Challenge.",
+      "card_url": "https://huggingface.co/datasets/allenai/ai2_arc/blob/210d026faf9955653af8916fad021475a3f00453/README.md",
+      "train_limit": null,
+      "files": [
+        {
+          "path": "ARC-Easy/test-00000-of-00001.parquet",
+          "split": "test",
+          "bytes": 346257,
+          "sha256": "4160597d618ae851c7eb04e281574f3f654776216ac6b6641588d64527b47177"
+        },
+        {
+          "path": "ARC-Easy/train-00000-of-00001.parquet",
+          "split": "train",
+          "bytes": 330598,
+          "sha256": "b315db8a4be597dc7daa50a4e70d48dd7c990c32085629e6ccd8c926beaa80b5"
+        },
+        {
+          "path": "ARC-Easy/validation-00000-of-00001.parquet",
+          "split": "validation",
+          "bytes": 86080,
+          "sha256": "ed890ff1e4cef7a7140d3a30dcea3ed2c9d467c6458f447ad9ef0176d8dcbb74"
+        }
+      ]
+    },
+    {
+      "id": "arc_challenge",
+      "repository": "allenai/ai2_arc",
+      "config": "ARC-Challenge",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "license": "cc-by-sa-4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "homepage": "https://allenai.org/data/arc",
+      "citation": "Clark et al. (2018). Think you have Solved Question Answering? Try ARC, the AI2 Reasoning Challenge.",
+      "card_url": "https://huggingface.co/datasets/allenai/ai2_arc/blob/210d026faf9955653af8916fad021475a3f00453/README.md",
+      "train_limit": null,
+      "files": [
+        {
+          "path": "ARC-Challenge/test-00000-of-00001.parquet",
+          "split": "test",
+          "bytes": 203808,
+          "sha256": "62f03257e737aed263f55c6abf87c7bb0028a44a6bdd2a26eb1279eb42c1d1e9"
+        },
+        {
+          "path": "ARC-Challenge/train-00000-of-00001.parquet",
+          "split": "train",
+          "bytes": 189909,
+          "sha256": "e488c1587ffdcfc8443f916c53488a95cd471c5790e0746c6bfe4cecf20962cb"
+        },
+        {
+          "path": "ARC-Challenge/validation-00000-of-00001.parquet",
+          "split": "validation",
+          "bytes": 55743,
+          "sha256": "395a5c88d1580d69855fbaee9450270578df1ad5af6259771cd0a42c20e99f05"
+        }
+      ]
+    },
+    {
+      "id": "snli",
+      "repository": "stanfordnlp/snli",
+      "config": "plain_text",
+      "revision": "cdb5c3d5eed6ead6e5a341c8e56e669bb666725b",
+      "license": "cc-by-sa-4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "homepage": "https://nlp.stanford.edu/projects/snli/",
+      "citation": "Bowman et al. (2015). A large annotated corpus for learning natural language inference.",
+      "card_url": "https://huggingface.co/datasets/stanfordnlp/snli/blob/cdb5c3d5eed6ead6e5a341c8e56e669bb666725b/README.md",
+      "train_limit": 10000,
+      "files": [
+        {
+          "path": "plain_text/test-00000-of-00001.parquet",
+          "split": "test",
+          "bytes": 411531,
+          "sha256": "4696deda851c4d2385f26b58f2e13f9ed9f08ea7b42a3f4c2b97a9d08448878c"
+        },
+        {
+          "path": "plain_text/train-00000-of-00001.parquet",
+          "split": "train",
+          "bytes": 19614612,
+          "sha256": "ef9a7b25d97390a62aeda7abe26aec8640600f50b818eaeb9107097d60ac6620"
+        },
+        {
+          "path": "plain_text/validation-00000-of-00001.parquet",
+          "split": "validation",
+          "bytes": 413157,
+          "sha256": "00f5ed8deaed007fef3022f0215b287efbab815b1bb31ac3f3ff4f4129d41ffe"
+        }
+      ]
+    }
+  ]
+}

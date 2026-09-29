@@ -47,6 +47,20 @@ the other five ran on September 29. A control using the same executable and
 model files for both GPU backends confirms that switching the backend changes
 answers on its sampled rows (Appendix~\ref{sec:backend-sensitivity}).
 
+The separate Qwen3.5-4B LoRA run finished September 30, 2026. Its pinned
+base-model revision, source-file checksums, data split manifest, optimizer
+configuration, adapter, and export provenance are recorded under
+\texttt{training/}. The MMLU comparison uses the September 29 CUDA base run
+and the September 30 adapted run, with identical input/gold hashes, executable
+hash, backend, batch size, and JET flags. Both produce 14,042 responses and zero
+failures. The adapted model is a merged text-only Q8\_0 GGUF made with
+\texttt{--no-nextn}; the pre-existing base GGUF includes MTP weights. Each
+configuration has one complete-process timing run. The paired analysis counts
+semantic answer equivalence when multiple option labels share the same text.
+The base GGUF was obtained from a separate Q8\_0 conversion repository; a
+zero-adapter GGUF export of the pinned training checkpoint has not been
+evaluated, so the comparison does not isolate LoRA from source provenance.
+
 The shared-prefix comparison uses a preserved baseline executable. Both
 versions use eight input requests per chunk, nine sequence slots, 2,048 context
 tokens per sequence, token batches of 2,048, a microbatch size of 512, and an

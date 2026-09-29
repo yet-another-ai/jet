@@ -67,12 +67,17 @@ Use `\label` and `\ref` for equations, sections, figures, and tables. Add figure
 with `\includegraphics`; keep source figures outside `build/`.
 
 The report is organized as Introduction, Related Work, Decision Method,
-Efficient Inference, Experimental Evaluation, Discussion and Limitations,
-and Conclusion, followed by Statements, references, and a short experimental protocol.
+Efficient Inference, Experimental Evaluation, Task-Aligned Fine-Tuning,
+Discussion and Limitations, and Conclusion, followed by Statements, references,
+and a short experimental protocol.
 Local deployment on consumer GPUs is a central evaluation theme.
 
 The draft compares four JET models on an Arc A770 and six on an RTX 4090
 using full MMLU. Figure 2 includes both Vulkan and CUDA runs for the RTX 4090.
+It also marks the text-only Qwen3.5-4B LoRA CUDA run separately: 74.39% on
+14,042 MMLU questions versus 66.46% for the separately sourced 4B CUDA run, at
+10.17 versus 9.79 requests/s in one run per variant. The rates do not establish
+a repeatable speedup.
 The Vulkan RTX 4090 comparison ranges from
 Qwen3.5-0.8B (32.42%, 9.79 req/s) to Qwen3.5-27B (85.09%, 2.21 req/s), and
 Qwen3.6-35B-A3B (82.62%, 4.17 req/s). Jev 1.13 (89.06%, 2.86 req/s via API)
@@ -89,10 +94,10 @@ The Qwen3.5-27B CUDA run measured 84.92% and 3.66 req/s.
 On a fixed 570-question subset, a same-executable CUDA/Vulkan comparison
 independently confirms backend-dependent answer changes on the RTX 4090.
 
-The primary full-MMLU Vulkan runs were performed September 23--24, 2026;
-the CUDA runs were performed September 28--29. Results retain their original
+The primary RTX 4090 full-MMLU Vulkan runs were performed September 23--24,
+2026; the CUDA runs were performed September 28--29. The Arc A770 runs were
+performed September 28--29; the 4B and 9B additions use the same evaluation
+configuration as the 0.8B and 2B models. Results retain their original
 sample sizes, hardware, and timing boundaries. The report does not
 claim measured parity with Jev, calibrated probabilities, or cross-device bitwise
 reproducibility.
-
-The Arc A770 runs were performed September 28--29, 2026; the 4B and 9B additions use the same evaluation configuration as 0.8B and 2B.

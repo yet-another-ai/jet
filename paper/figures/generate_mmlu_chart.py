@@ -36,7 +36,8 @@ for r in rows:
         lines.append(rf'\node[anchor=west,font=\footnotesize\bfseries] at (0,{y}) {{{r["group"]}}};')
         last_group = r['group']
         y = round(y - 0.43, 2)
-    color = ('blue!65!black' if r.get('deployment') == 'a770' else
+    color = ('green!55!black' if r.get('fine_tuned') else
+             'blue!65!black' if r.get('deployment') == 'a770' else
              'violet!75!black' if r.get('backend') == 'CUDA' else
              {'mmlu': 'teal!75!black', 'api': 'orange!80!black'}[r['scope']])
     deployment_label = r['figure_label']
@@ -46,18 +47,20 @@ for r in rows:
     lines.append(rf'\draw[black!12] (6.3,{y}) -- (9.9,{y});')
     lines.append(rf'\draw[black!12] (11.5,{y}) -- (14.6,{y});')
     x = 6.3 + 3.6 * r['accuracy'] / 100
-    lines.append(rf'\fill[{color}] ({x:.4f},{y}) circle (2pt);')
+    marker = 'draw' if r.get('fine_tuned') else 'fill'
+    size = '2.8pt' if r.get('fine_tuned') else '2pt'
+    lines.append(rf'\{marker}[{color}] ({x:.4f},{y}) circle ({size});')
     lines.append(rf'\node[anchor=east] at (10.8,{y}) {{{r["accuracy"]:.2f}}};')
     rate = throughput(r)
     if rate is not None:
         x = 11.5 + 3.1 * rate / rate_max
-        lines.append(rf'\fill[{color}] ({x:.4f},{y}) circle (2pt);')
+        lines.append(rf'\{marker}[{color}] ({x:.4f},{y}) circle ({size});')
         label = ('\\(\\sim\\)' if r.get('approximate') else '') + f'{rate:.2f}'
     else:
         label = '---'
     lines.append(rf'\node[anchor=east] at (15.5,{y}) {{{label}}};')
     y = round(y - 0.43, 2)
 lines += [r'\end{tikzpicture}',
-          r'\caption{Full-MMLU accuracy and throughput with reasoning disabled. Blue: Arc A770 (Vulkan); teal: RTX 4090 (Vulkan); violet: RTX 4090 (CUDA); orange: Jev 1.13 hosted API. Each JET point combines accuracy and complete-process throughput from the same 14,042-question run. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
+          r'\caption{Full-MMLU accuracy and throughput with reasoning disabled. Blue: Arc A770 (Vulkan); teal: RTX 4090 (Vulkan); violet: RTX 4090 (CUDA); green outlined: Qwen3.5-4B LoRA (CUDA); orange: Jev 1.13 hosted API. Each JET point combines accuracy and complete-process throughput from the same 14,042-question run. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
           r'\label{fig:mmlu-throughput}', r'\end{figure}']
 (ROOT / 'mmlu-throughput.tex').write_text('\n'.join(lines) + '\n')

@@ -1,0 +1,66 @@
+\section{Task-Aligned Fine-Tuning}
+\label{sec:finetuning}
+The inference method above works with unmodified pretrained models. We also
+tested whether a smaller model can benefit from adaptation to JET's exact
+decision interface without changing its candidate-scoring rule. This experiment
+uses BF16 LoRA~\cite{lora}, not QLoRA, on the text component of
+Qwen3.5-4B. The base checkpoint is pinned to revision
+\texttt{851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}.
+
+\subsection{Training Method}
+The training mixture contains 22,791 records: 9,427 BoolQ~\cite{boolq},
+2,248 ARC-Easy and 1,116 ARC-Challenge~\cite{arc}, and 10,000
+SNLI~\cite{snli}. Each example is converted into a JET request. The Rust
+prompt exporter produces the same system and user messages as inference;
+the supervised continuation is the JSON-quoted \emph{answer text}, rather
+than an option letter or a generated explanation. We apply the model's chat
+template with reasoning disabled and compute cross-entropy only over the
+complete gold continuation. Prompt and padding tokens are masked, and no
+end-of-sequence token is appended because JET scores candidate text without it.
+The 2,048-token limit drops no selected training examples.
+
+LoRA uses rank 16, alpha 32, and dropout 0.05 on the language model's attention,
+feed-forward, and DeltaNet projection layers; the pretrained weights remain
+frozen. This trains 32.46 million of 4.24 billion parameters (0.77\%).
+One epoch uses a learning rate of $10^{-4}$, microbatch size four,
+gradient accumulation four, and gradient checkpointing, for 1,425 optimizer
+steps. A deterministic 512-example validation subset monitors loss, not MMLU
+accuracy. Preparation reserves official test splits, deduplicates normalized
+content before sampling, and excludes the frozen full-MMLU requests. MMLU is
+not a training source. These checks prevent the identified exact overlaps,
+but cannot exclude paraphrases or contamination in pretraining.
+
+\subsection{Measured Improvement}
+The adapter is merged into the BF16 base and converted to Q8\_0 GGUF. On the
+same 14,042 MMLU questions, executable, CUDA backend, and benchmark settings,
+the previously evaluated Qwen3.5-4B GGUF obtains 9,332 correct (66.46\%) and the adapted model
+obtains 10,446 (74.39\%), a gain of 7.93 percentage points. Mean gold NLL
+falls from 0.9671 to 0.7721. A paired answer comparison finds 1,770 questions
+corrected and 656 changed from correct to incorrect; 53 of 57 subjects improve,
+two decline, and two tie. Figure~\ref{fig:mmlu-throughput} places the adapted
+model alongside the unmodified model and other deployment choices.
+
+Complete-process throughput is 9.79 versus 10.17 requests/s for the reference
+and adapted Q8\_0 files, respectively. Each has only one run. The reference
+GGUF is a separately published conversion with MTP weights; the adapted export
+is text-only, and exact upstream weight-revision identity between the two has
+not been verified. The paired result compares deployed artifacts under matched
+evaluation settings, rather than isolating the adapter from source and
+conversion differences. The observed rate difference does not establish a
+repeatable inference speedup.
+
+\subsection{Engineering Issues and Scope}
+The conversion initially retained the base configuration's MTP layer count
+despite exporting only 32 text layers. Its GGUF metadata declared 33 layers,
+so JET rejected it at load time. Excluding NextN/MTP during conversion restored
+the correct 32-layer metadata and passed an inference smoke test before the
+full run. This illustrates why an adapter's training loss alone cannot validate
+the deployed artifact: prompt alignment, conversion, quantization, and native
+loading must all be checked.
+
+This first recipe trains neither the vision tower nor ordinal \texttt{score}
+decisions. Public BoolQ, ARC, and SNLI examples also differ from closed-loop
+JET applications. We have not tested QLoRA, alternative data mixtures, or a
+matched real-application holdout. The measured gain establishes improvement
+for the evaluated zero-shot JET MMLU artifacts, not for every decision domain.
+A zero-adapter export of the pinned base is needed for a stricter LoRA ablation.

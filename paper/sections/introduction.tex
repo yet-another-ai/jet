@@ -8,7 +8,7 @@ set.
 
 Dedicated decision models such as Jev use specialized training for these
 tasks~\cite{jev-introduction}. We examine a complementary approach: efficient
-decision inference from existing pretrained models, without additional training.
+decision inference from existing pretrained models, without requiring additional training.
 JET (Justification Evaluation in Transformer) scores each answer by its
 conditional likelihood and converts the scores into a choice, a binary
 probability, or an ordinal estimate.
@@ -18,6 +18,8 @@ question prefix across candidates and isolates recurrent state during candidate
 evaluation. These methods
 reduce repeated work while retaining the likelihood-based decision rule.
 CPU and GPU placement allow models to run under different memory constraints.
+An optional task-aligned LoRA experiment tests whether a smaller model can
+improve its decisions without changing the inference interface.
 
 We evaluate decision accuracy and throughput jointly on MMLU and BoolQ using
 consumer hardware. The comparison covers model choice and GPU hardware,
@@ -25,6 +27,8 @@ and execution optimizations, with Jev as a reference
 (Figure~\ref{fig:mmlu-throughput}). Full-MMLU evaluation measures decision
 quality and complete-process throughput; a controlled experiment on a fixed
 subset measures execution improvements.
+Section~\ref{sec:finetuning} reports the separate fine-tuning experiment and
+its deployment limitations.
 The observed 2.18--2.23-fold speedups preserve outputs in the tested comparison. These results assess the
 quality and cost of local decisions; differing evaluation and timing protocols
 do not establish parity with Jev.

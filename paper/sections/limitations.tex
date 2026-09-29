@@ -26,6 +26,11 @@ normalization does not establish calibration~\cite{calibration}; this requires
 separate empirical evaluation. NLL is a diagnostic, not a substitute for
 calibration curves, Brier scores, or selective-prediction evaluation.
 Pretraining data may also overlap benchmark content.
+The fine-tuning experiment excludes the frozen MMLU requests and exact
+normalized overlaps, but cannot rule out paraphrases or pretraining
+contamination. Its public text tasks do not establish improved visual,
+ordinal, or closed-loop decision quality. The training mixture, adapter rank,
+and quantization have no ablation study.
 
 Sampler-free selection removes sampling variance, but numerical differences
 across hardware, quantization, kernels, and batch layouts can remain. Exact

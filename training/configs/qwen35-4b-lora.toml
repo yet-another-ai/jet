@@ -1,0 +1,35 @@
+[model]
+id = "Qwen/Qwen3.5-4B"
+revision = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+attn_implementation = "sdpa"
+
+[data]
+train_file = "../data/default/train/records.jsonl"
+validation_file = "../data/default/validation/records.jsonl"
+max_length = 2048
+validation_max_samples = 512
+
+[lora]
+r = 16
+alpha = 32
+dropout = 0.05
+target_modules = [
+    "q_proj", "k_proj", "v_proj", "o_proj",
+    "gate_proj", "up_proj", "down_proj",
+    "in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a", "out_proj",
+]
+
+[training]
+output_dir = "../runs/qwen35-4b-lora"
+seed = 42
+epochs = 1.0
+learning_rate = 0.0001
+micro_batch_size = 1
+gradient_accumulation_steps = 16
+gradient_checkpointing = true
+warmup_steps = 0.03
+weight_decay = 0.0
+logging_steps = 10
+save_steps = 100
+eval_steps = 100
+save_total_limit = 2

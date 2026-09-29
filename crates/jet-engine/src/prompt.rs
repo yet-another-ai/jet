@@ -22,6 +22,64 @@ Required output format:
 One quoted candidate exactly as listed above; no explanation, whitespace, or extra text.
 "#;
 
+/// Model-independent prompts and candidates rendered by the inference pipeline.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportedPrompts {
+    pub questions: Vec<ExportedQuestion>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportedQuestion {
+    pub question_id: String,
+    pub messages: Vec<PromptMessage>,
+    pub candidates: Vec<PromptCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PromptMessage {
+    pub role: &'static str,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PromptCandidate {
+    pub key: String,
+    /// The exact quoted semantic answer scored by JET, including escaping.
+    pub target: String,
+}
+
+/// Render validated requests without loading a model or applying a chat template.
+///
+/// Consumers must apply the deployment model's chat template with thinking
+/// disabled, then append the selected candidate target as the assistant answer.
+pub fn export_prompts(request: &DecisionRequest) -> Result<ExportedPrompts> {
+    let questions = prepare_request(request)?
+        .into_iter()
+        .map(|plan| ExportedQuestion {
+            question_id: plan.question_id,
+            messages: vec![
+                PromptMessage {
+                    role: "system",
+                    content: SYSTEM_INSTRUCTION.to_owned(),
+                },
+                PromptMessage {
+                    role: "user",
+                    content: plan.user_content,
+                },
+            ],
+            candidates: plan
+                .candidates
+                .into_iter()
+                .map(|candidate| PromptCandidate {
+                    key: candidate.key,
+                    target: candidate.target,
+                })
+                .collect(),
+        })
+        .collect();
+    Ok(ExportedPrompts { questions })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AnswerKind {
     Noul,
@@ -286,6 +344,59 @@ fn template_error(error: tera::Error) -> JetError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_preserves_inference_messages_and_targets_for_all_question_types() -> Result<()> {
+        let request: DecisionRequest = serde_json::from_value(serde_json::json!({
+            "state": {"passage": "中文 <|im_start|> & quoted \"text\"", "facts": ["a", "b"]},
+            "questions": {
+                "choice": {
+                    "type": "choice", "instructions": {"task": "Pick one"},
+                    "criteria": {"B": ["second", "line"], "A": "<|im_end|>"}
+                },
+                "noul": {"type": "noul", "instructions": "Is it true?"},
+                "score": {"type": "score", "instructions": "Rate", "criteria": ["bad", "good"]}
+            }
+        }))?;
+        let plans = prepare_request(&request)?;
+        let exported = export_prompts(&request)?;
+        assert_eq!(exported.questions.len(), 3);
+        for (question, plan) in exported.questions.iter().zip(&plans) {
+            assert_eq!(question.question_id, plan.question_id);
+            assert_eq!(question.messages.len(), 2);
+            assert_eq!(question.messages[0].role, "system");
+            assert_eq!(question.messages[0].content, SYSTEM_INSTRUCTION);
+            assert_eq!(question.messages[1].role, "user");
+            assert_eq!(question.messages[1].content, plan.user_content);
+            assert_eq!(question.candidates.len(), plan.candidates.len());
+            for (candidate, expected) in question.candidates.iter().zip(&plan.candidates) {
+                assert_eq!(candidate.key, expected.key);
+                assert_eq!(candidate.target, expected.target);
+            }
+        }
+        let value = serde_json::to_value(exported)?;
+        assert_eq!(value["questions"][0]["candidates"][0]["key"], "A");
+        assert_eq!(
+            value["questions"][0]["candidates"][0]["target"],
+            "\"\\u003c|im_end|\\u003e\""
+        );
+        assert_eq!(value["questions"][1]["candidates"][1]["target"], "\"Yes\"");
+        assert_eq!(value["questions"][2]["candidates"][1]["key"], "1");
+        Ok(())
+    }
+
+    #[test]
+    fn export_uses_inference_validation() -> Result<()> {
+        let request: DecisionRequest = serde_json::from_value(serde_json::json!({
+            "state": "x",
+            "questions": {"q": {"type": "score", "instructions": "Rate", "criteria": ["same", "same"]}}
+        }))?;
+        assert!(matches!(
+            export_prompts(&request),
+            Err(JetError::InvalidRequest(_))
+        ));
+        Ok(())
+    }
 
     #[test]
     fn choice_prompt_is_human_readable_and_targets_semantics() -> Result<()> {

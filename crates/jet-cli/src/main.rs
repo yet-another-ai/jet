@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use base64::Engine as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use jet_core::{DecisionRequest, ErrorCode, JetError, Result};
-use jet_engine::{Engine, EngineConfig, ExecutionMode, ThinkingMode};
+use jet_engine::{Engine, EngineConfig, ExecutionMode, ThinkingMode, export_prompts};
 #[cfg(feature = "vision")]
 use jet_engine::{ImageInput, MultimodalDecisionRequest, VisionConfig};
 #[cfg(feature = "vision")]
@@ -24,8 +24,18 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Judge(JudgeArgs),
+    /// Export exact JET messages and candidate targets without loading a model.
+    ExportPrompts(ExportPromptsArgs),
     #[cfg(feature = "vision")]
     JudgeMultimodal(JudgeMultimodalArgs),
+}
+
+#[derive(clap::Args)]
+struct ExportPromptsArgs {
+    #[arg(long, default_value = "-")]
+    input: PathBuf,
+    #[arg(long, default_value = "-")]
+    output: PathBuf,
 }
 
 #[cfg(feature = "vision")]
@@ -216,6 +226,14 @@ fn main() -> ExitCode {
         .init();
 
     match Cli::parse().command {
+        Command::ExportPrompts(args) => match run_export_prompts(args) {
+            Ok(had_errors) if had_errors => ExitCode::FAILURE,
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("jet: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Judge(args) => match run_judge(args) {
             Ok(had_errors) if had_errors => ExitCode::FAILURE,
             Ok(_) => ExitCode::SUCCESS,
@@ -234,6 +252,30 @@ fn main() -> ExitCode {
             }
         },
     }
+}
+
+fn run_export_prompts(args: ExportPromptsArgs) -> Result<bool> {
+    let input = open_input(&args.input)?;
+    let mut output = open_output(&args.output)?;
+    let mut had_errors = false;
+    for line in input.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let result = serde_json::from_str::<DecisionRequest>(&line)
+            .map_err(JetError::from)
+            .and_then(|request| export_prompts(&request));
+        match result {
+            Ok(prompts) => write_json_line(&mut *output, &prompts)?,
+            Err(error) => {
+                had_errors = true;
+                write_json_line(&mut *output, &error_envelope(error))?;
+            }
+        }
+        output.flush()?;
+    }
+    Ok(had_errors)
 }
 
 fn run_judge(args: JudgeArgs) -> Result<bool> {
@@ -630,6 +672,10 @@ mod tests {
     fn parsed_judge(cli: Cli) -> std::result::Result<JudgeArgs, clap::Error> {
         match cli.command {
             Command::Judge(args) => Ok(args),
+            Command::ExportPrompts(_) => Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidSubcommand,
+                "expected judge command",
+            )),
             #[cfg(feature = "vision")]
             Command::JudgeMultimodal(_) => Err(clap::Error::raw(
                 clap::error::ErrorKind::InvalidSubcommand,

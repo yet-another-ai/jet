@@ -1,5 +1,5 @@
 JET uses pretrained language and vision-language models to select among a finite set of answers
-without additional training. It evaluates candidate likelihoods directly and
+without requiring additional training. It evaluates candidate likelihoods directly and
 shares computation across candidates. Experiments on consumer
 GPUs assess decision accuracy and execution cost. Full-set measurements
 on an Arc A770 with Vulkan and an RTX 4090 with Vulkan and CUDA cover all
@@ -10,4 +10,7 @@ The accuracy--throughput comparison covers model and hardware choices, with
 Jev as an external reference. A controlled execution experiment shows
 2.18--2.23-fold speedups from prefix reuse and cache management, with unchanged
 outputs on the tested workload.
-These results support local decision inference from existing models.
+A LoRA-adapted Qwen3.5-4B scores 74.39\% versus 66.46\% for a
+separately sourced Q8\_0 baseline on the same full-MMLU CUDA workload.
+These results support local decision
+inference from existing models and adaptation of a smaller model.

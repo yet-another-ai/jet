@@ -15,6 +15,7 @@ Figures are rounded from the recorded experiments.
 | Historical prototype preparation study (excluded from manuscript) | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
 | Full-MMLU model comparison | Local `tests/accuracy/generated/qwen35-*-4090-mmlu-full-20260924/` and `qwen36-4090-mmlu-full-fixed-20260923/` | Six complete 14,042-question RTX 4090 Vulkan runs, one/model, same binary/input/gold; each has 14,042 responses and zero evaluation failures. Summary below. |
 | Full-MMLU CUDA comparison | Local `tests/accuracy/generated/qwen35-*-4090-cuda-mmlu-full-20260929/` and `qwen36-4090-cuda-mmlu-full-20260928/` | Six complete 14,042-question RTX 4090 CUDA runs, one/model, same binary/input/gold and run settings. The same-executable 570-question control below confirms backend-dependent answer changes for the three models tested. |
+| Qwen3.5-4B LoRA full-MMLU comparison | Local `training/runs/qwen35-4b-lora/`, `training/exports/qwen35-4b-lora-merged/export.json`, and `tests/accuracy/generated/qwen35-4b-lora-4090-cuda-mmlu-full-20260930/` | One completed BF16 LoRA run and one complete 14,042-question CUDA benchmark; same input/gold, executable and flags as the September 29 CUDA base run; 14,042 responses, zero failures. |
 | Hybrid correctness and rejected batching | `docs/accuracy.md`, Hybrid recurrent batching correctness; `docs/performance.md`, Deferred independent-request experiment | Evidence for retaining serial recurrent continuations; not evidence of a universal native-backend bug. |
 | Multimodal design | `README.md`, Multimodal decisions; `demos/doom/README.md`; `crates/jet-engine/src/llama/vision.rs` | Implemented interface/demo; no quantitative visual-quality claim. |
 
@@ -150,6 +151,53 @@ The control establishes backend-dependent answer changes on the measured
 subset; the complete-run throughput values remain the observed rates of their
 respective backend runs.
 
+## Qwen3.5-4B LoRA adaptation
+
+The completed training run is `training/runs/qwen35-4b-lora/completed.json`.
+It records the pinned Qwen/Qwen3.5-4B revision
+`851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`, one epoch, 1,425 steps,
+22,791 retained training records, and zero overlength drops. The training log
+reports 32,464,896 trainable of 4,238,216,192 total parameters (0.7660%).
+The data manifest `training/data/default/manifest.json` records source revisions and hashes,
+10,708 validation records, split isolation, and exclusion of all 14,042 frozen
+MMLU requests. This rules out identified exact normalized overlaps only.
+The adapter SHA-256 is
+`2e148c2ef49af6a02e6c2cbcd69f3f30ef3386d6763e466243c44e4622fcf20f`.
+
+The text-only GGUF export is recorded in
+`training/exports/qwen35-4b-lora-merged/export.json` with SHA-256
+`03dd562dabca7dedf49f2523b1806e58ba6e626ff3377c4f959e041fa70fa737`.
+The first conversion inherited `mtp_num_hidden_layers=1` from the HF config,
+declared 33 GGUF blocks despite containing only 32, and failed to load.
+The retained export uses `--no-nextn`, declares 32 blocks, and passed a JET
+inference smoke run before full evaluation. The invalid GGUF was removed.
+
+The matching base CUDA run is
+`tests/accuracy/generated/qwen35-4b-4090-cuda-mmlu-full-20260929/`;
+the adapted run is
+`tests/accuracy/generated/qwen35-4b-lora-4090-cuda-mmlu-full-20260930/`.
+Both have 14,042 responses, zero failures, input SHA-256
+`5393a9f78039744f999e7c403a0bac0fd7b26931f513e3f9e8dc8ef34d69cf7c`,
+gold SHA-256
+`6f0e61960c7459f6738805a4c2e2f89b9287171d798760ea140f8b3bb57cf209`,
+and executable SHA-256
+`fb8394921e604e8281cfae18b253d2b1608184c6f8e299896d4d6acff3057f83`.
+The base answers 9,332/14,042 correctly (66.46%), mean gold NLL 0.9671,
+wall time 1,434.30 s (9.79 req/s). LoRA answers 10,446/14,042 correctly
+(74.39%), mean gold NLL 0.7721, wall time 1,381.20 s (10.17 req/s).
+`training/runs/qwen35-4b-mmlu-paired-analysis.json` records 1,770 base-wrong/
+LoRA-right and 656 base-right/LoRA-wrong cases, for a net 1,114-question gain;
+53 subjects improve, two decline, and two tie. The baseline calibration report
+was recomputed with the current evaluator at
+`training/runs/qwen35-4b-mmlu-baseline-recomputed.json`.
+Only one timing run per variant exists. The base GGUF includes MTP weights,
+whereas the adapted text-only GGUF excludes them. The base GGUF comes from
+`bartowski/Qwen_Qwen3.5-4B-GGUF` revision
+`4168f45a16a1290d65a4ec0fa312ae917a4c15d6`; exact upstream weight
+identity with the pinned HF training checkpoint was not verified. This is a
+matched-protocol comparison of deployed artifacts, not a LoRA-only ablation.
+The 3.7% wall-time difference is not a controlled speedup claim.
+
 ## Larger-model and Jev comparison
 
 - Jev 1.13: 89.06% on the complete MMLU test set, supplied by the user as a prior
@@ -186,13 +234,15 @@ maps. This corrects the earlier draft's boolean/index output description.
 - The user supplied Jev 1.13 full-MMLU accuracy of 89.06% and API throughput of
   2.86 req/s. Neither number is a provider-published result. API concurrency and
   detailed timing boundaries were not supplied.
-- `figures/mmlu-results.json` contains four Arc A770 and twelve RTX 4090 full-MMLU
-  runs, plus historical Qwen3.5 prefix measurements.
+- `figures/mmlu-results.json` contains four Arc A770 and thirteen RTX 4090
+  full-MMLU runs, including the adapted Qwen3.5-4B, plus historical Qwen3.5
+  prefix measurements.
 - Every displayed JET point combines full-MMLU accuracy and throughput from
   the same run. Jev uses full-MMLU accuracy and a separately reported API rate.
 - Figure 2 selects representative disabled-thinking configurations using
   `show_in_figure`; `figure_label` supplies reader-facing deployment names.
-  Historical measurements remain in the data file.
+  The adapted 4B point uses an outlined green marker. Historical measurements
+  remain in the data file.
 - For each displayed JET point, the plotted rate is request count divided by
   complete-process wall time. Jev uses the separately supplied API rate.
 - No throughput is imputed for external model-card results, invalid state-isolation
@@ -202,7 +252,8 @@ maps. This corrects the earlier draft's boolean/index output description.
 
 The editorial revision simplified prose and retained the original five displayed
 equations and workflow diagram. This update adds full-MMLU model tables and
-four Arc A770 and twelve RTX 4090 points to the accuracy--throughput figure. The
+four Arc A770 and twelve baseline RTX 4090 points to the
+accuracy--throughput figure; the LoRA experiment adds one more RTX 4090 point. The
 prototype 285-question preparation study is excluded from the manuscript and figure data.
 
 ## Token-to-decision algorithm

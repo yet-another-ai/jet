@@ -87,6 +87,7 @@ Some models expose a supported reasoning protocol. `--thinking auto --thinking-t
 - [Build, GPU backends, CLI options, and multimodal usage](docs/advanced.md)
 - [Rust API crates](crates/jet-engine/src/lib.rs)
 - [Accuracy evaluation](tests/accuracy/README.md)
+- [Qwen3.5-4B LoRA training and public datasets](training/README.md)
 - [Technical report](paper/README.md)
 
 ## Scope

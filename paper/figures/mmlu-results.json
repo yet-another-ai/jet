@@ -213,6 +213,20 @@
     "figure_label": "RTX 4090"
   },
   {
+    "group": "JET / Qwen3.5-4B",
+    "label": "RTX 4090, LoRA, full MMLU, CUDA",
+    "accuracy": 74.3911,
+    "correct": 10446,
+    "req_s": 10.1665,
+    "wall_s": 1381.1975,
+    "requests": 14042,
+    "scope": "mmlu",
+    "backend": "CUDA",
+    "fine_tuned": true,
+    "show_in_figure": true,
+    "figure_label": "RTX 4090, LoRA"
+  },
+  {
     "group": "JET / Qwen3.5-9B",
     "label": "Arc A770, full MMLU, Vulkan",
     "accuracy": 73.5793,

@@ -9,6 +9,9 @@ mod vision;
 #[cfg(feature = "vision")]
 pub use config::VisionConfig;
 pub use config::{Backend, EngineConfig, ExecutionMode, ThinkingConfig, ThinkingMode};
+pub use prompt::{
+    ExportedPrompts, ExportedQuestion, PromptCandidate, PromptMessage, export_prompts,
+};
 pub use timing::EngineTimings;
 #[cfg(feature = "vision")]
 pub use vision::{
