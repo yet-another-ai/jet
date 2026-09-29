@@ -71,3 +71,17 @@ running the current version alone does not reproduce those baselines.
 Raw artifacts are excluded from the repository. Prefix
 records were checked locally. The full-MMLU records include local responses,
 reports, and provenance.
+
+\subsection{GPU Backend Sensitivity}
+\label{sec:backend-sensitivity}
+Even on the same GPU, CUDA and Vulkan can produce different top-1 answers.
+Changes from correct to incorrect and from incorrect to correct often offset
+one another in aggregate accuracy, masking differences on individual questions.
+Vulkan execution options also affect answers: disabling
+\texttt{NV\_coopmat2}, integer dot product, or FP16 support separately changes
+results, yet none of these single-option changes makes Vulkan fully agree
+with CUDA or CPU execution. The observed Vulkan differences between the
+Arc A770 and RTX 4090 arise primarily because the A770 cannot enable
+\texttt{KHR\_cooperative\_matrix}. Consequently, small accuracy differences
+across devices or backends should not be read as isolated model-quality changes;
+paired per-question responses are needed to reveal the underlying changes.

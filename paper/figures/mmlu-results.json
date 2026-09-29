@@ -50,6 +50,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "deployment": "a770",
+    "backend": "Vulkan",
     "show_in_figure": true,
     "figure_label": "Arc A770, full MMLU"
   },
@@ -62,6 +63,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
+    "backend": "Vulkan",
     "figure_label": "RTX 4090, full MMLU"
   },
   {
@@ -125,6 +127,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "deployment": "a770",
+    "backend": "Vulkan",
     "show_in_figure": true,
     "figure_label": "Arc A770, full MMLU"
   },
@@ -137,6 +140,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
+    "backend": "Vulkan",
     "figure_label": "RTX 4090, full MMLU"
   },
   {
@@ -148,6 +152,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
+    "backend": "Vulkan",
     "figure_label": "RTX 4090, full MMLU"
   },
   {
@@ -159,6 +164,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
+    "backend": "Vulkan",
     "figure_label": "RTX 4090, full MMLU"
   },
   {
@@ -170,6 +176,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
+    "backend": "Vulkan",
     "figure_label": "RTX 4090, full MMLU"
   },
   {
@@ -181,6 +188,7 @@
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
+    "backend": "Vulkan",
     "figure_label": "RTX 4090, GPU inference"
   },
   {
