@@ -58,12 +58,26 @@
     "group": "JET / Qwen3.5-0.8B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 32.417,
+    "correct": 4552,
     "req_s": 9.791,
     "wall_s": 1434.163,
     "requests": 14042,
     "scope": "mmlu",
     "show_in_figure": true,
     "backend": "Vulkan",
+    "figure_label": "RTX 4090"
+  },
+  {
+    "group": "JET / Qwen3.5-0.8B",
+    "label": "RTX 4090, full MMLU, CUDA",
+    "accuracy": 32.7589,
+    "correct": 4600,
+    "req_s": 14.159,
+    "wall_s": 991.746,
+    "requests": 14042,
+    "scope": "mmlu",
+    "backend": "CUDA",
+    "show_in_figure": true,
     "figure_label": "RTX 4090"
   },
   {
@@ -135,6 +149,7 @@
     "group": "JET / Qwen3.5-2B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 48.5543,
+    "correct": 6818,
     "req_s": 9.728,
     "wall_s": 1443.475,
     "requests": 14042,
@@ -144,9 +159,23 @@
     "figure_label": "RTX 4090"
   },
   {
+    "group": "JET / Qwen3.5-2B",
+    "label": "RTX 4090, full MMLU, CUDA",
+    "accuracy": 48.4262,
+    "correct": 6800,
+    "req_s": 13.664,
+    "wall_s": 1027.701,
+    "requests": 14042,
+    "scope": "mmlu",
+    "backend": "CUDA",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090"
+  },
+  {
     "group": "JET / Qwen3.5-4B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 66.3937,
+    "correct": 9323,
     "req_s": 7.07,
     "wall_s": 1986.136,
     "requests": 14042,
@@ -156,9 +185,23 @@
     "figure_label": "RTX 4090"
   },
   {
+    "group": "JET / Qwen3.5-4B",
+    "label": "RTX 4090, full MMLU, CUDA",
+    "accuracy": 66.4578,
+    "correct": 9332,
+    "req_s": 9.790,
+    "wall_s": 1434.296,
+    "requests": 14042,
+    "scope": "mmlu",
+    "backend": "CUDA",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090"
+  },
+  {
     "group": "JET / Qwen3.5-9B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 73.6647,
+    "correct": 10344,
     "req_s": 5.694,
     "wall_s": 2466.263,
     "requests": 14042,
@@ -168,9 +211,23 @@
     "figure_label": "RTX 4090"
   },
   {
+    "group": "JET / Qwen3.5-9B",
+    "label": "RTX 4090, full MMLU, CUDA",
+    "accuracy": 73.5650,
+    "correct": 10330,
+    "req_s": 8.3448,
+    "wall_s": 1682.729,
+    "requests": 14042,
+    "scope": "mmlu",
+    "backend": "CUDA",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090"
+  },
+  {
     "group": "JET / Qwen3.5-27B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 85.0876,
+    "correct": 11948,
     "req_s": 2.21,
     "wall_s": 6353.754,
     "requests": 14042,
@@ -180,9 +237,23 @@
     "figure_label": "RTX 4090"
   },
   {
+    "group": "JET / Qwen3.5-27B",
+    "label": "RTX 4090, full MMLU, CUDA",
+    "accuracy": 84.9238,
+    "correct": 11925,
+    "req_s": 3.664,
+    "wall_s": 3832.361,
+    "requests": 14042,
+    "scope": "mmlu",
+    "backend": "CUDA",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090"
+  },
+  {
     "group": "JET / Qwen3.6-35B-A3B",
     "label": "RTX 4090, full MMLU, Vulkan",
     "accuracy": 82.6164,
+    "correct": 11601,
     "req_s": 4.166,
     "wall_s": 3370.707,
     "requests": 14042,
@@ -193,13 +264,16 @@
   },
   {
     "group": "JET / Qwen3.6-35B-A3B",
-    "label": "RTX 4090, full MMLU, CUDA, newer executable",
+    "label": "RTX 4090, full MMLU, CUDA",
     "accuracy": 82.5737,
+    "correct": 11595,
     "req_s": 4.963,
     "wall_s": 2829.358,
     "requests": 14042,
     "scope": "mmlu",
-    "show_in_figure": false
+    "backend": "CUDA",
+    "show_in_figure": true,
+    "figure_label": "RTX 4090"
   },
   {
     "group": "Jev 1.13",

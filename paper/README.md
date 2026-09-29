@@ -72,7 +72,8 @@ and Conclusion, followed by Statements, references, and a short experimental pro
 Local deployment on consumer GPUs is a central evaluation theme.
 
 The draft compares two JET models on an Arc A770 and six on an RTX 4090
-using full MMLU. The RTX 4090 comparison ranges from
+using full MMLU. Figure 2 includes both Vulkan and CUDA runs for the RTX 4090.
+The Vulkan RTX 4090 comparison ranges from
 Qwen3.5-0.8B (32.42%, 9.79 req/s) to Qwen3.5-27B (85.09%, 2.21 req/s), and
 Qwen3.6-35B-A3B (82.62%, 4.17 req/s). Jev 1.13 (89.06%, 2.86 req/s via API)
 and published larger-model scores provide context. The report formalizes sampler-free candidate
@@ -82,12 +83,14 @@ the mapping from quantitative claims to source records and the remaining experim
 The full-set Arc A770 and RTX 4090 rates are each measured on the same 14,042 requests as their
 accuracy scores. Engineering details, commands, and artifact
 provenance belong in the repository documentation rather than the manuscript.
-A later Qwen3.6-35B-A3B CUDA full-set check measured 82.57% and 4.96 req/s
-with a newer executable; it is reported separately from the uniform Vulkan
-model comparison.
+A Qwen3.6-35B-A3B CUDA full-set run measured 82.57% and 4.96 req/s;
+five corresponding Qwen3.5 CUDA runs complete the six-model CUDA series.
+The Qwen3.5-27B CUDA run measured 84.92% and 3.66 req/s.
+On a fixed 570-question subset, a same-executable CUDA/Vulkan comparison
+independently confirms backend-dependent answer changes on the RTX 4090.
 
-The primary full-MMLU runs were performed September 23--24, 2026, with a
-separate CUDA check on September 28. Results retain their original
-sample sizes, hardware, executor versions, and timing boundaries. The report does not
+The primary full-MMLU Vulkan runs were performed September 23--24, 2026;
+the CUDA runs were performed September 28--29. Results retain their original
+sample sizes, hardware, and timing boundaries. The report does not
 claim measured parity with Jev, calibrated probabilities, or cross-device bitwise
 reproducibility.

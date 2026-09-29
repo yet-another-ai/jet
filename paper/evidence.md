@@ -4,7 +4,7 @@ Prepared against Jet `4ff0ab63018e79e5f4639aef97924f4e26bb0405`, with native
 submodule `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`. These identify the source
 snapshot consulted, not every historical benchmark binary. The RTX 4090 full-MMLU
 runs were performed on September 23--24, 2026; the Arc A770 runs followed on
-September 28, after the first draft.
+September 28, and the RTX 4090 CUDA series finished on September 29.
 Figures are rounded from the recorded experiments.
 
 | Report claim/table | Source record | Conditions and interpretation |
@@ -14,6 +14,7 @@ Figures are rounded from the recorded experiments.
 | 66.03% fewer prefill tokens | Same prefix section | 378,526 old tokens derived from schedule; 128,583 new tokens instrumented. Not a wall-time estimate. |
 | Historical prototype preparation study (excluded from manuscript) | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
 | Full-MMLU model comparison | Local `tests/accuracy/generated/qwen35-*-4090-mmlu-full-20260924/` and `qwen36-4090-mmlu-full-fixed-20260923/` | Six complete 14,042-question RTX 4090 Vulkan runs, one/model, same binary/input/gold; each has 14,042 responses and zero evaluation failures. Summary below. |
+| Full-MMLU CUDA comparison | Local `tests/accuracy/generated/qwen35-*-4090-cuda-mmlu-full-20260929/` and `qwen36-4090-cuda-mmlu-full-20260928/` | Six complete 14,042-question RTX 4090 CUDA runs, one/model, same binary/input/gold and run settings. The same-executable 570-question control below confirms backend-dependent answer changes for the three models tested. |
 | Hybrid correctness and rejected batching | `docs/accuracy.md`, Hybrid recurrent batching correctness; `docs/performance.md`, Deferred independent-request experiment | Evidence for retaining serial recurrent continuations; not evidence of a universal native-backend bug. |
 | Multimodal design | `README.md`, Multimodal decisions; `demos/doom/README.md`; `crates/jet-engine/src/llama/vision.rs` | Implemented interface/demo; no quantitative visual-quality claim. |
 
@@ -103,17 +104,37 @@ checksums are in the local `qwen35-model-sources-20260924.json` file.
 The Qwen3.6 source revision and SHA-256 are pinned in
 `scripts/download-accuracy-models.sh`.
 
-The September 28 CUDA cross-check is retained in
-`tests/accuracy/generated/qwen36-4090-cuda-mmlu-full-20260928/`.
-It used the same request, gold, and evaluator hashes as the Vulkan full run,
-but executable SHA-256
-`fb8394921e604e8281cfae18b253d2b1608184c6f8e299896d4d6acff3057f83`
-at source commit `81828a89754977561b590d27ac1bfb60931fa473`.
-Its one successful run returned 14,042 responses, zero failures, and
-11,595 correct (82.57%) in 2,829.36 seconds (4.96 requests/s).
-There are 328 changed top-1 choices versus the older Vulkan binary's run;
-the six-model table therefore keeps its common Vulkan binary, and the CUDA
-wall-time difference is not presented as an isolated backend speedup.
+The RTX 4090 CUDA series consists of the September 28 Qwen3.6 run under
+`tests/accuracy/generated/qwen36-4090-cuda-mmlu-full-20260928/` and five
+September 29 Qwen3.5 runs under
+`tests/accuracy/generated/qwen35-*-4090-cuda-mmlu-full-20260929/`.
+The CUDA runs use the same request and gold files and evaluation settings as
+the Vulkan runs. The CUDA invocation selects `--backend cuda` and writes to a
+separate output path.
+Each CUDA model ran once in a fresh process with full GPU placement.
+
+| Model | Correct / 14,042 | Accuracy | Wall (s) | Req./s |
+| --- | ---: | ---: | ---: | ---: |
+| Qwen3.5-0.8B Q8_0 | 4,600 | 32.76% | 991.75 | 14.16 |
+| Qwen3.5-2B Q8_0 | 6,800 | 48.43% | 1,027.70 | 13.66 |
+| Qwen3.5-4B Q8_0 | 9,332 | 66.46% | 1,434.30 | 9.79 |
+| Qwen3.5-9B Q8_0 | 10,330 | 73.57% | 1,682.73 | 8.34 |
+| Qwen3.5-27B Q4_K_M | 11,925 | 84.92% | 3,832.36 | 3.66 |
+| Qwen3.6-35B-A3B Q4_K_M | 11,595 | 82.57% | 2,829.36 | 4.96 |
+
+All six summaries record one completed run, 14,042 responses, zero evaluation
+failures, and the CUDA backend. Their logs select `CUDA0` and offload every
+model layer to the RTX 4090. The displayed rate is 14,042 divided by each
+run's full-process wall time; there is no repeat-run variance estimate.
+
+Qwen3.6 has 328 changed top-1 choices between the CUDA and Vulkan runs.
+A same-executable control on 570 questions (ten per subject) changes 16, 12,
+and 14 top-1 choices for Qwen3.5-0.8B, Qwen3.5-2B, and Qwen3.6-35B-A3B,
+respectively, when switching between CUDA and Vulkan. On those rows, its
+outputs reproduce the corresponding historical full-run projections exactly.
+The control establishes backend-dependent answer changes on the measured
+subset; the complete-run throughput values remain the observed rates of their
+respective backend runs.
 
 ## Larger-model and Jev comparison
 
@@ -151,15 +172,15 @@ maps. This corrects the earlier draft's boolean/index output description.
 - The user supplied Jev 1.13 full-MMLU accuracy of 89.06% and API throughput of
   2.86 req/s. Neither number is a provider-published result. API concurrency and
   detailed timing boundaries were not supplied.
-- `figures/mmlu-results.json` contains two Arc A770 and six RTX 4090 full-MMLU
-  runs, the later CUDA check, and historical Qwen3.5 prefix measurements.
+- `figures/mmlu-results.json` contains two Arc A770 and twelve RTX 4090 full-MMLU
+  runs, plus historical Qwen3.5 prefix measurements.
 - Every displayed JET point combines full-MMLU accuracy and throughput from
   the same run. Jev uses full-MMLU accuracy and a separately reported API rate.
 - Figure 2 selects representative disabled-thinking configurations using
   `show_in_figure`; `figure_label` supplies reader-facing deployment names.
   Historical measurements remain in the data file.
-- Missing rates remain null. Where wall time is known but no rate is published,
-  rate = request count / complete-process seconds.
+- For each displayed JET point, the plotted rate is request count divided by
+  complete-process wall time. Jev uses the separately supplied API rate.
 - No throughput is imputed for external model-card results, invalid state-isolation
   experiments, or diagnostic slices. Those points are not part of the figure.
 
@@ -167,7 +188,7 @@ maps. This corrects the earlier draft's boolean/index output description.
 
 The editorial revision simplified prose and retained the original five displayed
 equations and workflow diagram. This update adds full-MMLU model tables and
-two Arc A770 and six RTX 4090 points to the accuracy--throughput figure. The
+two Arc A770 and twelve RTX 4090 points to the accuracy--throughput figure. The
 prototype 285-question preparation study is excluded from the manuscript and figure data.
 
 ## Token-to-decision algorithm

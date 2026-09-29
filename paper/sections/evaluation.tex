@@ -33,7 +33,7 @@ On full MMLU with Vulkan and full GPU placement on an RTX 4090, Qwen3.5-27B achi
 4.17 requests/s. Section~\ref{sec:mmlu-comparison} reports the complete model
 comparison. The Arc A770 full-MMLU runs below cover two models that fit entirely in its
 16\,GiB of memory. Their accuracy and throughput refer to the same complete
-14,042-question workload. The RTX 4090 runs use a separate machine and binary;
+14,042-question workload. The RTX 4090 runs use a separate machine;
 the measured rates are not a controlled hardware speedup comparison.
 
 \subsection{Decision Quality and Model Selection}
@@ -98,7 +98,7 @@ subset estimates when comparing model quality and end-to-end throughput.
 
 \begin{table}[htbp]
 \centering\small
-\caption{Full MMLU test set on RTX 4090, 14,042 requests per model. Wall time
+\caption{Full MMLU test set on RTX 4090 with Vulkan, 14,042 requests per model. Wall time
 includes model loading and shutdown; throughput is requests divided by wall time.
 One run per model, with no repeat-run variance estimate.}
 \label{tab:full-mmlu}
@@ -119,16 +119,19 @@ Qwen3.6-35B-A3B & Q4\_K\_M & 11,601 & 82.62 & 3,370.71 & 4.17 \\
 Qwen3.5-27B answers 347 more questions correctly than Qwen3.6-35B-A3B,
 while the latter processes approximately 1.89 times as many requests per second.
 The architectures and model generations differ, so this contrast does not
-isolate the effect of parameter count. A subsequent full-set CUDA run of Qwen3.6-35B-A3B on the same RTX 4090 and
-identical input files scores 11,595/14,042 (82.57\%) in 2,829.36 seconds
-(4.96 requests/s). It uses a newer executable than the Vulkan model comparison;
-328 top-1 choices differ from that Vulkan run. The wall-time difference cannot
-therefore be attributed to the GPU backend alone. We retain the same-binary
-Vulkan runs in Table~\ref{tab:full-mmlu} and Figure~\ref{fig:mmlu-throughput}.
+isolate the effect of parameter count. Figure~\ref{fig:mmlu-throughput} adds
+corresponding full-set CUDA runs of the same six models on the RTX 4090. The
+Qwen3.6-35B-A3B CUDA run scores 11,595/14,042 (82.57\%) in 2,829.36 seconds
+(4.96 requests/s); Qwen3.5-27B scores 11,925/14,042 (84.92\%) in
+3,832.36 seconds (3.66 requests/s). For Qwen3.6, 328 top-1 choices differ
+between the full-set CUDA and Vulkan runs. A same-executable backend check on
+a fixed subset confirms that switching backend changes decisions
+(Appendix~\ref{sec:backend-sensitivity}). Table~\ref{tab:full-mmlu}
+retains the Vulkan measurements.
 
 Table~\ref{tab:mmlu-comparison} places selected JET results alongside a manually
 measured Jev score and published results for larger instruction-tuned models.
-On the complete MMLU test set, JET with Qwen3.5-27B on an RTX 4090
+On the complete MMLU test set, JET with Qwen3.5-27B and Vulkan on an RTX 4090
 achieves 85.09\%. The author's manual evaluation of Jev 1.13 yields 89.06\%,
 with a separately reported API throughput of 2.86 requests/s. Jev's evaluated
 interface is sampler-free and exposes no configurable reasoning or few-shot
@@ -146,8 +149,8 @@ measurements of those models running in JET.}
 System / model & MMLU (\%) & Evaluation basis \\
 \midrule
 \multicolumn{3}{l}{\emph{Full-MMLU evaluations}} \\
-JET / Qwen3.5-27B, RTX 4090 & 85.09 & Full MMLU test set; local execution \\
-JET / Qwen3.6-35B-A3B, RTX 4090 & 82.62 & Full MMLU test set; local execution \\
+JET / Qwen3.5-27B, RTX 4090 & 85.09 & Full MMLU test set; Vulkan; local execution \\
+JET / Qwen3.6-35B-A3B, RTX 4090 & 82.62 & Full MMLU test set; Vulkan; local execution \\
 Jev 1.13 & 89.06 & Full MMLU test set; native decision interface \\
 \midrule
 \multicolumn{3}{l}{\emph{Published larger-model references}} \\
@@ -179,24 +182,24 @@ likelihoods are not presented as equivalent calibrated confidence estimates. Jev
 parallel evaluation of independent questions; JET's hybrid path evaluates
 candidate continuations serially while sharing their prefix~\cite{jev-docs,jev-workflows}.
 
-The manual Jev 1.13 measurement reports 2.86 requests/s via API. On full MMLU,
-JET reaches 4.17 requests/s with Qwen3.6-35B-A3B or 2.21 requests/s with
+The manual Jev 1.13 measurement reports 2.86 requests/s via API. On full MMLU
+with Vulkan, JET reaches 4.17 requests/s with Qwen3.6-35B-A3B or 2.21 requests/s with
 Qwen3.5-27B on the RTX 4090, including startup and model loading. The reported
 rates show a local accuracy--throughput choice, but differences in timing
 boundaries preclude a controlled speedup claim. JET exposes local placement
 and model choice; the evaluated Jev interface does not
 expose a reasoning mode. Its hardware configuration is unknown.
 
-Figure~\ref{fig:mmlu-throughput} summarizes selected evaluated
-JET configurations for each model and hardware deployment, with reasoning
+Figure~\ref{fig:mmlu-throughput} summarizes evaluated
+JET configurations for each model and GPU backend, with reasoning
 disabled, alongside Jev. Early prompt baselines, intermediate optimization
 variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix
-comparison improves throughput without changing responses. Within the RTX 4090 full-set comparison, Qwen3.5-27B provides the
+comparison improves throughput without changing responses. Within the RTX 4090 Vulkan full-set comparison, Qwen3.5-27B provides the
 highest MMLU accuracy, while Qwen3.6-35B-A3B provides greater throughput.
 These results distinguish gains from model capability and execution efficiency.
 
-The Arc A770 and RTX 4090 points each show accuracy and throughput from the
-same full-MMLU run. They use different binaries and hardware. Jev uses
+Each Arc A770 and RTX 4090 point shows accuracy and throughput from the
+same full-MMLU run. Jev uses
 full-MMLU accuracy and a separately reported API rate.
 Published larger-model scores remain in Table~\ref{tab:mmlu-comparison}
 because corresponding throughput measurements are unavailable.

@@ -8,7 +8,7 @@ Full GPU placement supports the measured models on the two devices.
 Performance still depends on model size, candidate count and length, and hardware.
 
 The model comparison evaluates the complete MMLU test set but has one run per
-model, so it provides no repeat-run variance estimate. Model versions,
+model and backend, so it provides no repeat-run variance estimate. Model versions,
 quantization, placement, and timing boundaries differ across studies, so their
 results cannot be treated as a controlled hardware comparison. The prefix study
 changes both state reuse and cache management; it does not isolate their
