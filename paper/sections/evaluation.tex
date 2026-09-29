@@ -4,7 +4,7 @@
 We use MMLU and BoolQ~\cite{boolq,mmlu} to examine three questions: what
 decision quality pretrained models provide, whether they can support local
 inference on consumer hardware, and how execution optimizations affect cost
-at fixed decision quality. The full-MMLU study compares two models on the Arc
+at fixed decision quality. The full-MMLU study compares four models on the Arc
 A770 and six on the RTX 4090; a fixed subset supports a controlled prefix-reuse study. The principal
 comparisons disable reasoning generation. Appendix~\ref{sec:reproducibility}
 describes the data and settings.
@@ -31,14 +31,14 @@ without server-class accelerators.
 On full MMLU with Vulkan and full GPU placement on an RTX 4090, Qwen3.5-27B achieves
 85.09\% at 2.21 requests/s and Qwen3.6-35B-A3B achieves 82.62\% at
 4.17 requests/s. Section~\ref{sec:mmlu-comparison} reports the complete model
-comparison. The Arc A770 full-MMLU runs below cover two models that fit entirely in its
+comparison. The Arc A770 full-MMLU runs below cover four models that fit entirely in its
 16\,GiB of memory. Their accuracy and throughput refer to the same complete
 14,042-question workload. The RTX 4090 runs use a separate machine;
 the measured rates are not a controlled hardware speedup comparison.
 
 \subsection{Decision Quality and Model Selection}
 Table~\ref{tab:models} reports disabled-thinking decision quality on the same
-14,042 MMLU requests using Vulkan on the Arc A770. Both models use Q8\_0
+14,042 MMLU requests using Vulkan on the Arc A770. All four models use Q8\_0
 weights and full GPU placement.
 The scoring formulation is unchanged by prefix reuse. Response-equivalence
 checks in Sections~\ref{sec:prefix-results} and~\ref{sec:repeatability}
@@ -56,12 +56,15 @@ Model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
 \midrule
 Qwen3.5-0.8B & Q8\_0 & 4,615 & 32.87 & 3,015.29 & 4.66 \\
 Qwen3.5-2B & Q8\_0 & 6,807 & 48.48 & 4,219.81 & 3.33 \\
+Qwen3.5-4B & Q8\_0 & 9,334 & 66.47 & 9,832.76 & 1.43 \\
+Qwen3.5-9B & Q8\_0 & 10,332 & 73.58 & 13,307.56 & 1.06 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The 2B model has higher full-MMLU accuracy than the 0.8B model on the A770,
-while the 0.8B model is faster. The full-set results provide the model-quality estimates used in this paper.
+Across the four A770 runs, accuracy rises from 32.87\% with 0.8B to 73.58\%
+with 9B, while throughput falls from 4.66 to 1.06 requests/s. These full-set
+results provide the model-quality estimates used in this paper.
 
 \subsection{Shared-Prefix Execution}
 \label{sec:prefix-results}

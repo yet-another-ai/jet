@@ -5,8 +5,18 @@ cd "$(dirname "$0")/.."
 
 input=tests/accuracy/generated-mmlu-full-a770
 output=tests/accuracy/generated
-date_tag=${JET_A770_RUN_TAG:-20260928}
+date_tag=${JET_A770_RUN_TAG:-$(date -u +%Y%m%d)}
 binary=${JET_A770_BINARY:-target/release/jet}
+
+if [[ $# -eq 0 ]]; then
+  set -- 08b 2b 4b 9b
+fi
+for model in "$@"; do
+  case "$model" in
+    08b|2b|4b|9b) ;;
+    *) echo "Usage: $0 [08b|2b|4b|9b ...]" >&2; exit 2 ;;
+  esac
+done
 
 if [[ ! -f "$input/requests.jsonl" || ! -f "$input/gold.jsonl" ]]; then
   python scripts/prepare-accuracy-data.py --boolq-limit 0 --mmlu-all --ascii-json \
@@ -41,5 +51,12 @@ PY
     --max-output-rows 256 --threads 8 --no-mmap
 }
 
-run_model qwen35-08b Qwen3.5-0.8B-Q8_0.gguf qwen/qwen3.5-0.8b-q8_0
-run_model qwen35-2b Qwen3.5-2B-Q8_0.gguf qwen/qwen3.5-2b-q8_0
+for model in "$@"; do
+  case "$model" in
+    08b) size=0.8B ;;
+    2b) size=2B ;;
+    4b) size=4B ;;
+    9b) size=9B ;;
+  esac
+  run_model "qwen35-$model" "Qwen3.5-$size-Q8_0.gguf" "qwen/qwen3.5-${size,,}-q8_0"
+done

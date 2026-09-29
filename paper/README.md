@@ -71,7 +71,7 @@ Efficient Inference, Experimental Evaluation, Discussion and Limitations,
 and Conclusion, followed by Statements, references, and a short experimental protocol.
 Local deployment on consumer GPUs is a central evaluation theme.
 
-The draft compares two JET models on an Arc A770 and six on an RTX 4090
+The draft compares four JET models on an Arc A770 and six on an RTX 4090
 using full MMLU. Figure 2 includes both Vulkan and CUDA runs for the RTX 4090.
 The Vulkan RTX 4090 comparison ranges from
 Qwen3.5-0.8B (32.42%, 9.79 req/s) to Qwen3.5-27B (85.09%, 2.21 req/s), and
@@ -94,3 +94,5 @@ the CUDA runs were performed September 28--29. Results retain their original
 sample sizes, hardware, and timing boundaries. The report does not
 claim measured parity with Jev, calibrated probabilities, or cross-device bitwise
 reproducibility.
+
+The Arc A770 runs were performed September 28--29, 2026; the 4B and 9B additions use the same evaluation configuration as 0.8B and 2B.

@@ -4,12 +4,12 @@ Prepared against Jet `4ff0ab63018e79e5f4639aef97924f4e26bb0405`, with native
 submodule `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`. These identify the source
 snapshot consulted, not every historical benchmark binary. The RTX 4090 full-MMLU
 runs were performed on September 23--24, 2026; the Arc A770 runs followed on
-September 28, and the RTX 4090 CUDA series finished on September 29.
+September 28--29, and the RTX 4090 CUDA series finished on September 29.
 Figures are rounded from the recorded experiments.
 
 | Report claim/table | Source record | Conditions and interpretation |
 | --- | --- | --- |
-| Arc A770 full-MMLU model comparison | Local `tests/accuracy/generated/a770-*-mmlu-full-20260928-fixed/` | Two Qwen3.5 Q8_0 models, 14,042 questions each, full GPU placement, one fresh-process run/model, zero failures. |
+| Arc A770 full-MMLU model comparison | Retained directories in the Arc A770 section below | Four Qwen3.5 Q8_0 models, 14,042 questions each, full GPU placement, one fresh-process run/model, zero failures. |
 | 2.18–2.23x prefix comparison | `docs/accuracy.md`, Vulkan serial-prefix reuse benchmark | One old run, two new runs/model; bundles prefix reuse and metadata resets. Local `vulkan-prefix-benchmark-20260922/summary.json` cross-checked. |
 | 66.03% fewer prefill tokens | Same prefix section | 378,526 old tokens derived from schedule; 128,583 new tokens instrumented. Not a wall-time estimate. |
 | Historical prototype preparation study (excluded from manuscript) | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
@@ -43,18 +43,32 @@ from the upstream model runtime and GPU kernels. The report title is now
 
 ## Full-MMLU Arc A770 runs
 
-The two selected local `tests/accuracy/generated/a770-*-mmlu-full-20260928-fixed/`
-directories retain input, gold, provenance, responses, timing, and scoring
-reports. Each contains 14,042 responses and zero failures. Both runs use
-the same input and executable. The executable includes fixes for duplicate
-choice texts and small positive Vulkan log-probabilities caused by rounding.
-A partial Qwen3.6-35B-A3B Arc A770 attempt was stopped and
-is excluded from the manuscript.
+Four Qwen3.5 Q8_0 models were evaluated on September 28--29, 2026.
+Each retained run contains 14,042 responses and zero failures, with full GPU
+placement and reasoning disabled. All four use the same input, gold, evaluator,
+benchmark harness, executable, and runtime flags. The executable includes fixes
+for duplicate choice texts and small positive Vulkan log-probabilities.
 
 | Model | Correct / 14,042 | Accuracy | Wall (s) | Req./s |
 | --- | ---: | ---: | ---: | ---: |
 | Qwen3.5-0.8B Q8_0 | 4,615 | 32.87% | 3,015.29 | 4.66 |
 | Qwen3.5-2B Q8_0 | 6,807 | 48.48% | 4,219.81 | 3.33 |
+| Qwen3.5-4B Q8_0 | 9,334 | 66.47% | 9,832.76 | 1.43 |
+| Qwen3.5-9B Q8_0 | 10,332 | 73.58% | 13,307.56 | 1.06 |
+
+Retained artifact directories:
+
+- `tests/accuracy/generated/a770-qwen35-08b-mmlu-full-20260928-fixed/`
+- `tests/accuracy/generated/a770-qwen35-2b-mmlu-full-20260928-fixed/`
+- `tests/accuracy/generated/a770-qwen35-4b-mmlu-full-20260929/`
+- `tests/accuracy/generated/a770-qwen35-9b-mmlu-full-20260929-retry/`
+
+Binary SHA-256: `a226895b138d347d95145a6904b39a820d063b722d82c3ba8897bd1a907180ea`.
+The 4B and 9B model revisions and SHA-256 digests are pinned in
+`scripts/download-accuracy-models.sh` (`--qwen35-large`).
+An interrupted 9B attempt under `a770-qwen35-9b-mmlu-full-20260929/`
+and a partial Qwen3.6-35B-A3B A770 attempt are excluded. The 9B result
+comes from a new complete process; partial-run timings are not combined.
 
 The manuscript uses these complete-set measurements for Arc A770 model quality and throughput.
 
@@ -172,7 +186,7 @@ maps. This corrects the earlier draft's boolean/index output description.
 - The user supplied Jev 1.13 full-MMLU accuracy of 89.06% and API throughput of
   2.86 req/s. Neither number is a provider-published result. API concurrency and
   detailed timing boundaries were not supplied.
-- `figures/mmlu-results.json` contains two Arc A770 and twelve RTX 4090 full-MMLU
+- `figures/mmlu-results.json` contains four Arc A770 and twelve RTX 4090 full-MMLU
   runs, plus historical Qwen3.5 prefix measurements.
 - Every displayed JET point combines full-MMLU accuracy and throughput from
   the same run. Jev uses full-MMLU accuracy and a separately reported API rate.
@@ -188,7 +202,7 @@ maps. This corrects the earlier draft's boolean/index output description.
 
 The editorial revision simplified prose and retained the original five displayed
 equations and workflow diagram. This update adds full-MMLU model tables and
-two Arc A770 and twelve RTX 4090 points to the accuracy--throughput figure. The
+four Arc A770 and twelve RTX 4090 points to the accuracy--throughput figure. The
 prototype 285-question preparation study is excluded from the manuscript and figure data.
 
 ## Token-to-decision algorithm

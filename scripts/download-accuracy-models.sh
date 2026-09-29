@@ -4,8 +4,8 @@ set -eu
 model_dir=${JET_MODEL_DIR:-models}
 selection=qwen35
 if [ "$#" -gt 0 ]; then
-    if [ "$#" -ne 1 ] || { [ "$1" != "--qwen36" ] && [ "$1" != "--qwen36-vision" ]; }; then
-        printf 'Usage: %s [--qwen36|--qwen36-vision]\n' "$0" >&2
+    if [ "$#" -ne 1 ] || { [ "$1" != "--qwen36" ] && [ "$1" != "--qwen36-vision" ] && [ "$1" != "--qwen35-large" ]; }; then
+        printf 'Usage: %s [--qwen35-large|--qwen36|--qwen36-vision]\n' "$0" >&2
         exit 2
     fi
     selection=${1#--}
@@ -46,6 +46,22 @@ download() {
 }
 
 mkdir -p "$model_dir"
+
+if [ "$selection" = qwen35-large ]; then
+    download \
+        bartowski/Qwen_Qwen3.5-4B-GGUF \
+        4168f45a16a1290d65a4ec0fa312ae917a4c15d6 \
+        Qwen_Qwen3.5-4B-Q8_0.gguf \
+        Qwen3.5-4B-Q8_0.gguf \
+        5c74c0ede371924357dff0cb6ba145bd67208b9b2389ded681adfff3f7608db7
+    download \
+        bartowski/Qwen_Qwen3.5-9B-GGUF \
+        182be2fd6c7bc44887d88a91cb03ff009cc9f549 \
+        Qwen_Qwen3.5-9B-Q8_0.gguf \
+        Qwen3.5-9B-Q8_0.gguf \
+        b58fe056b5435070240de259f3f981aa38fee96825bbd78c088d5fd90e46f2b5
+    exit 0
+fi
 
 if [ "$selection" = qwen36 ] || [ "$selection" = qwen36-vision ]; then
     download \

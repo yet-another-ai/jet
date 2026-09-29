@@ -10,7 +10,7 @@ Detailed configurations and recorded measurements are provided in the
 and \href{https://github.com/yet-another-ai/jet/blob/main/docs/performance.md}{performance notes}.
 
 The primary experiments were conducted on September 21--29, 2026; the Arc A770
-full-set study and an initial CUDA check ran on September 28, followed by the
+full-set study ran on September 28--29. An initial CUDA check ran on September 28, followed by the
 remaining RTX 4090 CUDA full-set runs on September 29.
 The sampled workload comprises 256 label-balanced BoolQ validation examples
 and five MMLU test examples from each of 57 subjects, totaling 541 requests
@@ -23,10 +23,10 @@ RTX 4090 full-set measurements include Vulkan and CUDA. The Qwen3.6 text
 benchmark does not load a visual projector.
 
 The Arc A770 full-MMLU study uses an i9-13900K, 64\,GiB RAM, and a 16\,GiB
-GPU. Qwen3.5-0.8B and Qwen3.5-2B use full GPU placement,
+GPU. Qwen3.5-0.8B, 2B, 4B, and 9B use full GPU placement,
 eight CPU threads, two sequence slots, a microbatch size of 256, an output-row
 limit of 256, eight requests per chunk, and no memory mapping. Each has one
-complete run with 14,042 responses and zero failures. Both use the same
+complete run with 14,042 responses and zero failures. All four use the same
 input, gold labels, and evaluation settings.
 
 The full-MMLU study ran on September 23--24, 2026, using the RTX 4090 and

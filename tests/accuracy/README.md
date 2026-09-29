@@ -40,6 +40,14 @@ not a fixed RAM percentage. See the [Qwen3.6 measurements](../../docs/accuracy.m
 [placement options](../../README.md#vulkan), and
 [benchmark harness](../../docs/development.md#reproducible-model-benchmarks).
 
+Download the pinned Qwen3.5-4B and 9B Q8_0 models (14.43 GB total) with:
+
+```sh
+./scripts/download-accuracy-models.sh --qwen35-large
+```
+
+The downloader verifies both files against their pinned SHA-256 digests.
+
 Run the same evaluation through the opt-in Vulkan backend with a separate output directory:
 
 ```sh
@@ -84,13 +92,37 @@ files, a model path, and `--backend cuda` or `--backend vulkan`. The RTX 4090
 full-set study used `--runs 1 --backend vulkan --batch-requests 8 --extra-args
 --max-sequences 2 --micro-batch 256 --max-output-rows 256 --threads 8 --no-mmap`.
 
-To run the two Qwen3.5 Arc A770 model configurations on all 14,042
+To run the four Qwen3.5 Arc A770 model configurations (0.8B, 2B, 4B, and 9B) on all 14,042
 MMLU questions, use `bash scripts/run-a770-full-mmlu.sh`. It runs the models
 sequentially, preserves the benchmark harness's responses, reports, timings,
 and provenance under `tests/accuracy/generated/a770-*-mmlu-full-*`, and skips
-only runs with 14,042 responses and no evaluation failures. Both models
-fit entirely on the GPU. Set `JET_A770_RUN_TAG` to give a new campaign its own
+only runs with 14,042 responses and no evaluation failures. The models use
+full GPU placement. Set `JET_A770_RUN_TAG` to give a new campaign its own
 output directories, and `JET_A770_BINARY` to select a validated executable.
+The default run tag is the current UTC date. Pass model names to run a subset,
+for example `bash scripts/run-a770-full-mmlu.sh 4b 9b` to extend an existing study.
+
+For long runs, launch the benchmark as a detached systemd user service so that
+interrupting a terminal or assistant task does not terminate the experiment.
+`scripts/check-a770-mmlu.py` is a one-shot checker suitable for a 30-minute user
+timer. It takes the completed 4B and 9B artifact directories, benchmark and timer
+unit names, and a status-file path (see `--help`). It never calls a model or API.
+Once both full runs pass validation, it imports their measurements into the paper's
+JSON and A770 table, updates the accompanying evidence and protocol, regenerates
+the chart, and builds the PDF. It stops its timer on completion or failure.
+An interrupted run is retained and excluded; rerun it in a new directory instead
+of combining partial-run timings. The generated PDF should receive visual review
+before external circulation.
+
+The September 29 continuation uses `jet-a770-9b-20260929.service` and
+`jet-a770-check-20260929.timer`. Inspect them without invoking an assistant:
+
+```sh
+systemctl --user list-timers 'jet-a770*'
+journalctl --user -u jet-a770-check-20260929.service -n 20
+cat tests/accuracy/generated/a770-large-monitor-20260929/status.json
+```
+
 Build the executable from the current source before running: an older binary
 rejected duplicate choice texts and small positive Vulkan log-probabilities
 caused by floating-point rounding. Those failures invalidated an earlier
