@@ -1,271 +1,200 @@
 # Evidence map for the report
 
-Prepared against Jet `4ff0ab63018e79e5f4639aef97924f4e26bb0405`, with native
-submodule `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`. These identify the source
-snapshot consulted, not every historical benchmark binary. The RTX 4090 full-MMLU
-runs were performed on September 23--24, 2026; the Arc A770 runs followed on
-September 28--29, and the RTX 4090 CUDA series finished on September 29.
-Figures are rounded from the recorded experiments.
+The manuscript now has one decision rule: softmax over each candidate's mean
+conditional token log-probability. All active JET measurements come from
+completed fresh runs of that implementation. Earlier benchmark outputs are retained as
+historical artifacts and are not evidence for current accuracy, calibration,
+throughput, prefix equivalence, or hardware comparisons.
 
-| Report claim/table | Source record | Conditions and interpretation |
-| --- | --- | --- |
-| Arc A770 full-MMLU model comparison | Retained directories in the Arc A770 section below | Four Qwen3.5 Q8_0 models, 14,042 questions each, full GPU placement, one fresh-process run/model, zero failures. |
-| 2.18–2.23x prefix comparison | `docs/accuracy.md`, Vulkan serial-prefix reuse benchmark | One old run, two new runs/model; bundles prefix reuse and metadata resets. Local `vulkan-prefix-benchmark-20260922/summary.json` cross-checked. |
-| 66.03% fewer prefill tokens | Same prefix section | 378,526 old tokens derived from schedule; 128,583 new tokens instrumented. Not a wall-time estimate. |
-| Historical prototype preparation study (excluded from manuscript) | `docs/performance.md`, RTX 4090 preparation pipeline / Fixed 285-question MMLU comparison | 285 questions only, Vulkan full GPU, one final run/configuration, loading included; raw 4090 artifacts not present locally. |
-| Full-MMLU model comparison | Local `tests/accuracy/generated/qwen35-*-4090-mmlu-full-20260924/` and `qwen36-4090-mmlu-full-fixed-20260923/` | Six complete 14,042-question RTX 4090 Vulkan runs, one/model, same binary/input/gold; each has 14,042 responses and zero evaluation failures. Summary below. |
-| Full-MMLU CUDA comparison | Local `tests/accuracy/generated/qwen35-*-4090-cuda-mmlu-full-20260929/` and `qwen36-4090-cuda-mmlu-full-20260928/` | Six complete 14,042-question RTX 4090 CUDA runs, one/model, same binary/input/gold and run settings. The same-executable 570-question control below confirms backend-dependent answer changes for the three models tested. |
-| Qwen3.5-4B LoRA full-MMLU comparison | Local `training/runs/qwen35-4b-lora/`, `training/exports/qwen35-4b-lora-merged/export.json`, and `tests/accuracy/generated/qwen35-4b-lora-4090-cuda-mmlu-full-20260930/` | One completed BF16 LoRA run and one complete 14,042-question CUDA benchmark; same input/gold, executable and flags as the September 29 CUDA base run; 14,042 responses, zero failures. |
-| Hybrid correctness and rejected batching | `docs/accuracy.md`, Hybrid recurrent batching correctness; `docs/performance.md`, Deferred independent-request experiment | Evidence for retaining serial recurrent continuations; not evidence of a universal native-backend bug. |
-| Multimodal design | `README.md`, Multimodal decisions; `demos/doom/README.md`; `crates/jet-engine/src/llama/vision.rs` | Implemented interface/demo; no quantitative visual-quality claim. |
+The RTX 4090 campaign is **complete**: 13 full-MMLU runs and 18 backend
+controls finished on September 29--30, 2026 (UTC). Arc A770 full-set and
+shared-prefix measurements remain pending for the machine switch.
 
-External references in `references.bib` were checked against their primary pages:
-TypeSafe's announcement and the MMLU, BoolQ, and PagedAttention arXiv records.
-The Jev discussion attributes design claims to its provider and does not infer
-unpublished architecture or claim measured parity. Internal records are tracked here rather than cited as external literature.
+## Current result sources
 
-Before external circulation: archive raw artifacts and
-binary/source provenance; add matched-subset Jev and constrained-generation baselines,
-repeated latency/throughput measurements, calibration, and visual evaluation.
-An earlier author-supplied Qwen3.6-35B-A3B full-MMLU estimate lacked raw
-responses and evaluation metadata. The manuscript uses the auditable local
-full-set result of 11,601/14,042 (82.62%). The earlier estimate cannot be
-reconciled as a repeat measurement under verified identical conditions.
-Jev 1.13 full-MMLU accuracy is 89.06% as supplied by the author.
-The historical 285-question preparation study is excluded from the manuscript.
+- Campaign artifacts: `tests/accuracy/generated/4090-token-mean-20260930/`.
+  Its `manifest.json`, `status.json`, and `results.json` record the campaign;
+  each case attempt retains inputs, provenance, responses, reports, timings,
+  and logs. A failed or partial attempt is never combined with a later run.
+- Tracked aggregate evidence: `figures/rtx4090-evidence.json`.
+- Manuscript numeric source: `figures/rtx4090-results.tex`, consumed through
+  `\jetresult{case-id}{metric}`. `update_results.py` emits pending entries
+  before completion and imports validated campaign results afterward.
+- Accuracy/throughput figure data: `figures/mmlu-results.json`.
+  Displayed JET points require complete mean-token full-MMLU measurements;
+  pending Arc A770 and historical execution-study points are excluded.
 
-The revised bibliography additionally cites the original Transformer paper,
-Guo et al. on calibration, the EleutherAI evaluation harness, and llama.cpp.
-Backend attribution was checked against `crates/jet-llama-sys/build.rs`, which
-configures `GGML_CUDA`/`GGML_VULKAN` and links the upstream `ggml-cuda`/
-`ggml-vulkan` libraries. JET's decision-specific orchestration is distinguished
-from the upstream model runtime and GPU kernels. The report title is now
-“JET: Justification Evaluation in Transformer”.
+The exporter validated the complete 31-case matrix before publishing this
+campaign. No previous accuracy or runtime fills a missing case. Signed model
+differences, CUDA/Vulkan changed-answer counts, LoRA transitions and subject
+counts, and the Jev gap derive from the same new records.
 
-## Full-MMLU Arc A770 runs
+## Full-MMLU RTX 4090 protocol
 
-Four Qwen3.5 Q8_0 models were evaluated on September 28--29, 2026.
-Each retained run contains 14,042 responses and zero failures, with full GPU
-placement and reasoning disabled. All four use the same input, gold, evaluator,
-benchmark harness, executable, and runtime flags. The executable includes fixes
-for duplicate choice texts and small positive Vulkan log-probabilities.
+Every configuration evaluates 14,042 MMLU test questions from 57 subjects,
+with reasoning disabled and full GPU placement. The six pretrained models are
+Qwen3.5-0.8B, 2B, 4B, 9B, and 27B, and Qwen3.6-35B-A3B; each runs once with
+CUDA and once with Vulkan. Models through 9B use Q8_0, and the two larger models
+use Q4_K_M. The thirteenth run evaluates Qwen3.5-4B LoRA Q8_0 with CUDA.
 
-| Model | Correct / 14,042 | Accuracy | Wall (s) | Req./s |
-| --- | ---: | ---: | ---: | ---: |
-| Qwen3.5-0.8B Q8_0 | 4,615 | 32.87% | 3,015.29 | 4.66 |
-| Qwen3.5-2B Q8_0 | 6,807 | 48.48% | 4,219.81 | 3.33 |
-| Qwen3.5-4B Q8_0 | 9,334 | 66.47% | 9,832.76 | 1.43 |
-| Qwen3.5-9B Q8_0 | 10,332 | 73.58% | 13,307.56 | 1.06 |
+Frozen Windows input files are
+`tests/accuracy/generated-mmlu-full-ascii/requests.jsonl` and `gold.jsonl`.
 
-Retained artifact directories:
+- Input SHA-256: `5393a9f78039744f999e7c403a0bac0fd7b26931f513e3f9e8dc8ef34d69cf7c`.
+- Gold SHA-256: `6f0e61960c7459f6738805a4c2e2f89b9287171d798760ea140f8b3bb57cf209`.
+- Pinned MMLU archive SHA-256: `bec563ba4bac1d6aaf04141cd7d1605d7a5ca833e38f994051e818489592989b`.
+- MMLU repository revision: `hendrycks/test@4450500f923c49f1fb1dd3d99108a0bd9717b660`.
 
-- `tests/accuracy/generated/a770-qwen35-08b-mmlu-full-20260928-fixed/`
-- `tests/accuracy/generated/a770-qwen35-2b-mmlu-full-20260928-fixed/`
-- `tests/accuracy/generated/a770-qwen35-4b-mmlu-full-20260929/`
-- `tests/accuracy/generated/a770-qwen35-9b-mmlu-full-20260929-retry/`
+`prepare-accuracy-data.py --boolq-limit 0 --mmlu-all --ascii-json` regenerates
+these question records. Windows CRLF and Linux LF JSONL differ in byte hashes;
+record equality and order establish dataset identity across those serializations.
 
-Binary SHA-256: `a226895b138d347d95145a6904b39a820d063b722d82c3ba8897bd1a907180ea`.
-The 4B and 9B model revisions and SHA-256 digests are pinned in
-`scripts/download-accuracy-models.sh` (`--qwen35-large`).
-An interrupted 9B attempt under `a770-qwen35-9b-mmlu-full-20260929/`
-and a partial Qwen3.6-35B-A3B A770 attempt are excluded. The 9B result
-comes from a new complete process; partial-run timings are not combined.
+Each fresh-process benchmark uses eight requests per chunk, two sequence slots,
+a microbatch size of 256, an output-row limit of 256, eight CPU threads, and
+no memory mapping. The executable, input, gold, runtime settings, and evaluator
+must match within the campaign. No visual projector is loaded. Successful
+completion requires 14,042 responses and zero evaluation failures. Wall time
+includes startup, model loading, processing, and shutdown; throughput is
+14,042 divided by that time. There is no repeat-run variance estimate for
+the full suite.
 
-The manuscript uses these complete-set measurements for Arc A770 model quality and throughput.
+Exact invocation and source state are recorded in each case's provenance.
+Qwen3.5 model revisions and hashes are retained in
+`tests/accuracy/generated/qwen35-model-sources-20260924.json`; pinned downloads
+for the smaller models and Qwen3.6 are defined in
+`scripts/download-accuracy-models.sh`. The campaign records current model
+identity and binary/source hashes rather than inheriting historical binary hashes.
 
-## Full-MMLU RTX 4090 runs
+## Same-executable backend controls
 
-The local `tests/accuracy/generated/qwen35-full-mmlu-comparison-20260924.md`
-lists the five Qwen3.5 runs and Qwen3.6 baseline. Each retained benchmark
-directory contains `requests.jsonl`, `gold.jsonl`, `provenance.json`,
-`summary.json`, `run-01/responses.jsonl`, and `run-01/report.json`.
-These files are ignored by Git; the manuscript's aggregate data is preserved in
-`figures/mmlu-results.json` and its full-MMLU table. All six runs used
-binary SHA-256 `d0b01369a2c4fc08f2ba135ff9bed95a9d0bc0139f81da45d58cd7680f7de707`,
-the same benchmark harness and evaluator hashes,
-input SHA-256 `5393a9f78039744f999e7c403a0bac0fd7b26931f513e3f9e8dc8ef34d69cf7c`,
-and gold SHA-256 `6f0e61960c7459f6738805a4c2e2f89b9287171d798760ea140f8b3bb57cf209`.
-The evaluator accepts distinct option labels with identical answer text as
-equivalent. Each run has one successful completion and no failed requests.
-Filtering the Qwen3.6 full-run responses to the historical 285-question input
-recovered 250/285 correct and all 285 of the same top-1 choices as the
-separate subset run. This verifies that its higher subset percentage comes
-from the question selection under those two measured runs.
-`python scripts/prepare-accuracy-data.py --boolq-limit 0 --mmlu-all
---ascii-json --output-dir tests/accuracy/generated-mmlu-full-ascii` reproduced
-both original input hashes from the pinned MMLU archive on September 28, 2026.
-Those hashes are for the Windows run's CRLF JSONL. Linux LF output from the
-same preparation command hashes differently; replacing LF with CRLF in the
-Linux output reproduces both recorded hashes exactly. This is a line-ending
-difference, not a different set of MMLU questions.
+The frozen 570-question files are retained in
+`target/backend-ablation-20260929/requests.jsonl` and `gold.jsonl`.
+For each subject, selection takes the ten smallest SHA-256 hashes of `gold.id`,
+then restores full-set order. Model responses play no role in selection.
 
-| Model | Correct / 14,042 | Accuracy | Wall (s) | Req./s |
-| --- | ---: | ---: | ---: | ---: |
-| Qwen3.5-0.8B Q8_0 | 4,552 | 32.42% | 1,434.16 | 9.79 |
-| Qwen3.5-2B Q8_0 | 6,818 | 48.55% | 1,443.47 | 9.73 |
-| Qwen3.5-4B Q8_0 | 9,323 | 66.39% | 1,986.14 | 7.07 |
-| Qwen3.5-9B Q8_0 | 10,344 | 73.66% | 2,466.26 | 5.69 |
-| Qwen3.5-27B Q4_K_M | 11,948 | 85.09% | 6,353.75 | 2.21 |
-| Qwen3.6-35B-A3B Q4_K_M | 11,601 | 82.62% | 3,370.71 | 4.17 |
+- Control input SHA-256: `25a390ad5ebba58b68277b028a7c387f3c31b2d4a82beea949aa59e71fbbc678`.
+- Control gold SHA-256: `9d3c49baa93050fcd662b0a1253aa06bb66b6e8a2ecfd6a81be98ad3f34d9884`.
 
-The shared invocation is `python scripts/benchmark-model.py --binary
-E:/jet-target/release/jet.exe --model-path models/<model>.gguf --model-id
-<model-id> --input <full-MMLU-requests.jsonl> --gold
-<full-MMLU-gold.jsonl> --output-dir <new-directory> --runs 1 --backend vulkan
---batch-requests 8 --extra-args --max-sequences 2 --micro-batch 256
---max-output-rows 256 --threads 8 --no-mmap`. Exact commands and source
-revisions are in each `provenance.json`; Qwen3.5 model source revisions and
-checksums are in the local `qwen35-model-sources-20260924.json` file.
-The Qwen3.6 source revision and SHA-256 are pinned in
-`scripts/download-accuracy-models.sh`.
+The new control suite contains eighteen runs, all with mean-token scoring:
 
-The RTX 4090 CUDA series consists of the September 28 Qwen3.6 run under
-`tests/accuracy/generated/qwen36-4090-cuda-mmlu-full-20260928/` and five
-September 29 Qwen3.5 runs under
-`tests/accuracy/generated/qwen35-*-4090-cuda-mmlu-full-20260929/`.
-The CUDA runs use the same request and gold files and evaluation settings as
-the Vulkan runs. The CUDA invocation selects `--backend cuda` and writes to a
-separate output path.
-Each CUDA model ran once in a fresh process with full GPU placement.
+| Model | Cases |
+| --- | --- |
+| Qwen3.5-0.8B | CPU; CUDA and repeat; default Vulkan and repeat; the five Vulkan variants below |
+| Qwen3.5-2B | CUDA; default Vulkan; disable COOPMAT2; disable both cooperative-matrix paths |
+| Qwen3.6-35B-A3B | Same four cases as 2B |
 
-| Model | Correct / 14,042 | Accuracy | Wall (s) | Req./s |
-| --- | ---: | ---: | ---: | ---: |
-| Qwen3.5-0.8B Q8_0 | 4,600 | 32.76% | 991.75 | 14.16 |
-| Qwen3.5-2B Q8_0 | 6,800 | 48.43% | 1,027.70 | 13.66 |
-| Qwen3.5-4B Q8_0 | 9,332 | 66.46% | 1,434.30 | 9.79 |
-| Qwen3.5-9B Q8_0 | 10,330 | 73.57% | 1,682.73 | 8.34 |
-| Qwen3.5-27B Q4_K_M | 11,925 | 84.92% | 3,832.36 | 3.66 |
-| Qwen3.6-35B-A3B Q4_K_M | 11,595 | 82.57% | 2,829.36 | 4.96 |
+The five Vulkan variants disable COOPMAT2; COOPMAT2 plus COOPMAT; both plus
+F16; both plus INTEGER_DOT_PRODUCT; or all four. Environment variables use the
+`GGML_VK_DISABLE_` prefix with value `1`. FP16 and integer-dot-product
+effects are measured conditional on disabled cooperative-matrix paths,
+not as independent changes from the default path. Logs record actual feature
+selection and layer placement.
 
-All six summaries record one completed run, 14,042 responses, zero evaluation
-failures, and the CUDA backend. Their logs select `CUDA0` and offload every
-model layer to the RTX 4090. The displayed rate is 14,042 divided by each
-run's full-process wall time; there is no repeat-run variance estimate.
+Top-1 label changes, semantic answer changes, decision-weight differences, and
+repeated-run equality are computed from fresh paired responses. Distinct labels
+with identical answer text count as the same semantic answer. No causal
+attribution of cross-device differences to a particular Vulkan feature follows
+from this single-device suite.
 
-Qwen3.6 has 328 changed top-1 choices between the CUDA and Vulkan runs.
-A same-executable control on 570 questions (ten per subject) changes 16, 12,
-and 14 top-1 choices for Qwen3.5-0.8B, Qwen3.5-2B, and Qwen3.6-35B-A3B,
-respectively, when switching between CUDA and Vulkan. On those rows, its
-outputs reproduce the corresponding historical full-run projections exactly.
-The control establishes backend-dependent answer changes on the measured
-subset; the complete-run throughput values remain the observed rates of their
-respective backend runs.
-
-## Qwen3.5-4B LoRA adaptation
+## Qwen3.5-4B LoRA provenance
 
 The completed training run is `training/runs/qwen35-4b-lora/completed.json`.
-It records the pinned Qwen/Qwen3.5-4B revision
+It records Qwen/Qwen3.5-4B revision
 `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`, one epoch, 1,425 steps,
-22,791 retained training records, and zero overlength drops. The training log
-reports 32,464,896 trainable of 4,238,216,192 total parameters (0.7660%).
-The data manifest `training/data/default/manifest.json` records source revisions and hashes,
+22,791 retained records, and zero overlength drops. The log reports
+32,464,896 trainable of 4,238,216,192 total parameters (0.7660%).
+The mixture contains 9,427 BoolQ, 2,248 ARC-Easy, 1,116 ARC-Challenge,
+and 10,000 SNLI examples.
+
+`training/data/default/manifest.json` records source revisions and hashes,
 10,708 validation records, split isolation, and exclusion of all 14,042 frozen
-MMLU requests. This rules out identified exact normalized overlaps only.
-The adapter SHA-256 is
+MMLU requests. A 512-example validation subset monitors loss. Exact normalized
+overlap checks do not rule out paraphrases or pretraining contamination.
+The objective is next-token cross-entropy over correct answer text,
+not direct optimization of the candidate-set decision distribution.
+
+Adapter SHA-256:
 `2e148c2ef49af6a02e6c2cbcd69f3f30ef3386d6763e466243c44e4622fcf20f`.
 
-The text-only GGUF export is recorded in
-`training/exports/qwen35-4b-lora-merged/export.json` with SHA-256
+The retained text-only export is
+`training/exports/qwen35-4b-lora-text-Q8_0.gguf`, with provenance in
+`training/exports/qwen35-4b-lora-merged/export.json` and SHA-256
 `03dd562dabca7dedf49f2523b1806e58ba6e626ff3377c4f959e041fa70fa737`.
-The first conversion inherited `mtp_num_hidden_layers=1` from the HF config,
-declared 33 GGUF blocks despite containing only 32, and failed to load.
-The retained export uses `--no-nextn`, declares 32 blocks, and passed a JET
-inference smoke run before full evaluation. The invalid GGUF was removed.
+It uses `--no-nextn`, declares 32 blocks, and excludes MTP weights.
+The adapter and export remain unchanged; inference is rerun with the new rule.
 
-The matching base CUDA run is
-`tests/accuracy/generated/qwen35-4b-4090-cuda-mmlu-full-20260929/`;
-the adapted run is
-`tests/accuracy/generated/qwen35-4b-lora-4090-cuda-mmlu-full-20260930/`.
-Both have 14,042 responses, zero failures, input SHA-256
-`5393a9f78039744f999e7c403a0bac0fd7b26931f513e3f9e8dc8ef34d69cf7c`,
-gold SHA-256
-`6f0e61960c7459f6738805a4c2e2f89b9287171d798760ea140f8b3bb57cf209`,
-and executable SHA-256
-`fb8394921e604e8281cfae18b253d2b1608184c6f8e299896d4d6acff3057f83`.
-The base answers 9,332/14,042 correctly (66.46%), mean gold NLL 0.9671,
-wall time 1,434.30 s (9.79 req/s). LoRA answers 10,446/14,042 correctly
-(74.39%), mean gold NLL 0.7721, wall time 1,381.20 s (10.17 req/s).
-`training/runs/qwen35-4b-mmlu-paired-analysis.json` records 1,770 base-wrong/
-LoRA-right and 656 base-right/LoRA-wrong cases, for a net 1,114-question gain;
-53 subjects improve, two decline, and two tie. The baseline calibration report
-was recomputed with the current evaluator at
-`training/runs/qwen35-4b-mmlu-baseline-recomputed.json`.
-Only one timing run per variant exists. The base GGUF includes MTP weights,
-whereas the adapted text-only GGUF excludes them. The base GGUF comes from
+The comparison uses campaign cases `full-4b-cuda` and `full-4b-lora-cuda`.
+Their accuracy, NLL, Brier score, throughput, paired transitions, and subject
+counts are regenerated together. Historical paired-analysis files under
+`training/runs/` are not imported as current results.
+
+The reference GGUF includes MTP weights and comes from
 `bartowski/Qwen_Qwen3.5-4B-GGUF` revision
-`4168f45a16a1290d65a4ec0fa312ae917a4c15d6`; exact upstream weight
-identity with the pinned HF training checkpoint was not verified. This is a
-matched-protocol comparison of deployed artifacts, not a LoRA-only ablation.
-The 3.7% wall-time difference is not a controlled speedup claim.
+`4168f45a16a1290d65a4ec0fa312ae917a4c15d6`. Exact upstream weight identity
+with the pinned HF training checkpoint has not been verified. A zero-adapter
+export of that checkpoint has not been evaluated. The comparison therefore
+characterizes deployed artifacts under a matched protocol, not a LoRA-only
+causal effect. One timing run per artifact does not establish a repeatable speedup.
 
-## Larger-model and Jev comparison
+## Arc A770 and execution studies: pending
 
-- Jev 1.13: 89.06% on the complete MMLU test set, supplied by the user as a prior
-  manual measurement. The user confirms a sampler-free decision interface with
-  no configurable thinking or few-shot settings. This is the report author's
-  own result, not attributed to TypeSafe. Raw responses and exact aggregation
-  metadata have not been supplied; no matched-subset or paired comparison is
-  claimed. Sampler-free behavior is treated as shared by both systems.
-- Llama 3.1 70B/405B Instruct: 83.6/87.3, official Meta model card,
-  English MMLU, 5-shot, `macro_avg/acc`. These are not the separate 0-shot
-  CoT values (86.0/88.6) on that page.
-- Qwen2.5-72B-Instruct / DeepSeek-V3: 85.3/88.5, DeepSeek's published chat-model
-  comparison, MMLU exact match. The Qwen number is explicitly sourced to that
-  comparison, not a new JET run. DeepSeek-V3 has 671B total / 37B activated
-  parameters in the same source table.
-- Best full-MMLU JET versus Jev score gap: 89.06 - 85.09 = 3.97 percentage points.
-  Shared benchmark coverage does not establish identical prompting, scoring,
-  aggregation, or statistical equivalence.
+Four Qwen3.5 Q8_0 full-MMLU reruns are required on the Arc A770: 0.8B, 2B,
+4B, and 9B. Use the current mean-token binary, a fresh campaign tag, and
+`scripts/run-a770-full-mmlu.sh`. No old A770 measurement supplies a current
+table row or figure point. Hardware for the planned follow-up is an i9-13900K,
+64 GiB RAM, and a 16 GiB Arc A770.
 
-Self-authored benchmark/demo documents are no longer bibliography entries. The
-small-model accuracy results are presented as valid decision-quality measurements;
-execution optimizations preserve their outputs in the recorded equivalence checks.
-Timing ablations remain separately identified so older timing configurations are
-not mistaken for the optimized path.
+The shared-prefix study also requires a fresh comparison under the current
+decision rule. Its workload is 256 label-balanced BoolQ validation examples
+plus five MMLU test examples per subject, totaling 541 requests
+(seed 20260921). Intended settings are eight requests per chunk, nine
+sequence slots, 2,048 context tokens per sequence, token batches of 2,048,
+a microbatch size of 512, and an output-row limit of 256. Both independent
+execution and prefix reuse must use mean-token scoring. The planned matrix
+has one independent-execution run and two prefix-reuse runs per model, with
+model order reversed in the second round.
 
-The comparison also checks typed outputs directly against
-`crates/jet-core/src/protocol.rs` and `crates/jet-engine/src/evaluator.rs`:
-`noul` is the normalized true probability; `choice` is the argmax label; `score`
-is the expected zero-based level index. Choice and score include probability
-maps. This corrects the earlier draft's boolean/index output description.
+Speedup, prefix-token counts, exact-response equivalence, and state-isolation
+diagnostics remain pending. Historical prototype preparation and rejected
+batching experiments are not current-method evidence. The article makes no
+numerical claim about their outputs or performance.
 
-## MMLU accuracy / throughput figure
+## External comparisons
 
-- The user supplied Jev 1.13 full-MMLU accuracy of 89.06% and API throughput of
-  2.86 req/s. Neither number is a provider-published result. API concurrency and
-  detailed timing boundaries were not supplied.
-- `figures/mmlu-results.json` contains four Arc A770 and thirteen RTX 4090
-  full-MMLU runs, including the adapted Qwen3.5-4B, plus historical Qwen3.5
-  prefix measurements.
-- Every displayed JET point combines full-MMLU accuracy and throughput from
-  the same run. Jev uses full-MMLU accuracy and a separately reported API rate.
-- Figure 2 selects representative disabled-thinking configurations using
-  `show_in_figure`; `figure_label` supplies reader-facing deployment names.
-  The adapted 4B point uses an outlined green marker. Historical measurements
-  remain in the data file.
-- For each displayed JET point, the plotted rate is request count divided by
-  complete-process wall time. Jev uses the separately supplied API rate.
-- No throughput is imputed for external model-card results, invalid state-isolation
-  experiments, or diagnostic slices. Those points are not part of the figure.
+- Jev 1.13: author-supplied manual full-MMLU accuracy of 89.06% and separately
+  reported API throughput of 2.86 requests/s. Concurrency and detailed timing
+  boundaries were not supplied. The interface is sampler-free, with no
+  configurable reasoning or few-shot setting. These are the author's values,
+  not a provider-published measurement.
+- Llama 3.1 70B/405B Instruct: 83.6/87.3 from the official Meta model card,
+  English MMLU, 5-shot, subject-macro accuracy.
+- Qwen2.5-72B-Instruct / DeepSeek-V3: 85.3/88.5 in DeepSeek's published
+  chat-model comparison, MMLU exact match. DeepSeek-V3 has 671B total /
+  37B activated parameters in that source.
+- The signed Jev-minus-best-JET gap is regenerated from the complete campaign.
+  Shared benchmark coverage does not establish identical prompts, scoring,
+  aggregation, or statistical equivalence. No throughput is imputed for
+  published model-card results.
 
-## Editorial revision
+## Implementation boundary
 
-The editorial revision simplified prose and retained the original five displayed
-equations and workflow diagram. This update adds full-MMLU model tables and
-four Arc A770 and twelve baseline RTX 4090 points to the
-accuracy--throughput figure; the LoRA experiment adds one more RTX 4090 point. The
-prototype 285-question preparation study is excluded from the manuscript and figure data.
+`crates/jet-engine/src/llama.rs` supplies teacher-forced token log-probability
+sums and actual candidate token counts. `crates/jet-engine/src/evaluator.rs`
+forms candidate means before normalization in `crates/jet-core/src/math.rs`.
+Counts include the scored serialized continuation, including quotations and
+escapes, but exclude context, reasoning, and image tokens. No end-of-turn token
+or temperature is added to candidate scoring. Optional reasoning is generated
+once and becomes shared conditioning context.
 
-## Token-to-decision algorithm
+`noul` returns the normalized true weight, `choice` the argmax label, and
+`score` the expected zero-based level index. Choice and score retain weight
+maps. These softmax values are decision weights, not candidate-restricted
+sequence likelihoods or demonstrated calibrated confidence. The numerical
+method example is illustrative rather than a benchmark result.
 
-The Decision Method section retains the full mathematical chain: vocabulary
-softmax, stable token log-probabilities, sequence likelihood and log-score,
-candidate-set normalization, and output aggregation. All five displayed equations
-from the original draft are retained. These definitions were checked against `target_log_probability` in
-`crates/jet-engine/src/llama.rs`, device target-log-probability extraction in the
-same file, `normalize_log_probabilities` in `crates/jet-core/src/math.rs`, and
-answer construction in `crates/jet-engine/src/evaluator.rs`. Answer scoring uses
-teacher-forced candidate tokens, full-vocabulary normalization, no temperature,
-no end-of-turn score, and no length normalization. Optional reasoning is generated
-once and becomes shared conditioning context. The numerical example illustrates
-candidate normalization and is not an experimental measurement.
+JET orchestrates decision inference; upstream llama.cpp supplies model execution
+and GPU kernels. Native submodule revision is recorded with each campaign.
+Multimodal interfaces remain implemented without a quantitative visual-quality
+claim. Before external circulation, archive raw artifacts and source/binary
+provenance, then add matched-system baselines, repeated timing measurements,
+calibration studies, and visual evaluation.

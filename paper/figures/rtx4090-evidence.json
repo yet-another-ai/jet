@@ -1,0 +1,1151 @@
+{
+  "state": "complete",
+  "scoring_method": "mean_token_log_probability",
+  "a770": "Pending reruns on the Arc A770 machine; superseded measurements are not plotted.",
+  "suite": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930",
+  "binary_sha256": "b3c0cc3ee41ef66d144b0462356858326dc0fdc41c28085b516cfa8cc8d9fe56",
+  "generated_at_utc": "2026-09-30T03:49:38.066815+00:00",
+  "cases": [
+    {
+      "id": "full-08b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-08b-cuda-attempt-01",
+      "wall_seconds": 972.6763382999925,
+      "requests_per_second": 14.436456863484604,
+      "overall": {
+        "examples": 14042,
+        "correct": 4700,
+        "accuracy": 0.3347101552485401,
+        "mean_gold_nll": 1.3583291993998987,
+        "mean_confidence": 0.2992348757661823,
+        "mean_brier": 0.7350069275870393,
+        "ece_10_bins": 0.035598650956169604,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 6873,
+          "b": 2921,
+          "c": 2145,
+          "d": 2103
+        }
+      },
+      "responses_sha256": "cdecb4816e4334e675f3f74c2e16baacf70a67fc43c6f5f1a824bde818a0e251"
+    },
+    {
+      "id": "full-2b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-2b-cuda-attempt-01",
+      "wall_seconds": 984.5128476000391,
+      "requests_per_second": 14.262891575493791,
+      "overall": {
+        "examples": 14042,
+        "correct": 6802,
+        "accuracy": 0.484403931063951,
+        "mean_gold_nll": 1.2557091665738316,
+        "mean_confidence": 0.3328270978758364,
+        "mean_brier": 0.6774226428630028,
+        "ece_10_bins": 0.15157683318811457,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 5917,
+          "b": 3183,
+          "c": 2591,
+          "d": 2351
+        }
+      },
+      "responses_sha256": "0d56ca8f905eda8491022ebf36a207d899684a0c5e70abb5a8726b403c2db8ef"
+    },
+    {
+      "id": "full-4b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-4b-cuda-attempt-01",
+      "wall_seconds": 1319.2728890000144,
+      "requests_per_second": 10.643741804353752,
+      "overall": {
+        "examples": 14042,
+        "correct": 9305,
+        "accuracy": 0.6626548924654607,
+        "mean_gold_nll": 1.0736314969990453,
+        "mean_confidence": 0.3961368070942814,
+        "mean_brier": 0.5728734131056736,
+        "ece_10_bins": 0.2665180853711793,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3685,
+          "b": 3177,
+          "c": 4018,
+          "d": 3162
+        }
+      },
+      "responses_sha256": "2d90c5c0ac73564423d7a64ac2650d795e326b6de59f5a6d9553386ce55694bc"
+    },
+    {
+      "id": "full-4b-lora-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-4b-lora-cuda-attempt-01",
+      "wall_seconds": 1351.765914299991,
+      "requests_per_second": 10.387893237618451,
+      "overall": {
+        "examples": 14042,
+        "correct": 10452,
+        "accuracy": 0.7443384133314342,
+        "mean_gold_nll": 0.9909503080694948,
+        "mean_confidence": 0.42435145464466123,
+        "mean_brier": 0.5239289112407113,
+        "ece_10_bins": 0.31998695868677307,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 2943,
+          "b": 3414,
+          "c": 3779,
+          "d": 3906
+        }
+      },
+      "responses_sha256": "0566166284706854cbff76f8b03c53d9f2e4b24feba0aaed6d2cf85a4e7be42b"
+    },
+    {
+      "id": "full-9b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-9b-cuda-attempt-01",
+      "wall_seconds": 1573.783154600067,
+      "requests_per_second": 8.922449041951007,
+      "overall": {
+        "examples": 14042,
+        "correct": 10337,
+        "accuracy": 0.7361486967668424,
+        "mean_gold_nll": 0.9783962443639443,
+        "mean_confidence": 0.4365256091870621,
+        "mean_brier": 0.5167797956406439,
+        "ece_10_bins": 0.29962308757978023,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3486,
+          "b": 3257,
+          "c": 3916,
+          "d": 3383
+        }
+      },
+      "responses_sha256": "a96196534768898d557051461c881e083612d06338ffd4aa03f0d6c8abf1cd42"
+    },
+    {
+      "id": "full-27b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-27b-cuda-attempt-01",
+      "wall_seconds": 3721.4501927000238,
+      "requests_per_second": 3.7732602273019022,
+      "overall": {
+        "examples": 14042,
+        "correct": 11912,
+        "accuracy": 0.8483122062384276,
+        "mean_gold_nll": 0.9179774752923298,
+        "mean_confidence": 0.4407170846676089,
+        "mean_brier": 0.48052740072718353,
+        "ece_10_bins": 0.4075951215708187,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3200,
+          "b": 3468,
+          "c": 3660,
+          "d": 3714
+        }
+      },
+      "responses_sha256": "9a6cda87b3759421c1737bad74067c74e164301827318f938c24cc24c2547385"
+    },
+    {
+      "id": "full-35b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-35b-cuda-attempt-01",
+      "wall_seconds": 2774.944068099954,
+      "requests_per_second": 5.060282173404226,
+      "overall": {
+        "examples": 14042,
+        "correct": 11574,
+        "accuracy": 0.8242415610311922,
+        "mean_gold_nll": 0.8371236866672516,
+        "mean_confidence": 0.49841456192301664,
+        "mean_brier": 0.43309193877278346,
+        "ece_10_bins": 0.3258269991081755,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3365,
+          "b": 3459,
+          "c": 3620,
+          "d": 3598
+        }
+      },
+      "responses_sha256": "ea00606222ba8b588bd1ccfe59a7f9de18763c3c34a18a4751a91619ffdad9c1"
+    },
+    {
+      "id": "full-08b-vulkan",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-08b-vulkan-attempt-01",
+      "wall_seconds": 468.41328749991953,
+      "requests_per_second": 29.97780032019782,
+      "overall": {
+        "examples": 14042,
+        "correct": 4659,
+        "accuracy": 0.3317903432559465,
+        "mean_gold_nll": 1.3590616995749307,
+        "mean_confidence": 0.29944589731284,
+        "mean_brier": 0.7354356495142483,
+        "ece_10_bins": 0.032469020180603,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 7046,
+          "b": 2881,
+          "c": 2071,
+          "d": 2044
+        }
+      },
+      "responses_sha256": "2def5ea07d7a3ec6f095a1f54be8a84f5be8585415f90fc724e34a5e437b5418"
+    },
+    {
+      "id": "full-2b-vulkan",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-2b-vulkan-attempt-01",
+      "wall_seconds": 613.8152050999925,
+      "requests_per_second": 22.87659198294463,
+      "overall": {
+        "examples": 14042,
+        "correct": 6807,
+        "accuracy": 0.48476000569719413,
+        "mean_gold_nll": 1.254797431804455,
+        "mean_confidence": 0.3330399074647836,
+        "mean_brier": 0.6769207752274301,
+        "ece_10_bins": 0.15172009823241048,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 5874,
+          "b": 3237,
+          "c": 2583,
+          "d": 2348
+        }
+      },
+      "responses_sha256": "df1f24e7d1315f9ed139652155d93da51bd544aef24072716f16be2a5a3ed53c"
+    },
+    {
+      "id": "full-4b-vulkan",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-4b-vulkan-attempt-01",
+      "wall_seconds": 1117.2504223000724,
+      "requests_per_second": 12.568355061430072,
+      "overall": {
+        "examples": 14042,
+        "correct": 9295,
+        "accuracy": 0.6619427431989745,
+        "mean_gold_nll": 1.073801709422707,
+        "mean_confidence": 0.3963229471507382,
+        "mean_brier": 0.5729782790555011,
+        "ece_10_bins": 0.26561979604823627,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3695,
+          "b": 3172,
+          "c": 4025,
+          "d": 3150
+        }
+      },
+      "responses_sha256": "dc08cbe020c39694bf2581b7a9dc594c2fa68945ececad78daa8907c7d9a5262"
+    },
+    {
+      "id": "full-9b-vulkan",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-9b-vulkan-attempt-01",
+      "wall_seconds": 1605.5177576999413,
+      "requests_per_second": 8.746088252624821,
+      "overall": {
+        "examples": 14042,
+        "correct": 10344,
+        "accuracy": 0.7366472012533827,
+        "mean_gold_nll": 0.9772497648243657,
+        "mean_confidence": 0.43700194060744646,
+        "mean_brier": 0.5161392401511123,
+        "ece_10_bins": 0.2996452606459363,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3483,
+          "b": 3250,
+          "c": 3933,
+          "d": 3376
+        }
+      },
+      "responses_sha256": "fa04a87621a010432b5ff86d25777b9051a59403e28e2dbb674881bf6ef05adc"
+    },
+    {
+      "id": "full-27b-vulkan",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-27b-vulkan-attempt-01",
+      "wall_seconds": 4805.684209100087,
+      "requests_per_second": 2.9219564559423072,
+      "overall": {
+        "examples": 14042,
+        "correct": 11937,
+        "accuracy": 0.8500925794046432,
+        "mean_gold_nll": 0.9122826748050781,
+        "mean_confidence": 0.44367046819974104,
+        "mean_brier": 0.47706058072609797,
+        "ece_10_bins": 0.4064221112049022,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3215,
+          "b": 3449,
+          "c": 3667,
+          "d": 3711
+        }
+      },
+      "responses_sha256": "2d55558849f90f44b5098a51e64de8b0cd8d5a0f878793b914c90cc60e13a364"
+    },
+    {
+      "id": "full-35b-vulkan",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\full-35b-vulkan-attempt-01",
+      "wall_seconds": 3933.7329079000046,
+      "requests_per_second": 3.569637372125557,
+      "overall": {
+        "examples": 14042,
+        "correct": 11598,
+        "accuracy": 0.8259507192707591,
+        "mean_gold_nll": 0.8355004880671124,
+        "mean_confidence": 0.49935860798548654,
+        "mean_brier": 0.432013851612067,
+        "ece_10_bins": 0.3265921112852726,
+        "gold_counts": {
+          "a": 3222,
+          "b": 3462,
+          "c": 3582,
+          "d": 3776
+        },
+        "prediction_counts": {
+          "a": 3335,
+          "b": 3464,
+          "c": 3625,
+          "d": 3618
+        }
+      },
+      "responses_sha256": "8331537a4b06675c8273cd4dd955b861869c4d6572c25a4880bb88e2e0a3c6ca"
+    },
+    {
+      "id": "control-08b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-cuda-attempt-01",
+      "wall_seconds": 39.96293359994888,
+      "requests_per_second": 14.263217152825064,
+      "overall": {
+        "examples": 570,
+        "correct": 196,
+        "accuracy": 0.34385964912280703,
+        "mean_gold_nll": 1.3497181775316671,
+        "mean_confidence": 0.3016046631414363,
+        "mean_brier": 0.7317630672531082,
+        "ece_10_bins": 0.042254985981370737,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 294,
+          "b": 86,
+          "c": 102,
+          "d": 88
+        }
+      },
+      "responses_sha256": "dda672e09c7ea7efe72930c9f53561404bc1784c26ccc55800c29c6682ed9977"
+    },
+    {
+      "id": "control-08b-vk-default",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-default-attempt-01",
+      "wall_seconds": 20.07500740000978,
+      "requests_per_second": 28.393513817570113,
+      "overall": {
+        "examples": 570,
+        "correct": 190,
+        "accuracy": 0.3333333333333333,
+        "mean_gold_nll": 1.3513255536630702,
+        "mean_confidence": 0.30173213572000046,
+        "mean_brier": 0.7326458957859073,
+        "ece_10_bins": 0.03160119761333289,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 302,
+          "b": 83,
+          "c": 100,
+          "d": 85
+        }
+      },
+      "responses_sha256": "da48a700116eda535ec1b1012256c74d3ff2013905aa85ec3637481788d95f20"
+    },
+    {
+      "id": "control-08b-vk-no-cm2",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-no-cm2-attempt-01",
+      "wall_seconds": 24.266102400026284,
+      "requests_per_second": 23.489557185721864,
+      "overall": {
+        "examples": 570,
+        "correct": 192,
+        "accuracy": 0.3368421052631579,
+        "mean_gold_nll": 1.3511769180722784,
+        "mean_confidence": 0.3017668997829073,
+        "mean_brier": 0.7326117527353023,
+        "ece_10_bins": 0.03507520548025057,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 301,
+          "b": 83,
+          "c": 101,
+          "d": 85
+        }
+      },
+      "responses_sha256": "1cac8437b013e81fcae42ff9b44c882a0c59b041431f3db67bc864b39c0d6ec8"
+    },
+    {
+      "id": "control-08b-vk-no-cm",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-no-cm-attempt-01",
+      "wall_seconds": 42.30586689990014,
+      "requests_per_second": 13.473308592131591,
+      "overall": {
+        "examples": 570,
+        "correct": 194,
+        "accuracy": 0.34035087719298246,
+        "mean_gold_nll": 1.3503403035602555,
+        "mean_confidence": 0.30158094292503884,
+        "mean_brier": 0.7320968125645798,
+        "ece_10_bins": 0.03876993426794358,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 298,
+          "b": 81,
+          "c": 103,
+          "d": 88
+        }
+      },
+      "responses_sha256": "6f7f7f26c096d1f9930538f98b2eeda05e74c1d5eb14c489fc9aa13f632994a8"
+    },
+    {
+      "id": "control-08b-vk-no-cm-f32",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-no-cm-f32-attempt-01",
+      "wall_seconds": 41.34556990000419,
+      "requests_per_second": 13.786241219520406,
+      "overall": {
+        "examples": 570,
+        "correct": 194,
+        "accuracy": 0.34035087719298246,
+        "mean_gold_nll": 1.3498525909931856,
+        "mean_confidence": 0.30116483146467954,
+        "mean_brier": 0.7318552267401223,
+        "ece_10_bins": 0.03918604572830296,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 293,
+          "b": 87,
+          "c": 105,
+          "d": 85
+        }
+      },
+      "responses_sha256": "0cb1e18c1362f54f5c015d9b0067df30fa785f75eed7ec10201ba7a17f9b9d8a"
+    },
+    {
+      "id": "control-08b-vk-no-cm-no-intdot",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-no-cm-no-intdot-attempt-01",
+      "wall_seconds": 32.512853599968366,
+      "requests_per_second": 17.531527900108856,
+      "overall": {
+        "examples": 570,
+        "correct": 192,
+        "accuracy": 0.3368421052631579,
+        "mean_gold_nll": 1.3511176141784187,
+        "mean_confidence": 0.30160855277288195,
+        "mean_brier": 0.732557700293826,
+        "ece_10_bins": 0.035233552490275905,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 306,
+          "b": 80,
+          "c": 99,
+          "d": 85
+        }
+      },
+      "responses_sha256": "8918b84a6f6d5a922b89bccbceed83315f3656141eea03235170a7dec233a61c"
+    },
+    {
+      "id": "control-08b-vk-no-cm-f32-no-intdot",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-no-cm-f32-no-intdot-attempt-01",
+      "wall_seconds": 36.43099230004009,
+      "requests_per_second": 15.646019062713611,
+      "overall": {
+        "examples": 570,
+        "correct": 193,
+        "accuracy": 0.3385964912280702,
+        "mean_gold_nll": 1.3511090720348264,
+        "mean_confidence": 0.30174130499518415,
+        "mean_brier": 0.7325163308741796,
+        "ece_10_bins": 0.036855186232886014,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 304,
+          "b": 81,
+          "c": 100,
+          "d": 85
+        }
+      },
+      "responses_sha256": "e5d63634e1b43e87d8394d475233c53eb375a8bbcb2c4e4e5356aab76b40435e"
+    },
+    {
+      "id": "control-08b-cpu",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-cpu-attempt-01",
+      "wall_seconds": 405.9546011000639,
+      "requests_per_second": 1.4040978928564982,
+      "overall": {
+        "examples": 570,
+        "correct": 195,
+        "accuracy": 0.34210526315789475,
+        "mean_gold_nll": 1.3497848663941767,
+        "mean_confidence": 0.30125150929357464,
+        "mean_brier": 0.7317596990605838,
+        "ece_10_bins": 0.040853753864320094,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 292,
+          "b": 82,
+          "c": 109,
+          "d": 87
+        }
+      },
+      "responses_sha256": "dd13b5abb73a9bbb433daa86497a293f52bad74442f8c3ecf9437045ab7e4c24"
+    },
+    {
+      "id": "control-08b-cuda-repeat",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-cuda-repeat-attempt-01",
+      "wall_seconds": 31.660621299990453,
+      "requests_per_second": 18.003436969828886,
+      "overall": {
+        "examples": 570,
+        "correct": 196,
+        "accuracy": 0.34385964912280703,
+        "mean_gold_nll": 1.3497181775316671,
+        "mean_confidence": 0.3016046631414363,
+        "mean_brier": 0.7317630672531082,
+        "ece_10_bins": 0.042254985981370737,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 294,
+          "b": 86,
+          "c": 102,
+          "d": 88
+        }
+      },
+      "responses_sha256": "dda672e09c7ea7efe72930c9f53561404bc1784c26ccc55800c29c6682ed9977"
+    },
+    {
+      "id": "control-08b-vk-default-repeat",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-08b-vk-default-repeat-attempt-01",
+      "wall_seconds": 20.226113399956375,
+      "requests_per_second": 28.181390498939326,
+      "overall": {
+        "examples": 570,
+        "correct": 190,
+        "accuracy": 0.3333333333333333,
+        "mean_gold_nll": 1.3513255536630702,
+        "mean_confidence": 0.30173213572000046,
+        "mean_brier": 0.7326458957859073,
+        "ece_10_bins": 0.03160119761333289,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 302,
+          "b": 83,
+          "c": 100,
+          "d": 85
+        }
+      },
+      "responses_sha256": "da48a700116eda535ec1b1012256c74d3ff2013905aa85ec3637481788d95f20"
+    },
+    {
+      "id": "control-2b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-2b-cuda-attempt-01",
+      "wall_seconds": 41.01670799998101,
+      "requests_per_second": 13.89677591873692,
+      "overall": {
+        "examples": 570,
+        "correct": 285,
+        "accuracy": 0.5,
+        "mean_gold_nll": 1.2404762834061809,
+        "mean_confidence": 0.3369449968812734,
+        "mean_brier": 0.6700724216404926,
+        "ece_10_bins": 0.16305500311872662,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 232,
+          "b": 101,
+          "c": 123,
+          "d": 114
+        }
+      },
+      "responses_sha256": "8a1db9223f81325233db13b202678c1f5b00e4680df7822f2991bfebd7acec11"
+    },
+    {
+      "id": "control-2b-vk-default",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-2b-vk-default-attempt-01",
+      "wall_seconds": 26.21061029995326,
+      "requests_per_second": 21.746918270003672,
+      "overall": {
+        "examples": 570,
+        "correct": 294,
+        "accuracy": 0.5157894736842106,
+        "mean_gold_nll": 1.2391725872569643,
+        "mean_confidence": 0.33738838992655384,
+        "mean_brier": 0.6694501310644683,
+        "ece_10_bins": 0.17840108375765668,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 229,
+          "b": 104,
+          "c": 121,
+          "d": 116
+        }
+      },
+      "responses_sha256": "110451c1cac721e9054cf2f08274cb7dfa928390f8fb62c706df316120bd25fc"
+    },
+    {
+      "id": "control-2b-vk-no-cm2",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-2b-vk-no-cm2-attempt-01",
+      "wall_seconds": 34.4450732000405,
+      "requests_per_second": 16.54808502480784,
+      "overall": {
+        "examples": 570,
+        "correct": 290,
+        "accuracy": 0.5087719298245614,
+        "mean_gold_nll": 1.2392854088459526,
+        "mean_confidence": 0.3373760319001571,
+        "mean_brier": 0.6695072205486369,
+        "ece_10_bins": 0.17139589792440432,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 231,
+          "b": 104,
+          "c": 120,
+          "d": 115
+        }
+      },
+      "responses_sha256": "fde9a31006cb29c7ef7cf107112e2b4c218dd3e9ccd24622b0e5147c6df53e5a"
+    },
+    {
+      "id": "control-2b-vk-no-cm",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-2b-vk-no-cm-attempt-01",
+      "wall_seconds": 63.36120030004531,
+      "requests_per_second": 8.99604169903316,
+      "overall": {
+        "examples": 570,
+        "correct": 285,
+        "accuracy": 0.5,
+        "mean_gold_nll": 1.2399155142085463,
+        "mean_confidence": 0.337467136597002,
+        "mean_brier": 0.6698222894393662,
+        "ece_10_bins": 0.16253286340299794,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 237,
+          "b": 98,
+          "c": 121,
+          "d": 114
+        }
+      },
+      "responses_sha256": "882f1324ecad2f74053967d4f1c2a53921e0a9e274559e977a18aa7777ca5e5e"
+    },
+    {
+      "id": "control-35b-cuda",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-35b-cuda-attempt-01",
+      "wall_seconds": 113.85627300001215,
+      "requests_per_second": 5.006311773440355,
+      "overall": {
+        "examples": 570,
+        "correct": 474,
+        "accuracy": 0.8315789473684211,
+        "mean_gold_nll": 0.7970131128280131,
+        "mean_confidence": 0.5143808388185594,
+        "mean_brier": 0.4115836545046415,
+        "ece_10_bins": 0.3171981085498616,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 124,
+          "b": 137,
+          "c": 148,
+          "d": 161
+        }
+      },
+      "responses_sha256": "e45d988d060f5670254146dca1eda295309a08dd1d121f1e906445be7edf1b7c"
+    },
+    {
+      "id": "control-35b-vk-default",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-35b-vk-default-attempt-01",
+      "wall_seconds": 160.30639229994267,
+      "requests_per_second": 3.555691022810223,
+      "overall": {
+        "examples": 570,
+        "correct": 477,
+        "accuracy": 0.8368421052631579,
+        "mean_gold_nll": 0.793350842627592,
+        "mean_confidence": 0.5160648703827477,
+        "mean_brier": 0.4093616353124894,
+        "ece_10_bins": 0.3207772348804101,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 122,
+          "b": 139,
+          "c": 146,
+          "d": 163
+        }
+      },
+      "responses_sha256": "3d5ac0bbe8a5dafe091116126c58dec6e0f5d3a18fd3e446622662021205beb4"
+    },
+    {
+      "id": "control-35b-vk-no-cm2",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-35b-vk-no-cm2-attempt-01",
+      "wall_seconds": 179.32746960001532,
+      "requests_per_second": 3.1785425917812167,
+      "overall": {
+        "examples": 570,
+        "correct": 479,
+        "accuracy": 0.8403508771929824,
+        "mean_gold_nll": 0.7928188688519711,
+        "mean_confidence": 0.5158138941031022,
+        "mean_brier": 0.4091047164383076,
+        "ece_10_bins": 0.32453698308988027,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 122,
+          "b": 139,
+          "c": 145,
+          "d": 164
+        }
+      },
+      "responses_sha256": "474346310e113a8d92a8f2db7c58f972c5eb3337fae6d8c2e05d2feec4669b72"
+    },
+    {
+      "id": "control-35b-vk-no-cm",
+      "directory": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930\\control-35b-vk-no-cm-attempt-01",
+      "wall_seconds": 248.6621481999755,
+      "requests_per_second": 2.2922668533435284,
+      "overall": {
+        "examples": 570,
+        "correct": 477,
+        "accuracy": 0.8368421052631579,
+        "mean_gold_nll": 0.7924889571022381,
+        "mean_confidence": 0.515347208665613,
+        "mean_brier": 0.4091734534547611,
+        "ece_10_bins": 0.32149489659754493,
+        "gold_counts": {
+          "a": 117,
+          "b": 134,
+          "c": 151,
+          "d": 168
+        },
+        "prediction_counts": {
+          "a": 122,
+          "b": 136,
+          "c": 147,
+          "d": 165
+        }
+      },
+      "responses_sha256": "0f60372f11c2eb772d2bc576ee4f99ec0a8976610fec604550e13aec1f8fbef1"
+    }
+  ],
+  "paired_comparisons": {
+    "paired-lora": {
+      "changed": 3162,
+      "corrected": 1786,
+      "regressed": 639,
+      "gain": 8.16835208659735,
+      "subjects-improved": 53,
+      "subjects-declined": 3,
+      "subjects-tied": 1,
+      "semantic_changed": 3162,
+      "probability_changed": 14042,
+      "max_probability_difference": 0.6334035190889202
+    },
+    "full-35b-backends": {
+      "changed": 334,
+      "corrected": 150,
+      "regressed": 126,
+      "gain": 0.17091582395670132,
+      "subjects-improved": 26,
+      "subjects-declined": 13,
+      "subjects-tied": 18,
+      "semantic_changed": 334,
+      "probability_changed": 14042,
+      "max_probability_difference": 0.20185858143688934
+    },
+    "control-08b-backends": {
+      "changed": 19,
+      "corrected": 4,
+      "regressed": 10,
+      "gain": -1.0526315789473684,
+      "subjects-improved": 4,
+      "subjects-declined": 10,
+      "subjects-tied": 43,
+      "semantic_changed": 19,
+      "probability_changed": 570,
+      "max_probability_difference": 0.014974349554084276
+    },
+    "control-2b-backends": {
+      "changed": 16,
+      "corrected": 10,
+      "regressed": 1,
+      "gain": 1.5789473684210527,
+      "subjects-improved": 9,
+      "subjects-declined": 1,
+      "subjects-tied": 47,
+      "semantic_changed": 16,
+      "probability_changed": 570,
+      "max_probability_difference": 0.020998303584277678
+    },
+    "control-35b-backends": {
+      "changed": 14,
+      "corrected": 8,
+      "regressed": 5,
+      "gain": 0.5263157894736842,
+      "subjects-improved": 8,
+      "subjects-declined": 5,
+      "subjects-tied": 44,
+      "semantic_changed": 14,
+      "probability_changed": 570,
+      "max_probability_difference": 0.07242504913068426
+    },
+    "control-08b-vk-no-cm2": {
+      "changed": 7,
+      "corrected": 3,
+      "regressed": 1,
+      "gain": 0.3508771929824561,
+      "subjects-improved": 3,
+      "subjects-declined": 1,
+      "subjects-tied": 53,
+      "semantic_changed": 7,
+      "probability_changed": 570,
+      "max_probability_difference": 0.007279481579073044
+    },
+    "control-08b-vk-no-cm": {
+      "changed": 15,
+      "corrected": 7,
+      "regressed": 3,
+      "gain": 0.7017543859649122,
+      "subjects-improved": 7,
+      "subjects-declined": 3,
+      "subjects-tied": 47,
+      "semantic_changed": 15,
+      "probability_changed": 570,
+      "max_probability_difference": 0.017529087287616513
+    },
+    "control-08b-vk-no-cm-f32": {
+      "changed": 20,
+      "corrected": 9,
+      "regressed": 5,
+      "gain": 0.7017543859649122,
+      "subjects-improved": 9,
+      "subjects-declined": 5,
+      "subjects-tied": 43,
+      "semantic_changed": 20,
+      "probability_changed": 570,
+      "max_probability_difference": 0.030099113535245692
+    },
+    "control-08b-vk-no-cm-no-intdot": {
+      "changed": 14,
+      "corrected": 5,
+      "regressed": 3,
+      "gain": 0.3508771929824561,
+      "subjects-improved": 4,
+      "subjects-declined": 2,
+      "subjects-tied": 51,
+      "semantic_changed": 14,
+      "probability_changed": 570,
+      "max_probability_difference": 0.013216511123633035
+    },
+    "control-08b-vk-no-cm-f32-no-intdot": {
+      "changed": 6,
+      "corrected": 3,
+      "regressed": 0,
+      "gain": 0.5263157894736842,
+      "subjects-improved": 3,
+      "subjects-declined": 0,
+      "subjects-tied": 54,
+      "semantic_changed": 6,
+      "probability_changed": 570,
+      "max_probability_difference": 0.00745628797484249
+    },
+    "control-2b-vk-no-cm2": {
+      "changed": 5,
+      "corrected": 0,
+      "regressed": 4,
+      "gain": -0.7017543859649122,
+      "subjects-improved": 0,
+      "subjects-declined": 4,
+      "subjects-tied": 53,
+      "semantic_changed": 5,
+      "probability_changed": 570,
+      "max_probability_difference": 0.007233368950297359
+    },
+    "control-2b-vk-no-cm": {
+      "changed": 13,
+      "corrected": 1,
+      "regressed": 10,
+      "gain": -1.5789473684210527,
+      "subjects-improved": 1,
+      "subjects-declined": 10,
+      "subjects-tied": 46,
+      "semantic_changed": 13,
+      "probability_changed": 570,
+      "max_probability_difference": 0.02537505264907325
+    },
+    "control-35b-vk-no-cm2": {
+      "changed": 8,
+      "corrected": 4,
+      "regressed": 2,
+      "gain": 0.3508771929824561,
+      "subjects-improved": 4,
+      "subjects-declined": 1,
+      "subjects-tied": 52,
+      "semantic_changed": 8,
+      "probability_changed": 570,
+      "max_probability_difference": 0.06574802680256048
+    },
+    "control-35b-vk-no-cm": {
+      "changed": 9,
+      "corrected": 4,
+      "regressed": 4,
+      "gain": 0.0,
+      "subjects-improved": 3,
+      "subjects-declined": 4,
+      "subjects-tied": 50,
+      "semantic_changed": 9,
+      "probability_changed": 570,
+      "max_probability_difference": 0.15935221931516375
+    },
+    "repeat-08b-cuda": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "repeat-08b-vk-default": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "projection-08b-cuda": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "projection-08b-vulkan": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "projection-2b-cuda": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "projection-2b-vulkan": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "projection-35b-cuda": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    },
+    "projection-35b-vulkan": {
+      "changed": 0,
+      "corrected": 0,
+      "regressed": 0,
+      "gain": 0.0,
+      "subjects-improved": 0,
+      "subjects-declined": 0,
+      "subjects-tied": 57,
+      "semantic_changed": 0,
+      "probability_changed": 0,
+      "max_probability_difference": 0.0
+    }
+  },
+  "comparison_definitions": {
+    "changed": "Number of differing top-1 label keys, including semantically equivalent labels.",
+    "semantic_changed": "Number of differing top-1 answer texts.",
+    "probability_changed": "Number of rows with any nonzero candidate probability difference.",
+    "max_probability_difference": "Maximum absolute difference across candidate label probabilities.",
+    "corrected/regressed": "Correctness compares answer text, accepting all equivalent gold labels."
+  }
+}

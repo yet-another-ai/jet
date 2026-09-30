@@ -18,9 +18,9 @@
 \node[branch] (serial) at (3.5,-6.2)
   {\textbf{Hybrid/recurrent or vision path}\\Preserve prefix; reset working sequence\\Evaluate candidate continuations serially};
 \node[box] (score) at (0,-8.5)
-  {\textbf{Likelihood aggregation}\\Extract target-token log-probabilities\\Sum per candidate; normalize over candidates};
+  {\textbf{Length-normalized scoring}\\Extract target-token log-probabilities\\Mean per candidate; softmax over candidates};
 \node[box] (answer) at (0,-10.5)
-  {\textbf{Typed response}\\Choice selection or probability aggregation\\Probabilities, usage, and sequence cleanup};
+  {\textbf{Typed response}\\Choice selection or weighted aggregation\\Decision weights, usage, and sequence cleanup};
 \draw[flow] (request) -- (prepare);
 \draw[flow] (prepare) -- (prefix);
 \draw[flow] (prefix.south) -- ++(0,-0.32) -| (kv.north);

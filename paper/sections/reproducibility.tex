@@ -4,100 +4,119 @@ Source code and reproduction instructions are available at
 \url{https://github.com/yet-another-ai/jet}.
 The \href{https://github.com/yet-another-ai/jet#build}{installation instructions}
 and \href{https://github.com/yet-another-ai/jet/blob/main/tests/accuracy/README.md}{evaluation guide}
-cover setup, data and model preparation, and benchmark execution.
-Detailed configurations and recorded measurements are provided in the
-\href{https://github.com/yet-another-ai/jet/blob/main/docs/accuracy.md}{accuracy notes}
-and \href{https://github.com/yet-another-ai/jet/blob/main/docs/performance.md}{performance notes}.
+cover setup, pinned data and model preparation, and benchmark execution.
 
-The primary experiments were conducted on September 21--29, 2026; the Arc A770
-full-set study ran on September 28--29. An initial CUDA check ran on September 28, followed by the
-remaining RTX 4090 CUDA full-set runs on September 29.
-The sampled workload comprises 256 label-balanced BoolQ validation examples
-and five MMLU test examples from each of 57 subjects, totaling 541 requests
-(seed 20260921). The Arc A770 and RTX 4090 model comparisons use all
-14,042 MMLU test questions across 57 subjects. Data preparation verifies source checksums.
-JET uses zero-shot semantic candidate scoring, with reasoning
-disabled unless stated otherwise. Models up to Qwen3.5-9B use Q8\_0 weights;
-Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M. Arc A770 experiments use Vulkan;
-RTX 4090 full-set measurements include Vulkan and CUDA. The Qwen3.6 text
-benchmark does not load a visual projector.
+The RTX 4090 campaign uses the mean-token decision rule throughout, with
+reasoning disabled. All thirteen full-set runs and eighteen backend controls
+are complete. Its recorded UTC run date range is \jetresult{suite}{date},
+its executable hash prefix is \texttt{\jetresult{suite}{binary}}, and its
+source revision prefix is \texttt{\jetresult{suite}{source}}.
+Per-run provenance retains full hashes, the working-tree patch, model identity,
+runtime flags, and environment overrides. Measurements from earlier scoring
+implementations are not imported.
 
-The Arc A770 full-MMLU study uses an i9-13900K, 64\,GiB RAM, and a 16\,GiB
-GPU. Qwen3.5-0.8B, 2B, 4B, and 9B use full GPU placement,
-eight CPU threads, two sequence slots, a microbatch size of 256, an output-row
-limit of 256, eight requests per chunk, and no memory mapping. Each has one
-complete run with 14,042 responses and zero failures. All four use the same
-input, gold labels, and evaluation settings.
+\subsection{Full-MMLU Runs}
+All full runs use the 14,042 MMLU test questions across 57 subjects. Data
+preparation verifies the pinned archive checksum. Inputs can be regenerated
+with \texttt{prepare-accuracy-data.py --boolq-limit 0 --mmlu-all --ascii-json}.
+Windows CRLF and Linux LF serialization have different byte hashes; the
+question records and their order must agree. The evaluator treats identical
+answer texts under distinct option labels as equivalent.
 
-The full-MMLU study ran on September 23--24, 2026, using the RTX 4090 and
-Vulkan. Each of six models had one fresh-process run with 14,042 requests,
-eight input requests per chunk, two sequence slots, microbatch size 256,
-output-row limit 256, eight CPU threads, and no memory mapping. All runs used
-the same request and gold files. Each run produced 14,042 responses and zero
-evaluation failures.
-The complete input files can be regenerated from the pinned MMLU archive with
-\texttt{prepare-accuracy-data.py} using \texttt{--boolq-limit 0 --mmlu-all
---ascii-json}.
-The evaluator treats identical answer texts under different MMLU option labels
-as equivalent. Per-run response, timing, provenance, and subject-level reports
-are retained locally outside version control.
-The RTX 4090 CUDA series used the same six models, input, gold, scoring
-protocol, placement, and run settings. Qwen3.6-35B-A3B ran on September 28;
-the other five ran on September 29. A control using the same executable and
-model files for both GPU backends confirms that switching the backend changes
-answers on its sampled rows (Appendix~\ref{sec:backend-sensitivity}).
+Six pretrained models are evaluated with both CUDA and Vulkan on the RTX 4090:
+Qwen3.5-0.8B, 2B, 4B, and 9B use Q8\_0; Qwen3.5-27B and
+Qwen3.6-35B-A3B use Q4\_K\_M. The thirteenth full run evaluates the
+LoRA-adapted Qwen3.5-4B Q8\_0 with CUDA. The text benchmark loads no visual
+projector. All runs use full GPU placement, eight CPU threads, two sequence
+slots, a microbatch size of 256, an output-row limit of 256, eight requests per
+chunk, and no memory mapping.
 
-The separate Qwen3.5-4B LoRA run finished September 30, 2026. Its pinned
-base-model revision, source-file checksums, data split manifest, optimizer
-configuration, adapter, and export provenance are recorded under
-\texttt{training/}. The MMLU comparison uses the September 29 CUDA base run
-and the September 30 adapted run, with identical input/gold hashes, executable
-hash, backend, batch size, and JET flags. Both produce 14,042 responses and zero
-failures. The adapted model is a merged text-only Q8\_0 GGUF made with
-\texttt{--no-nextn}; the pre-existing base GGUF includes MTP weights. Each
-configuration has one complete-process timing run. The paired analysis counts
-semantic answer equivalence when multiple option labels share the same text.
-The base GGUF was obtained from a separate Q8\_0 conversion repository; a
-zero-adapter GGUF export of the pinned training checkpoint has not been
-evaluated, so the comparison does not isolate LoRA from source provenance.
+Each configuration has one fresh-process run without explicit warm-up or cache
+eviction. A result is admitted only after successful process completion,
+14,042 responses, zero evaluation failures, and matching input, gold, executable,
+and protocol provenance. Timings include startup, loading, JSONL processing,
+and shutdown. Responses, logs, timings, and subject-level reports are retained
+locally outside version control. Generated aggregate evidence and the figure
+data identify the completed runs used by the manuscript. Full-MMLU accuracy
+and throughput for a configuration always come from the same run.
 
-The shared-prefix comparison uses a preserved baseline executable. Both
-versions use eight input requests per chunk, nine sequence slots, 2,048 context
-tokens per sequence, token batches of 2,048, a microbatch size of 512, and an
-output-row limit of 256. Each model has one baseline run and two optimized runs,
-with model order reversed in the second round and no explicit warm-up.
-Optimized execution uses 541 prefix evaluations and 128,583 prefix tokens;
-the baseline schedule implies 1,652 prefix evaluations and 378,526 prefix
-tokens. Continuations comprise 9,795 tokens across 2,369 decoder calls.
+\subsection{Adapted Model Provenance}
+The completed LoRA training and export are retained under \texttt{training/}.
+The pinned HF checkpoint, source checksums, data split manifest, optimizer
+configuration, adapter, and export identity are preserved. Only inference is
+rerun for this scoring revision; the adapter and weights are unchanged.
+The CUDA reference and adapted evaluations use the same input and gold,
+executable, batch size, and JET flags. Paired correctness includes semantic
+equivalence when option labels share answer text.
 
-Reported JET timings cover complete processes, including model loading.
-The full-MMLU rates in Tables~\ref{tab:models} and~\ref{tab:full-mmlu} are measured on the same
-requests as their corresponding accuracy scores.
-Jev 1.13's manually measured 89.06\% full-MMLU accuracy and 2.86 requests/s API
-throughput lack documented concurrency and detailed timing boundaries. Its
-interface does not expose configurable reasoning or few-shot settings.
-
-Raw artifacts are excluded from the repository. Prefix
-records were checked locally. The full-MMLU records include local responses,
-reports, and provenance.
+The adapted model is a merged text-only Q8\_0 GGUF made with
+\texttt{--no-nextn}; the pre-existing reference GGUF includes MTP weights and
+comes from a separate conversion repository. A zero-adapter export of the
+pinned training checkpoint has not been evaluated, so this comparison does
+not isolate adaptation from source and conversion provenance.
 
 \subsection{GPU Backend Sensitivity}
 \label{sec:backend-sensitivity}
-Even on the same GPU, CUDA and Vulkan can produce different top-1 answers.
-On a fixed 570-question RTX 4090 subset, changing only the backend with one
-executable changes 16, 12, and 14 choices for Qwen3.5-0.8B, Qwen3.5-2B,
-and Qwen3.6-35B-A3B, respectively. Current Vulkan outputs for all three
-models match the historical full-run responses projected onto this subset,
-including probabilities; the Qwen3.6 CUDA outputs also match its historical
-full-run projection. These checks link the controlled comparison to the
-reported full-set runs on the sampled rows.
-Changes from correct to incorrect and from incorrect to correct often offset
-one another in aggregate accuracy, masking differences on individual questions.
-Vulkan execution options also affect answers: disabling
-\texttt{NV\_coopmat2}, integer dot product, or FP16 support separately changes
-results, yet none of these single-option changes makes Vulkan fully agree
-with CUDA or CPU execution. The observed Vulkan differences between the
-Arc A770 and RTX 4090 arise primarily because the A770 cannot enable
-\texttt{KHR\_cooperative\_matrix}. Consequently, small accuracy differences
-across devices or backends should not be read as isolated model-quality changes;
-paired per-question responses are needed to reveal the underlying changes.
+The control suite contains 570 questions: for each subject, take the ten
+smallest SHA-256 hashes of the gold-record identifier and then restore the
+original full-set ordering. This selection does not use model responses.
+All controls use the same executable, model files, inputs, and full-run flags.
+Environment overrides select each Vulkan path.
+
+The suite has eighteen fresh-process runs. Qwen3.5-0.8B has ten: CPU, CUDA,
+Vulkan default, a repeat of each GPU default, and five Vulkan variants.
+Qwen3.5-2B and Qwen3.6-35B-A3B each have four: CUDA, Vulkan default,
+Vulkan without \texttt{NV\_coopmat2}, and Vulkan without either cooperative-matrix
+path. For 0.8B, the five Vulkan variants disable \texttt{NV\_coopmat2};
+both cooperative-matrix paths; both paths plus FP16; both paths plus integer
+dot product; or all four features. Thus the FP16 and integer-dot-product
+comparisons are conditional on cooperative-matrix paths already being disabled.
+Logs record the backend, actual execution features, and full layer placement.
+
+\begin{table}[htbp]
+\centering\small
+\caption{CUDA versus default Vulkan on 570 questions. Label changes include
+equivalent answer texts; semantic changes do not. Weight changes count rows
+with any nonzero difference, and maximum delta is over all candidate weights.}
+\label{tab:backend-controls}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Label changes & Semantic changes & Weight changes & Max.\ delta \\
+\midrule
+Qwen3.5-0.8B & \jetresult{control-08b-backends}{changed} & \jetresult{control-08b-backends}{semantic_changed} & \jetresult{control-08b-backends}{probability_changed} & \jetresult{control-08b-backends}{max_probability_difference} \\
+Qwen3.5-2B & \jetresult{control-2b-backends}{changed} & \jetresult{control-2b-backends}{semantic_changed} & \jetresult{control-2b-backends}{probability_changed} & \jetresult{control-2b-backends}{max_probability_difference} \\
+Qwen3.6-35B-A3B & \jetresult{control-35b-backends}{changed} & \jetresult{control-35b-backends}{semantic_changed} & \jetresult{control-35b-backends}{probability_changed} & \jetresult{control-35b-backends}{max_probability_difference} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:backend-controls} separates label, semantic-answer, and
+decision-weight changes. Option-ablation comparisons and repeated-run equality
+are recorded with the campaign evidence. Aggregate accuracy can conceal compensating
+changes between correct and incorrect answers. A single-device ablation does
+not establish the cause of differences between the RTX 4090 and Arc A770.
+
+\subsection{Pending Arc A770 and Prefix Studies}
+The Arc A770 follow-up targets an i9-13900K, 64\,GiB RAM, and a 16\,GiB GPU.
+Four full-MMLU runs will use Qwen3.5-0.8B, 2B, 4B, and 9B Q8\_0 with Vulkan
+and the same mean-token scoring and runtime flags as the RTX 4090 campaign.
+Their results and figure points remain pending until complete runs are available.
+
+The shared-prefix follow-up uses 256 label-balanced BoolQ validation examples
+and five MMLU test examples from each of 57 subjects, totaling 541 requests
+(seed 20260921). Both independent execution and prefix reuse must apply the
+current mean-token rule. The intended comparison keeps eight requests per
+chunk, nine sequence slots, 2,048 context tokens per sequence, token batches
+of 2,048, a microbatch size of 512, and an output-row limit of 256. One
+independent-execution run and two prefix-reuse runs per model permit a limited
+timing comparison, with model order reversed for the second round. Speedup,
+prefix-token work, exact-response equivalence, and state-isolation diagnostics
+require fresh measurements; no previous numerical result is carried forward.
+
+\subsection{External Reference Boundaries}
+Jev 1.13's manually measured 89.06\% full-MMLU accuracy and 2.86 requests/s API
+rate lack documented concurrency and detailed timing boundaries. Its interface
+exposes no configurable reasoning or few-shot settings. These author-supplied
+values remain external context. Published larger-model results retain their
+source protocols. Neither shared benchmark coverage nor normalization of JET's
+decision weights establishes calibrated confidence or matched-system equivalence.

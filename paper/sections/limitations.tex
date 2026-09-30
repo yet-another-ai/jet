@@ -1,17 +1,16 @@
 \section{Discussion and Limitations}
 \label{sec:limitations}
-The results support local decision inference on the tested GPU
-configurations. Figure~\ref{fig:mmlu-throughput} summarizes accuracy and
-throughput across the selected models and deployments. The separate execution
-studies show that optimizations can raise throughput at unchanged accuracy.
-Full GPU placement supports the measured models on the two devices.
+Figure~\ref{fig:mmlu-throughput} summarizes completed mean-token measurements
+on the RTX 4090. Arc A770
+measurements and controlled execution studies remain pending; their earlier
+results are not evidence for the current decision rule.
 Performance still depends on model size, candidate count and length, and hardware.
 
 The model comparison evaluates the complete MMLU test set but has one run per
 model and backend, so it provides no repeat-run variance estimate. Model versions,
 quantization, placement, and timing boundaries differ across studies, so their
-results cannot be treated as a controlled hardware comparison. The prefix study
-changes both state reuse and cache management; it does not isolate their
+results cannot be treated as a controlled hardware comparison. The planned
+prefix study changes both state reuse and cache management; it will not isolate their
 individual effects. Shared benchmark coverage also does not make JET and Jev
 directly comparable: prompts, scoring, aggregation, and local versus API timing
 may differ. A matched constrained-generation baseline is needed to separate the
@@ -21,9 +20,15 @@ meanings, answer types, and evaluation rules. Performance measurements should
 report warm p50/p95 latency, throughput at fixed concurrency, startup cost,
 and failure rates, distinguishing local inference from remote service latency.
 
-Candidate likelihoods are sensitive to answer wording, length, and answer priors. Their
+Mean token log-probability reduces the cumulative penalty on longer answers,
+but remains sensitive to wording, tokenization, and answer priors. Easily
+predicted padding can increase a candidate's mean score; quotation marks and
+escaped content also contribute to the scored token count. Length normalization
+therefore does not guarantee length-invariant decisions. The resulting softmax
+weights are not candidate-restricted sequence likelihoods, and their
 normalization does not establish calibration~\cite{calibration}; this requires
-separate empirical evaluation. NLL is a diagnostic, not a substitute for
+separate empirical evaluation for categorical, binary, and ordinal outputs.
+NLL is a diagnostic, not a substitute for
 calibration curves, Brier scores, or selective-prediction evaluation.
 Pretraining data may also overlap benchmark content.
 The fine-tuning experiment excludes the frozen MMLU requests and exact

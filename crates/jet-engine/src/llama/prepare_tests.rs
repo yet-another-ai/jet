@@ -286,6 +286,7 @@ fn compare_results(
                 assert_eq!(expected.prompt_tokens, actual.prompt_tokens);
                 assert_eq!(expected.thinking_tokens, actual.thinking_tokens);
                 assert_eq!(expected.target_token_counts, actual.target_token_counts);
+                assert!(!expected.target_token_counts.contains(&0));
                 assert_eq!(expected.prefill_count, actual.prefill_count);
                 assert_eq!(
                     expected.log_probabilities.len(),
@@ -299,8 +300,16 @@ fn compare_results(
                 {
                     assert!((left - right).abs() <= 1e-5 + 1e-4 * *count as f64);
                 }
-                let expected = jet_core::normalize_log_probabilities(&expected.log_probabilities)?;
-                let actual = jet_core::normalize_log_probabilities(&actual.log_probabilities)?;
+                let means = |score: &ScoreResult| {
+                    score
+                        .log_probabilities
+                        .iter()
+                        .zip(&score.target_token_counts)
+                        .map(|(logp, count)| logp / *count as f64)
+                        .collect::<Vec<_>>()
+                };
+                let expected = jet_core::normalize_log_probabilities(&means(expected))?;
+                let actual = jet_core::normalize_log_probabilities(&means(actual))?;
                 for (left, right) in expected.iter().zip(actual) {
                     assert!(
                         (left.normalized_probability - right.normalized_probability).abs() <= 1e-5

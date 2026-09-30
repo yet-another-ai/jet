@@ -1,160 +1,119 @@
 \section{Experimental Evaluation}
 \label{sec:evaluation}
 \subsection{Experimental Setup}
-We use MMLU and BoolQ~\cite{boolq,mmlu} to examine three questions: what
-decision quality pretrained models provide, whether they can support local
-inference on consumer hardware, and how execution optimizations affect cost
-at fixed decision quality. The full-MMLU study compares four models on the Arc
-A770 and six on the RTX 4090; a fixed subset supports a controlled prefix-reuse study. The principal
-comparisons disable reasoning generation. Appendix~\ref{sec:reproducibility}
-describes the data and settings.
+We evaluate mean-token candidate scoring on MMLU~\cite{mmlu}, measuring
+decision quality and complete-process throughput together. The RTX 4090
+campaign comprises six pretrained models with CUDA and Vulkan and one
+LoRA-adapted model with CUDA. Every full run covers the same 14,042 test
+questions across 57 subjects, with reasoning disabled. A fixed subset supports
+backend controls. Appendix~\ref{sec:reproducibility} specifies the protocol.
 
-Accuracy is measured by agreement with the reference answer: choice predictions
-use the highest-probability label, and BoolQ thresholds the true probability at 0.5. Gold negative
-log-likelihood (NLL) is computed from the normalized candidate distribution.
-The zero-shot prompt and semantic scoring protocol differ from standard
-leaderboard procedures; the results characterize the evaluated JET configurations.
+All thirteen RTX 4090 full-set runs and eighteen backend controls are complete
+with mean-token scoring. The Arc A770 full-set and shared-prefix studies remain
+pending and are excluded from the current accuracy--throughput figure.
+
+Accuracy measures agreement with the reference answer, treating identical
+answer texts under different option labels as equivalent. Gold negative
+log-likelihood (NLL) and the multiclass Brier score are computed from the
+normalized decision weights. These diagnostics do not establish calibrated
+confidence. The zero-shot semantic scoring protocol differs from standard
+leaderboard procedures; results characterize the evaluated JET configurations.
 
 Complete-process wall time includes initialization, model loading, evaluation,
-and shutdown. Reported throughput is the number of requests divided by this
-elapsed time. It is distinct from saturated serving throughput; similarly,
-amortized time per request is distinct from a latency percentile. Fresh processes
-may reuse operating-system and shader caches. Run counts and configuration
-changes are reported for each comparison.
+and shutdown. Throughput is the request count divided by this elapsed time,
+rather than saturated serving throughput or a latency percentile. Fresh
+processes may reuse operating-system and shader caches. Each full configuration
+has one run, with no repeat-run variance estimate.
 
 \subsection{Local Deployment on Consumer Systems}
 \label{sec:local-deployment}
-The evaluated configurations span full placement on a 16\,GiB Arc A770 and
-an RTX 4090. These configurations establish a practical deployment range
-without server-class accelerators.
+The current campaign uses full GPU placement on an RTX 4090. Models up to
+Qwen3.5-9B use Q8\_0 weights; Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M.
+The follow-up on a 16\,GiB Arc A770 will cover Qwen3.5-0.8B, 2B, 4B, and 9B
+with Vulkan and the same decision rule. Until that follow-up is complete,
+this revision makes no measured comparison between these two devices.
 
-On full MMLU with Vulkan and full GPU placement on an RTX 4090, Qwen3.5-27B achieves
-85.09\% at 2.21 requests/s and Qwen3.6-35B-A3B achieves 82.62\% at
-4.17 requests/s. Section~\ref{sec:mmlu-comparison} reports the complete model
-comparison. The Arc A770 full-MMLU runs below cover four models that fit entirely in its
-16\,GiB of memory. Their accuracy and throughput refer to the same complete
-14,042-question workload. The RTX 4090 runs use a separate machine;
-the measured rates are not a controlled hardware speedup comparison.
-
-\subsection{Decision Quality and Model Selection}
-Table~\ref{tab:models} reports disabled-thinking decision quality on the same
-14,042 MMLU requests using Vulkan on the Arc A770. All four models use Q8\_0
-weights and full GPU placement.
-The scoring formulation is unchanged by prefix reuse. Response-equivalence
-checks in Sections~\ref{sec:prefix-results} and~\ref{sec:repeatability}
-validate the tested execution change. Runtime effects are evaluated separately.
+\subsection{Full-MMLU Model Comparison}
+\label{sec:mmlu-comparison}
+Tables~\ref{tab:full-mmlu} and~\ref{tab:full-mmlu-cuda} report the Vulkan
+and CUDA series. All entries use the same workload and runtime settings.
 
 \begin{table}[htbp]
 \centering\small
-\caption{Full MMLU test set on Arc A770, 14,042 requests per model, thinking
-disabled. Complete-process wall time includes model loading and shutdown.
-One run per model, with no repeat-run variance estimate.}
-\label{tab:models}
+\caption{Full MMLU on RTX 4090 with Vulkan, 14,042 requests per model.
+Wall time includes model loading and shutdown. One completed fresh-process run
+per model, with no repeat-run variance estimate.}
+\label{tab:full-mmlu}
 \begin{tabular}{llrrrr}
 \toprule
 Model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
 \midrule
-Qwen3.5-0.8B & Q8\_0 & 4,615 & 32.87 & 3,015.29 & 4.66 \\
-Qwen3.5-2B & Q8\_0 & 6,807 & 48.48 & 4,219.81 & 3.33 \\
-Qwen3.5-4B & Q8\_0 & 9,334 & 66.47 & 9,832.76 & 1.43 \\
-Qwen3.5-9B & Q8\_0 & 10,332 & 73.58 & 13,307.56 & 1.06 \\
+Qwen3.5-0.8B & Q8\_0 & \jetresult{full-08b-vulkan}{correct} & \jetresult{full-08b-vulkan}{accuracy} & \jetresult{full-08b-vulkan}{wall} & \jetresult{full-08b-vulkan}{rate} \\
+Qwen3.5-2B & Q8\_0 & \jetresult{full-2b-vulkan}{correct} & \jetresult{full-2b-vulkan}{accuracy} & \jetresult{full-2b-vulkan}{wall} & \jetresult{full-2b-vulkan}{rate} \\
+Qwen3.5-4B & Q8\_0 & \jetresult{full-4b-vulkan}{correct} & \jetresult{full-4b-vulkan}{accuracy} & \jetresult{full-4b-vulkan}{wall} & \jetresult{full-4b-vulkan}{rate} \\
+Qwen3.5-9B & Q8\_0 & \jetresult{full-9b-vulkan}{correct} & \jetresult{full-9b-vulkan}{accuracy} & \jetresult{full-9b-vulkan}{wall} & \jetresult{full-9b-vulkan}{rate} \\
+Qwen3.5-27B & Q4\_K\_M & \jetresult{full-27b-vulkan}{correct} & \jetresult{full-27b-vulkan}{accuracy} & \jetresult{full-27b-vulkan}{wall} & \jetresult{full-27b-vulkan}{rate} \\
+Qwen3.6-35B-A3B & Q4\_K\_M & \jetresult{full-35b-vulkan}{correct} & \jetresult{full-35b-vulkan}{accuracy} & \jetresult{full-35b-vulkan}{wall} & \jetresult{full-35b-vulkan}{rate} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Across the four A770 runs, accuracy rises from 32.87\% with 0.8B to 73.58\%
-with 9B, while throughput falls from 4.66 to 1.06 requests/s. These full-set
-results provide the model-quality estimates used in this paper.
-
-\subsection{Shared-Prefix Execution}
-\label{sec:prefix-results}
-The controlled comparison evaluates hybrid prefix reuse and metadata-only cache
-resets against independent candidate execution on the Arc A770. Both versions
-use the same models and scoring procedure.
-
 \begin{table}[htbp]
 \centering\small
-\caption{Prefix-reuse and cache-management comparison on 541 requests.
-The speedup uses the mean of the two new complete-process times.}
-\label{tab:prefix}
-\begin{tabular}{lrrrr}
-\toprule
-Q8\_0 model & Before (s) & After runs (s) & Mean (s) & Speedup \\
-\midrule
-Qwen3.5-0.8B & 242.54 & 108.06 / 109.10 & 108.58 & $2.23\times$ \\
-Qwen3.5-2B & 313.34 & 143.41 / 143.44 & 143.43 & $2.18\times$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-All 541 response objects, including probabilities and usage, are exactly equal
-to the fresh baseline in both new runs for each model. Prefix reuse reduces prefix-token work by 66.03\%, based on instrumented
-new-execution counts and schedule-derived baseline counts. The comparison bundles prefix reuse and cache reset changes, and
-does not isolate either contribution or measure the speedup of parallel probes.
-
-\subsection{MMLU Comparison with Larger Models and Jev}
-\label{sec:mmlu-comparison}
-Table~\ref{tab:full-mmlu} reports complete-process measurements on the same
-14,042 MMLU test questions using an RTX 4090 and Vulkan. Each model has one
-fresh-process run with reasoning disabled. These full-set measurements replace
-subset estimates when comparing model quality and end-to-end throughput.
-
-\begin{table}[htbp]
-\centering\small
-\caption{Full MMLU test set on RTX 4090 with Vulkan, 14,042 requests per model. Wall time
-includes model loading and shutdown; throughput is requests divided by wall time.
-One run per model, with no repeat-run variance estimate.}
-\label{tab:full-mmlu}
+\caption{Full MMLU on RTX 4090 with CUDA, under the same protocol as
+Table~\ref{tab:full-mmlu}. One fresh-process run per model.}
+\label{tab:full-mmlu-cuda}
 \begin{tabular}{llrrrr}
 \toprule
-JET model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
+Model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
 \midrule
-Qwen3.5-0.8B & Q8\_0 & 4,552 & 32.42 & 1,434.16 & 9.79 \\
-Qwen3.5-2B & Q8\_0 & 6,818 & 48.55 & 1,443.47 & 9.73 \\
-Qwen3.5-4B & Q8\_0 & 9,323 & 66.39 & 1,986.14 & 7.07 \\
-Qwen3.5-9B & Q8\_0 & 10,344 & 73.66 & 2,466.26 & 5.69 \\
-Qwen3.5-27B & Q4\_K\_M & 11,948 & 85.09 & 6,353.75 & 2.21 \\
-Qwen3.6-35B-A3B & Q4\_K\_M & 11,601 & 82.62 & 3,370.71 & 4.17 \\
+Qwen3.5-0.8B & Q8\_0 & \jetresult{full-08b-cuda}{correct} & \jetresult{full-08b-cuda}{accuracy} & \jetresult{full-08b-cuda}{wall} & \jetresult{full-08b-cuda}{rate} \\
+Qwen3.5-2B & Q8\_0 & \jetresult{full-2b-cuda}{correct} & \jetresult{full-2b-cuda}{accuracy} & \jetresult{full-2b-cuda}{wall} & \jetresult{full-2b-cuda}{rate} \\
+Qwen3.5-4B & Q8\_0 & \jetresult{full-4b-cuda}{correct} & \jetresult{full-4b-cuda}{accuracy} & \jetresult{full-4b-cuda}{wall} & \jetresult{full-4b-cuda}{rate} \\
+Qwen3.5-9B & Q8\_0 & \jetresult{full-9b-cuda}{correct} & \jetresult{full-9b-cuda}{accuracy} & \jetresult{full-9b-cuda}{wall} & \jetresult{full-9b-cuda}{rate} \\
+Qwen3.5-27B & Q4\_K\_M & \jetresult{full-27b-cuda}{correct} & \jetresult{full-27b-cuda}{accuracy} & \jetresult{full-27b-cuda}{wall} & \jetresult{full-27b-cuda}{rate} \\
+Qwen3.6-35B-A3B & Q4\_K\_M & \jetresult{full-35b-cuda}{correct} & \jetresult{full-35b-cuda}{accuracy} & \jetresult{full-35b-cuda}{wall} & \jetresult{full-35b-cuda}{rate} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Qwen3.5-27B answers 347 more questions correctly than Qwen3.6-35B-A3B,
-while the latter processes approximately 1.89 times as many requests per second.
-The architectures and model generations differ, so this contrast does not
-isolate the effect of parameter count. Figure~\ref{fig:mmlu-throughput} adds
-corresponding full-set CUDA runs of the same six models on the RTX 4090. The
-Qwen3.6-35B-A3B CUDA run scores 11,595/14,042 (82.57\%) in 2,829.36 seconds
-(4.96 requests/s); Qwen3.5-27B scores 11,925/14,042 (84.92\%) in
-3,832.36 seconds (3.66 requests/s). For Qwen3.6, 328 top-1 choices differ
-between the full-set CUDA and Vulkan runs. A same-executable backend check on
-a fixed subset confirms that switching backend changes decisions
-(Appendix~\ref{sec:backend-sensitivity}). Table~\ref{tab:full-mmlu}
-retains the Vulkan measurements.
+Within the Vulkan series, the signed Qwen3.5-27B minus Qwen3.6-35B-A3B
+difference is \jetresult{vulkan-27b-vs-35b}{correct-difference} correct answers,
+or \jetresult{vulkan-27b-vs-35b}{accuracy-difference} percentage points.
+The Qwen3.6-to-Qwen3.5 throughput ratio is
+\jetresult{vulkan-27b-vs-35b}{rate-ratio}. Their architectures and model
+generations differ, so this comparison does not isolate parameter count.
+The two full Qwen3.6 backend runs differ on
+\jetresult{full-35b-backends}{changed} top-1 choices. Paired backend controls
+are reported in Appendix~\ref{sec:backend-sensitivity}.
 
-Table~\ref{tab:mmlu-comparison} places selected JET results alongside a manually
-measured Jev score and published results for larger instruction-tuned models.
-On the complete MMLU test set, JET with Qwen3.5-27B and Vulkan on an RTX 4090
-achieves 85.09\%. The author's manual evaluation of Jev 1.13 yields 89.06\%,
-with a separately reported API throughput of 2.86 requests/s. Jev's evaluated
-interface is sampler-free and exposes no configurable reasoning or few-shot
-settings. These Jev results are the author's measurements. Published
-larger-model results retain their source evaluation protocols.
+\input{figures/mmlu-throughput}
+
+Each displayed JET point combines accuracy and throughput from the same
+complete full-MMLU run. Section~\ref{sec:finetuning} describes the separately
+marked LoRA adaptation. No partial run or pending Arc A770 result supplies
+a point. External model-card results have no corresponding JET throughput.
+
+\subsection{Reference Comparison with Larger Models and Jev}
+The author's manual Jev 1.13 measurement is 89.06\% on full MMLU,
+with a separately reported API rate of 2.86 requests/s. Its evaluated interface
+is sampler-free and exposes no configurable reasoning or few-shot settings.
+These are the author's measurements, not provider-published results.
+Published larger-model scores retain their source protocols.
 
 \begin{table}[htbp]
 \centering\small
-\caption{MMLU reference comparison. Protocols differ across groups; the table
-provides numerical context, not a matched ranking. External results are not
-measurements of those models running in JET.}
+\caption{MMLU reference comparison. Protocols differ; this is numerical
+context rather than a matched ranking. External models were not run in JET.}
 \label{tab:mmlu-comparison}
 \begin{tabular}{>{\raggedright\arraybackslash}p{6.0cm}r>{\raggedright\arraybackslash}p{6.2cm}}
 \toprule
 System / model & MMLU (\%) & Evaluation basis \\
 \midrule
 \multicolumn{3}{l}{\emph{Full-MMLU evaluations}} \\
-JET / Qwen3.5-27B, RTX 4090 & 85.09 & Full MMLU test set; Vulkan; local execution \\
-JET / Qwen3.6-35B-A3B, RTX 4090 & 82.62 & Full MMLU test set; Vulkan; local execution \\
-Jev 1.13 & 89.06 & Full MMLU test set; native decision interface \\
+JET / Qwen3.5-27B, RTX 4090 & \jetresult{full-27b-vulkan}{accuracy} & Mean-token scoring; Vulkan; local execution \\
+JET / Qwen3.6-35B-A3B, RTX 4090 & \jetresult{full-35b-vulkan}{accuracy} & Mean-token scoring; Vulkan; local execution \\
+Jev 1.13 & 89.06 & Native decision interface \\
 \midrule
 \multicolumn{3}{l}{\emph{Published larger-model references}} \\
 Llama 3.1 70B Instruct~\cite{llama31-card} & 83.6 & 5-shot; subject-macro accuracy \\
@@ -165,61 +124,36 @@ DeepSeek-V3 (671B)~\cite{deepseek-v3-results} & 88.5 & MMLU exact match in the c
 \end{tabular}
 \end{table}
 
-\input{figures/mmlu-throughput}
+The highest measured JET configuration is \jetresult{best}{model}, with
+\jetresult{best}{accuracy}\% accuracy. The signed Jev-minus-JET difference
+is \jetresult{best}{gap-to-jev} percentage points. Shared benchmark coverage
+does not imply identical prompting, scoring, aggregation, or statistical
+equivalence. Likewise, local complete-process throughput and an API rate with
+undocumented concurrency do not support a controlled speedup claim.
 
-The outlined Qwen3.5-4B point is the separately evaluated LoRA adaptation;
-Section~\ref{sec:finetuning} describes its training and comparison boundary.
+Both systems provide sampler-free decisions over supplied alternatives.
+JET returns normalized decision weights for named choices and computes ordinal
+scores as expectations of zero-based level indices. Jev additionally reports
+separate confidence values; JET's weights are not equivalent calibrated
+confidence estimates. Jev describes parallel evaluation of independent
+questions, whereas JET's hybrid path evaluates candidate continuations serially
+with a shared prefix~\cite{jev-docs,jev-workflows}.
 
-The highest JET full-MMLU score in this study is 3.97 percentage points below
-the author's Jev 1.13 result. Shared benchmark coverage does
-not ensure identical prompting, answer scoring, or aggregation, so the difference
-alone does not establish statistical equivalence. Published larger-model scores
-provide additional context under their respective evaluation protocols; they do
-not establish how those models would perform under JET's candidate-scoring method.
-
-\paragraph{Functional and performance comparison with Jev.}
-Both systems provide sampler-free decisions over supplied alternatives,
-including boolean probabilities, named choices, and rubric scores. JET obtains
-this behavior from reusable pretrained models with local execution. JET
-computes its score as the expectation of zero-based level indices and returns
-candidate probability maps for choice and score questions. Jev additionally
-reports separate confidence values for those question types; JET's normalized
-likelihoods are not presented as equivalent calibrated confidence estimates. Jev describes
-parallel evaluation of independent questions; JET's hybrid path evaluates
-candidate continuations serially while sharing their prefix~\cite{jev-docs,jev-workflows}.
-
-The manual Jev 1.13 measurement reports 2.86 requests/s via API. On full MMLU
-with Vulkan, JET reaches 4.17 requests/s with Qwen3.6-35B-A3B or 2.21 requests/s with
-Qwen3.5-27B on the RTX 4090, including startup and model loading. The reported
-rates show a local accuracy--throughput choice, but differences in timing
-boundaries preclude a controlled speedup claim. JET exposes local placement
-and model choice; the evaluated Jev interface does not
-expose a reasoning mode. Its hardware configuration is unknown.
-
-Figure~\ref{fig:mmlu-throughput} summarizes evaluated
-JET configurations for each model and GPU backend, with reasoning
-disabled, alongside Jev. Early prompt baselines, intermediate optimization
-variants, and repeated measurements are omitted from the figure. Model choice changes decision quality; the prefix
-comparison improves throughput without changing responses. Within the RTX 4090 Vulkan full-set comparison, Qwen3.5-27B provides the
-highest MMLU accuracy, while Qwen3.6-35B-A3B provides greater throughput.
-These results distinguish gains from model capability and execution efficiency.
-
-Each Arc A770 and RTX 4090 point shows accuracy and throughput from the
-same full-MMLU run. Jev uses
-full-MMLU accuracy and a separately reported API rate.
-Published larger-model scores remain in Table~\ref{tab:mmlu-comparison}
-because corresponding throughput measurements are unavailable.
+\subsection{Shared-Prefix Execution: Pending Follow-Up}
+\label{sec:prefix-results}
+The Arc A770 follow-up will compare independent candidate execution with
+prefix reuse and metadata-only cache resets under the same mean-token rule.
+The fixed workload comprises 256 BoolQ validation examples and five MMLU
+test examples from each subject, totaling 541 requests~\cite{boolq,mmlu}.
+Speedup, prefix-token counts, and exact-response equivalence require new
+measurements. Earlier execution measurements do not establish those properties
+for the method evaluated here.
 
 \subsection{Numerical Equivalence and Reproducibility}
 \label{sec:repeatability}
-The prefix comparison preserves exact responses
-in its tested configurations. This does not imply agreement across platforms.
-
-Independent candidate execution provides a reference for testing state
-isolation. An initial hybrid schedule changed 9 of 20 diagnostic answers.
-Restoring independent candidate states recovered agreement on all top-1
-decisions in that slice, with a maximum probability difference of
-$1.12\times10^{-7}$. A separate experiment batching independent requests
-exceeded the same numerical tolerance and was not retained. These checks
-support the use of serial candidate continuations in the reported hybrid
-experiments.
+Sampler-free selection does not ensure agreement across numerical backends.
+The current control suite compares paired answers and decision weights, including
+fresh-process repetitions of the smallest model. Independent candidate execution
+provides a reference for state-isolation testing. Numerical claims about prefix
+reuse and independent-request batching remain pending under the current method;
+the production hybrid path retains serial candidate continuations.

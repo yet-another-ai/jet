@@ -27,6 +27,17 @@ selects Linux x86-64 or macOS binaries; its lock entries are limited to those
 platforms. On Windows or Linux ARM, use a native TeX Live installation and run
 `latexmk main.tex` from `paper/` instead.
 
+A portable Tectonic 0.17.0 executable is available locally for Windows at
+`target/length-audit/tools/tectonic-0.17.0/tectonic.exe`. It requires no global
+installation. From the repository root:
+
+```powershell
+& ./target/length-audit/tools/tectonic-0.17.0/tectonic.exe --keep-logs --keep-intermediates --outdir paper/build paper/main.tex
+```
+
+Tectonic downloads its TeX bundle on first use and then reuses its local cache.
+The portable executable and generated build files are ignored by Git.
+
 If a minimal TinyTeX installation reports a missing package, install the template's
 package set and rebuild:
 
@@ -59,6 +70,10 @@ An existing TeX Live installation with the same packages can instead run
 - `references.bib`: BibTeX references; cite with `\cite{key}`.
 - `figures/workflow.tex`: editable TikZ vector diagram of the local decision workflow.
 - `figures/mmlu-results.json`: accuracy and throughput data for Figure 2.
+- `figures/rtx4090-results.tex`: generated numeric macros for tables and prose.
+- `figures/rtx4090-evidence.json`: validated aggregate results and paired comparisons.
+- `update_results.py`: validate a complete rerun campaign and regenerate its
+  manuscript macros, evidence, and figure data; `--pending` initializes placeholders.
 - `figures/generate_mmlu_chart.py`: regenerate the TikZ accuracy--throughput
   comparison with `python3 paper/figures/generate_mmlu_chart.py`, then rebuild
   with `mise run paper`.
@@ -72,32 +87,50 @@ Discussion and Limitations, and Conclusion, followed by Statements, references,
 and a short experimental protocol.
 Local deployment on consumer GPUs is a central evaluation theme.
 
-The draft compares four JET models on an Arc A770 and six on an RTX 4090
-using full MMLU. Figure 2 includes both Vulkan and CUDA runs for the RTX 4090.
-It also marks the text-only Qwen3.5-4B LoRA CUDA run separately: 74.39% on
-14,042 MMLU questions versus 66.46% for the separately sourced 4B CUDA run, at
-10.17 versus 9.79 requests/s in one run per variant. The rates do not establish
-a repeatable speedup.
-The Vulkan RTX 4090 comparison ranges from
-Qwen3.5-0.8B (32.42%, 9.79 req/s) to Qwen3.5-27B (85.09%, 2.21 req/s), and
-Qwen3.6-35B-A3B (82.62%, 4.17 req/s). Jev 1.13 (89.06%, 2.86 req/s via API)
-and published larger-model scores provide context. The report formalizes sampler-free candidate
-scoring, describes prefix sharing and state isolation, and consolidates
-existing accuracy and performance measurements. See [evidence.md](evidence.md) for
-the mapping from quantitative claims to source records and the remaining experiments.
-The full-set Arc A770 and RTX 4090 rates are each measured on the same 14,042 requests as their
-accuracy scores. Engineering details, commands, and artifact
-provenance belong in the repository documentation rather than the manuscript.
-A Qwen3.6-35B-A3B CUDA full-set run measured 82.57% and 4.96 req/s;
-five corresponding Qwen3.5 CUDA runs complete the six-model CUDA series.
-The Qwen3.5-27B CUDA run measured 84.92% and 3.66 req/s.
-On a fixed 570-question subset, a same-executable CUDA/Vulkan comparison
-independently confirms backend-dependent answer changes on the RTX 4090.
+The report now uses one candidate-scoring method: mean conditional token
+log-probability followed by candidate softmax. Every active JET measurement
+comes from a completed fresh run with that method; historical measurements
+are not reused.
 
-The primary RTX 4090 full-MMLU Vulkan runs were performed September 23--24,
-2026; the CUDA runs were performed September 28--29. The Arc A770 runs were
-performed September 28--29; the 4B and 9B additions use the same evaluation
-configuration as the 0.8B and 2B models. Results retain their original
-sample sizes, hardware, and timing boundaries. The report does not
-claim measured parity with Jev, calibrated probabilities, or cross-device bitwise
+The completed RTX 4090 campaign covers six pretrained models with both CUDA and Vulkan,
+plus the existing Qwen3.5-4B LoRA export with CUDA: thirteen full runs of the
+same 14,042 MMLU questions. Eighteen controls on a fixed 570-question subset
+check paired backend differences, selected Vulkan options, and fresh-process
+repetition. All 31 cases completed on September 29--30, 2026 (UTC).
+The LoRA adapter and training provenance remain unchanged; both reference
+and adapted inference were rerun.
+
+Manuscript numbers come from generated TeX macros rather than hand-maintained
+copies. The result exporter validates the completed campaign before updating
+the tables, derived comparisons, and figure. See [evidence.md](evidence.md)
+for the artifact paths, validation requirements, and provenance boundaries.
+Each displayed JET figure point combines accuracy and complete-process
+throughput from the same full run. No partial measurement supplies a point.
+
+The Arc A770 full-set comparison for Qwen3.5-0.8B, 2B, 4B, and 9B remains
+pending until the machine switch. Its table and figure points are withheld.
+The controlled shared-prefix and state-isolation studies also require fresh
+measurements; old speedup and exact-response claims are not carried forward.
+
+On the Linux A770 host, synchronize this working tree (including the scoring
+change) and rebuild the local Vulkan executable before running the four full
+models. From the repository root, with the Vulkan build dependencies and model
+files available:
+
+```sh
+mise exec rust@1.98 -- cargo build --release --locked -p jet-cli --features vulkan
+JET_A770_RUN_TAG=mean-20260930 JET_A770_BINARY=target/release/jet \
+  bash scripts/run-a770-full-mmlu.sh 08b 2b 4b 9b
+```
+
+Use a new run tag if that output directory already contains results from another
+binary. The harness disables reasoning, and each completed full run must have
+14,042 responses and zero evaluation failures. Keep the A770 artifacts separate
+from the completed 4090 campaign. The 541-request prefix comparison described
+in the appendix is a separate follow-up.
+
+Jev 1.13 (author-supplied 89.06% and 2.86 requests/s via API) and published
+larger-model scores remain external references with their original protocols.
+The report does not claim measured parity with Jev, calibrated confidence,
+LoRA-only causality, a repeatable speedup from one run, or cross-device bitwise
 reproducibility.

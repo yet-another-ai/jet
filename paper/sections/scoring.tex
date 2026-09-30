@@ -4,7 +4,10 @@
 Let $x$ be the question context and $\mathcal{C}$ a finite set of candidate
 alternatives. The quoted answer text for each $c$ is represented by a token
 sequence $y_c=(y_{c,1},\ldots,y_{c,m_c})$, following the model's assistant
-prefix. Tokenization preserves the boundary between context and answer.
+prefix, with $m_c>0$. Tokenization preserves the boundary between context and
+answer. The length $m_c$ counts the actual tokens in the scored candidate
+suffix, including its quotation marks and escaped content. It excludes prompt
+tokens, any reasoning trace, image tokens, and unscored end-of-turn tokens.
 Let $\mathcal{V}$ be the model vocabulary
 and $z_{c,t,v}$ the logit for token $v$ given $(x,y_{c,<t})$.
 The probability of each supplied candidate token is
@@ -28,32 +31,48 @@ written as
   \label{eq:token-log-probability}
 \end{equation}
 
-\subsection{Candidate Likelihoods}
+\subsection{Length-Normalized Candidate Scores}
 The autoregressive chain rule gives the sequence likelihood and its logarithm:
 \begin{equation}
   L_c=p_\theta(y_c\mid x)=\prod_{t=1}^{m_c}p_{c,t},
   \qquad
-  s(c\mid x)=\log L_c=\sum_{t=1}^{m_c}\ell_{c,t}.
+  r(c\mid x)=\log L_c=\sum_{t=1}^{m_c}\ell_{c,t}.
+  \label{eq:sequence-likelihood}
+\end{equation}
+The sum accumulates a negative contribution for each token, which penalizes
+longer candidates even when their mean token log-probabilities are identical.
+JET therefore uses the mean token log-probability as its decision score:
+\begin{equation}
+  s(c\mid x)=\frac{r(c\mid x)}{m_c}
+  =\frac{1}{m_c}\sum_{t=1}^{m_c}\ell_{c,t}.
   \label{eq:score}
 \end{equation}
-Normalizing these likelihoods over the candidate set gives
+Its exponential is the geometric mean of the candidate's conditional token
+probabilities, $\exp(s(c\mid x))=L_c^{1/m_c}$. A softmax over these scores,
+with no additional temperature scaling ($T=1$), gives normalized decision
+weights:
 \begin{equation}
   q(c\mid x,\mathcal{C})
-  =\frac{L_c}{\sum_{d\in\mathcal{C}}L_d}
+  =\frac{L_c^{1/m_c}}{\sum_{d\in\mathcal{C}}L_d^{1/m_d}}
   =\frac{\exp(s(c\mid x)-M)}
         {\sum_{d\in\mathcal{C}}\exp(s(d\mid x)-M)},
   \quad M=\max_{d\in\mathcal{C}}s(d\mid x).
   \label{eq:probability}
 \end{equation}
 Equations~\ref{eq:token-probability} and~\ref{eq:probability} normalize over
-different sets: vocabulary tokens and complete candidate answers, respectively.
-For example, candidate likelihoods of $0.06$ and $0.02$ give normalized
-probabilities of $0.75$ and $0.25$.
-This distribution is relative to the supplied answers. Scores omit end-of-turn
-tokens and are not length-normalized or summed over alternative phrasings.
-Answer wording, token length, and the candidate set therefore affect the result.
-Adding or duplicating a candidate also changes the normalized distribution.
-Normalization alone does not establish probability calibration.
+different sets: vocabulary tokens and candidate scores, respectively. Two
+candidates with lengths 2 and 10 and mean token log-probability $-0.2$ both
+receive weight $0.5$, despite raw log-likelihoods of $-0.4$ and $-2.0$.
+The weights sum to one, but are not the candidate-restricted sequence
+likelihoods $L_c/\sum_d L_d$ or calibrated probabilities of correctness.
+The API retains its probability fields for these weights.
+
+Length normalization reduces the direct cumulative length penalty; it does not
+make scores invariant to wording, tokenization, or answer priors. Appending
+easily predicted text can raise the mean score, and scores are not summed over
+alternative phrasings. Adding or duplicating a candidate changes the normalized
+weights. Calibration therefore requires separate empirical evaluation.
+All text and multimodal execution paths use the same mean-token scoring rule.
 
 \subsection{Decision Rules}
 For a categorical decision, JET selects
@@ -64,16 +83,18 @@ For a categorical decision, JET selects
 \end{equation}
 with ties resolved by a fixed ordering. A binary question uses
 $\mathcal{C}=\{\mathrm{false},\mathrm{true}\}$ and returns
-$q(\mathrm{true}\mid x,\mathcal{C})$. An ordinal question with $K$ ordered
-levels returns the expected index,
+$q(\mathrm{true}\mid x,\mathcal{C})$, the true candidate's decision weight.
+An ordinal question with $K$ ordered levels returns the weighted index,
 $\sum_{i=0}^{K-1} i\,q(i\mid x,\mathcal{C})$, which may be fractional.
 These rules require no additional classification head or task-specific training.
 
 Candidate labels are distinct from answer text. Different labels with identical
-text receive the same likelihood and use the fixed tie-breaking rule; binary
+text receive the same score and use the fixed tie-breaking rule; binary
 and ordinal answer descriptions must be distinct. In evaluation, any label with
-the gold answer text is accepted, and its probability is summed with those of
-equivalent labels when computing gold negative log-likelihood.
+the gold answer text is accepted, and its weight is summed with those of
+equivalent labels when computing gold negative log-likelihood (NLL). This
+diagnostic is the negative log of the gold decision weight, not the raw
+sequence negative log-likelihood from Equation~\ref{eq:sequence-likelihood}.
 
 \subsection{Optional Reasoning and Determinism}
 JET can generate a reasoning trace once per question and include it in the
@@ -83,6 +104,6 @@ execution comparisons disable reasoning generation.
 
 Without reasoning generation, the decision rule is deterministic for fixed
 model outputs. Floating-point differences across devices and execution settings
-can still change probabilities and decisions. Section~\ref{sec:repeatability}
-reports the observed agreement; it does not imply bitwise reproducibility across
-hardware.
+can still change decision weights and decisions. Section~\ref{sec:repeatability}
+describes the numerical validation boundary; agreement in a tested configuration
+does not imply bitwise reproducibility across hardware.

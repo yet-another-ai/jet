@@ -4,7 +4,8 @@ Pretrained sequence models assign conditional probabilities to token
 sequences~\cite{transformer}. Ranking candidate answers by likelihood is an
 established evaluation method, supported by tools such as the Language Model
 Evaluation Harness~\cite{lm-harness}. Unlike constrained decoding, which limits
-the tokens allowed during generation, JET evaluates supplied answers directly.
+the tokens allowed during generation, JET evaluates supplied answers directly
+using mean token log-probability.
 Its contribution concerns execution of this method rather than a new scoring
 objective.
 
@@ -14,6 +15,7 @@ reuse to finite candidate sets and distinguishes attention caches from recurrent
 state, which requires isolation between candidate continuations.
 
 Jev targets structured decisions through specialized training and emphasizes
-calibrated outputs~\cite{jev-introduction,jev-docs}. JET instead reuses pretrained
-model likelihoods, with optional task-aligned adaptation. Both approaches restrict the output space, but valid outputs
+calibrated outputs~\cite{jev-introduction,jev-docs}. JET instead normalizes
+pretrained model log-likelihoods by candidate token length, with optional
+task-aligned adaptation. Both approaches restrict the output space, but valid outputs
 do not by themselves imply accurate decisions or calibrated probabilities.

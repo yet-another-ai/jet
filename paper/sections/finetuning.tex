@@ -1,16 +1,17 @@
 \section{Task-Aligned Fine-Tuning}
 \label{sec:finetuning}
-We fine-tuned Qwen3.5-4B with LoRA~\cite{lora} to test whether training on
-JET's decision format improves accuracy. Training updates a small set of
-parameters while keeping the pretrained weights frozen. The candidate-scoring
-method remains unchanged.
+We fine-tuned Qwen3.5-4B with LoRA~\cite{lora} to examine adaptation to JET's
+decision format. Training updates a small set of parameters while keeping the
+pretrained weights frozen. The reference and adapted models both use the
+mean-token candidate-scoring method at evaluation.
 
 \subsection{Training Method}
 The training mixture contains 22,791 records: 9,427 BoolQ~\cite{boolq},
 2,248 ARC-Easy and 1,116 ARC-Challenge~\cite{arc}, and 10,000
-SNLI~\cite{snli}. Each example uses the same prompt and answer format as
-JET inference, with reasoning disabled. Training minimizes cross-entropy over
-the correct answer text, matching the continuation scored at inference.
+SNLI~\cite{snli}. Examples use the same prompt and answer format as JET
+inference, with reasoning disabled. Training minimizes next-token
+cross-entropy over correct answer text. It does not directly optimize the
+candidate-set softmax used for decisions.
 
 We train 32.46 million parameters (0.77\% of the model) for one epoch, using
 LoRA rank 16, a learning rate of $10^{-4}$, and an effective batch size of 16.
@@ -18,28 +19,48 @@ A separate 512-example validation subset monitors loss. Official test splits
 are held out, duplicate examples are removed, and exact matches to the MMLU
 evaluation questions are excluded. MMLU is not used for training or model
 selection, although these checks cannot rule out paraphrases or pretraining
-contamination. Full training settings are provided in the repository.
+contamination. The completed adapter is unchanged for the new inference
+evaluation; full training settings and export provenance are retained in the
+repository.
 
-\subsection{Measured Improvement}
-Both models are evaluated with Q8\_0 quantization on the same 14,042 MMLU
-questions using CUDA on the RTX 4090 and the same JET settings. Accuracy rises
-from 66.46\% to 74.39\%, a gain of 7.93 percentage points. Mean gold NLL
-falls from 0.9671 to 0.7721. The adapted model corrects 1,770 answers and
-changes 656 correct answers to incorrect ones; accuracy improves in 53 of 57
-subjects. Figure~\ref{fig:mmlu-throughput} compares the adapted model with the
-other evaluated models.
+\subsection{Matched-Protocol Evaluation}
+Both deployed artifacts use Q8\_0 quantization and the same 14,042 MMLU
+questions, CUDA backend, executable, and runtime flags. Table~\ref{tab:lora}
+reports decision-quality diagnostics and complete-process throughput.
 
-Complete-process throughput is 9.79 requests/s for the reference model and
-10.17 requests/s for the adapted model. With one run per model, this difference
-does not establish a repeatable speedup.
+\begin{table}[htbp]
+\centering\small
+\caption{Qwen3.5-4B artifacts evaluated with mean-token scoring on RTX 4090.
+One completed full-MMLU run per artifact.}
+\label{tab:lora}
+\begin{tabular}{lrrrr}
+\toprule
+Artifact & MMLU (\%) & Gold NLL & Brier & Req./s \\
+\midrule
+Reference & \jetresult{full-4b-cuda}{accuracy} & \jetresult{full-4b-cuda}{nll} & \jetresult{full-4b-cuda}{brier} & \jetresult{full-4b-cuda}{rate} \\
+LoRA adapted & \jetresult{full-4b-lora-cuda}{accuracy} & \jetresult{full-4b-lora-cuda}{nll} & \jetresult{full-4b-lora-cuda}{brier} & \jetresult{full-4b-lora-cuda}{rate} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The signed adapted-minus-reference accuracy difference is
+\jetresult{paired-lora}{gain} percentage points. The paired analysis counts
+\jetresult{paired-lora}{corrected} reference-wrong/adapted-right cases and
+\jetresult{paired-lora}{regressed} reference-right/adapted-wrong cases.
+Subject accuracy increases in \jetresult{paired-lora}{subjects-improved}
+subjects, decreases in \jetresult{paired-lora}{subjects-declined}, and ties
+in \jetresult{paired-lora}{subjects-tied}. These counts treat identical
+answer text under different option labels as equivalent. A single timing
+run per artifact does not establish a repeatable throughput difference.
 
 \subsection{Limitations}
 The reference model comes from a separate conversion, and we have not verified
 that it uses exactly the same pretrained weights as the training checkpoint.
-The accuracy gain therefore cannot be attributed entirely to LoRA. A controlled
-comparison would evaluate the same checkpoint with and without adaptation,
-using the same conversion procedure.
+It also includes MTP weights, whereas the adapted text-only export excludes
+them. Any observed accuracy difference therefore cannot be attributed entirely
+to LoRA. A controlled comparison would evaluate the same checkpoint with and
+without adaptation, using the same conversion procedure.
 
 This experiment covers text-based choices only. It does not evaluate adaptation
 for visual inputs, ordinal scores, or decisions in closed-loop applications.
-The MMLU improvement may not generalize to those tasks.
+Results on MMLU may not generalize to those tasks.

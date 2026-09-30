@@ -16,6 +16,7 @@ pub(crate) struct ScoreJob {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ScoreResult {
+    /// Raw sums from teacher-forced scoring; length normalization happens in build_response.
     pub log_probabilities: Vec<f64>,
     pub prompt_tokens: usize,
     pub thinking_tokens: usize,
@@ -109,6 +110,13 @@ pub(crate) fn build_response(
     plans: &[QuestionPlan],
     scores: &[ScoreResult],
 ) -> Result<DecisionResponse> {
+    if scores.len() != plans.len() {
+        return Err(JetError::NativeRuntime(format!(
+            "scorer returned {} results for {} questions",
+            scores.len(),
+            plans.len()
+        )));
+    }
     let mut answers = BTreeMap::new();
     let mut usage = Usage::default();
 
@@ -121,7 +129,21 @@ pub(crate) fn build_response(
                 plan.question_id
             )));
         }
-        let normalized = normalize_log_probabilities(&score.log_probabilities)?;
+        if score.target_token_counts.contains(&0) {
+            return Err(JetError::NativeRuntime(format!(
+                "question {:?} received a candidate with no scored target tokens",
+                plan.question_id
+            )));
+        }
+        // Count the exact scored target tokens, including quotes and escaping, but
+        // exclude prompt, image, and generated thinking tokens from the denominator.
+        let decision_scores: Vec<f64> = score
+            .log_probabilities
+            .iter()
+            .zip(&score.target_token_counts)
+            .map(|(log_probability, token_count)| log_probability / *token_count as f64)
+            .collect();
+        let normalized = normalize_log_probabilities(&decision_scores)?;
         let probabilities: BTreeMap<String, f64> = plan
             .candidates
             .iter()
@@ -191,6 +213,137 @@ pub(crate) fn build_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn plans_for_all_answer_kinds() -> Result<Vec<QuestionPlan>> {
+        let request: DecisionRequest = serde_json::from_value(serde_json::json!({
+            "state": "test",
+            "questions": {
+                "boolean": {"type": "noul", "instructions": "Is it correct?"},
+                "choice": {
+                    "type": "choice", "instructions": "Pick an answer",
+                    "criteria": {"a": "Short", "b": "A much longer answer"}
+                },
+                "score": {
+                    "type": "score", "instructions": "Rate it",
+                    "criteria": ["low", "high"]
+                }
+            }
+        }))?;
+        prepare_request(&request)
+    }
+
+    fn score_result(log_probabilities: &[f64], target_token_counts: &[usize]) -> ScoreResult {
+        ScoreResult {
+            log_probabilities: log_probabilities.to_vec(),
+            prompt_tokens: 31,
+            thinking_tokens: 17,
+            target_token_counts: target_token_counts.to_vec(),
+            prefill_count: 1,
+        }
+    }
+
+    #[test]
+    fn equal_token_means_remove_length_penalty_for_all_answer_kinds() -> Result<()> {
+        let plans = plans_for_all_answer_kinds()?;
+        let scores = vec![score_result(&[-0.4, -2.0], &[2, 10]); plans.len()];
+        let response = build_response("test-model", &plans, &scores)?;
+        assert_eq!(response.usage.input_tokens, 93);
+        assert_eq!(response.usage.output_tokens, 87);
+        for answer in response.answers.values() {
+            match answer {
+                Answer::Noul(answer) => assert!((answer.noul - 0.5).abs() < 1e-12),
+                Answer::Choice(answer) => {
+                    assert_eq!(answer.choice, "a");
+                    assert!(
+                        answer
+                            .probabilities
+                            .values()
+                            .all(|p| (*p - 0.5).abs() < 1e-12)
+                    );
+                }
+                Answer::Score(answer) => {
+                    assert!((answer.score - 0.5).abs() < 1e-12);
+                    assert!(
+                        answer
+                            .probabilities
+                            .values()
+                            .all(|p| (*p - 0.5).abs() < 1e-12)
+                    );
+                }
+            }
+        }
+        assert_eq!(scores[0].log_probabilities, [-0.4, -2.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn stronger_longer_candidate_wins_by_mean_token_log_probability() -> Result<()> {
+        let plans = plans_for_all_answer_kinds()?;
+        let scores = vec![score_result(&[-0.4, -1.0], &[2, 10]); plans.len()];
+        let response = build_response("test-model", &plans, &scores)?;
+        let expected = 1.0 / (1.0 + (-0.1_f64).exp());
+        for answer in response.answers.values() {
+            match answer {
+                Answer::Noul(answer) => assert!((answer.noul - expected).abs() < 1e-12),
+                Answer::Choice(answer) => {
+                    assert_eq!(answer.choice, "b");
+                    assert!((answer.probabilities["b"] - expected).abs() < 1e-12);
+                }
+                Answer::Score(answer) => assert!((answer.score - expected).abs() < 1e-12),
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn equal_lengths_preserve_order_but_reduce_confidence() -> Result<()> {
+        let plans = plans_for_all_answer_kinds()?;
+        let scores = vec![score_result(&[-2.0, -4.0], &[2, 2]); plans.len()];
+        let response = build_response("test-model", &plans, &scores)?;
+        let expected = 1.0 / (1.0 + (-1.0_f64).exp());
+        let unnormalized_confidence = 1.0 / (1.0 + (-2.0_f64).exp());
+        match &response.answers["choice"] {
+            Answer::Choice(answer) => {
+                assert_eq!(answer.choice, "a");
+                assert!((answer.probabilities["a"] - expected).abs() < 1e-12);
+                assert!(answer.probabilities["a"] < unnormalized_confidence);
+            }
+            _ => return Err(JetError::NativeRuntime("missing choice answer".into())),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_missing_or_extra_question_results() -> Result<()> {
+        let plans = plans_for_all_answer_kinds()?;
+        let score = score_result(&[-1.0, -2.0], &[1, 2]);
+        for count in [plans.len() - 1, plans.len() + 1] {
+            assert!(matches!(
+                build_response("test-model", &plans, &vec![score.clone(); count]),
+                Err(JetError::NativeRuntime(_))
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_malformed_candidate_lengths_and_empty_token_sequences() -> Result<()> {
+        let plans = plans_for_all_answer_kinds()?;
+        for score in [
+            score_result(&[-1.0], &[1, 2]),
+            score_result(&[-1.0, -2.0, -3.0], &[1, 2]),
+            score_result(&[-1.0, -2.0], &[1]),
+            score_result(&[-1.0, -2.0], &[1, 2, 3]),
+            score_result(&[-1.0, -2.0], &[0, 2]),
+            score_result(&[-1.0, -2.0], &[1, 0]),
+        ] {
+            assert!(matches!(
+                build_response("test-model", &plans[..1], &[score]),
+                Err(JetError::NativeRuntime(_))
+            ));
+        }
+        Ok(())
+    }
 
     struct MockScorer;
 

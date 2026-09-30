@@ -46,21 +46,25 @@ for r in rows:
     lines.append(rf'\node[anchor=west] at (0.1,{y}) {{{deployment_label}}};')
     lines.append(rf'\draw[black!12] (6.3,{y}) -- (9.9,{y});')
     lines.append(rf'\draw[black!12] (11.5,{y}) -- (14.6,{y});')
-    x = 6.3 + 3.6 * r['accuracy'] / 100
     marker = 'draw' if r.get('fine_tuned') else 'fill'
     size = '2.8pt' if r.get('fine_tuned') else '2pt'
-    lines.append(rf'\{marker}[{color}] ({x:.4f},{y}) circle ({size});')
-    lines.append(rf'\node[anchor=east] at (10.8,{y}) {{{r["accuracy"]:.2f}}};')
+    if r['accuracy'] is not None:
+        x = 6.3 + 3.6 * r['accuracy'] / 100
+        lines.append(rf'\{marker}[{color}] ({x:.4f},{y}) circle ({size});')
+        accuracy_label = f'{r["accuracy"]:.2f}'
+    else:
+        accuracy_label = 'pending'
+    lines.append(rf'\node[anchor=east] at (10.8,{y}) {{{accuracy_label}}};')
     rate = throughput(r)
     if rate is not None:
         x = 11.5 + 3.1 * rate / rate_max
         lines.append(rf'\{marker}[{color}] ({x:.4f},{y}) circle ({size});')
         label = ('\\(\\sim\\)' if r.get('approximate') else '') + f'{rate:.2f}'
     else:
-        label = '---'
+        label = 'pending' if r.get('status') == 'pending' else '---'
     lines.append(rf'\node[anchor=east] at (15.5,{y}) {{{label}}};')
     y = round(y - 0.43, 2)
 lines += [r'\end{tikzpicture}',
-          r'\caption{Full-MMLU accuracy and throughput with reasoning disabled. Blue: Arc A770 (Vulkan); teal: RTX 4090 (Vulkan); violet: RTX 4090 (CUDA); green outlined: Qwen3.5-4B LoRA (CUDA); orange: Jev 1.13 hosted API. Each JET point combines accuracy and complete-process throughput from the same 14,042-question run. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
+          r'\caption{Full-MMLU accuracy and throughput with reasoning disabled and mean token log-probability scoring for JET. Teal: RTX 4090 (Vulkan); violet: RTX 4090 (CUDA); green outlined: Qwen3.5-4B LoRA (CUDA); orange: Jev 1.13 hosted API. Each JET point combines accuracy and complete-process throughput from the same completed 14,042-question run. Arc A770 reruns remain pending and are excluded. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
           r'\label{fig:mmlu-throughput}', r'\end{figure}']
 (ROOT / 'mmlu-throughput.tex').write_text('\n'.join(lines) + '\n')

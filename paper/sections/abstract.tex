@@ -1,16 +1,15 @@
-JET uses pretrained language and vision-language models to select among a finite set of answers
-without requiring additional training. It evaluates candidate likelihoods directly and
-shares computation across candidates. Experiments on consumer
-GPUs assess decision accuracy and execution cost. Full-set measurements
-on an Arc A770 with Vulkan and an RTX 4090 with Vulkan and CUDA cover all
-14,042 MMLU test questions. In the RTX 4090 Vulkan series, Qwen3.5-27B reaches
-85.09\% at 2.21 requests/s, while Qwen3.6-35B-A3B reaches 82.62\% at
-4.17 requests/s.
-The accuracy--throughput comparison covers model and hardware choices, with
-Jev as an external reference. A controlled execution experiment shows
-2.18--2.23-fold speedups from prefix reuse and cache management, with unchanged
-outputs on the tested workload.
-A LoRA-adapted Qwen3.5-4B scores 74.39\% versus 66.46\% for a
-separately sourced Q8\_0 baseline on the same full-MMLU CUDA workload.
-These results support local decision
-inference from existing models and adaptation of a smaller model.
+JET uses pretrained language and vision-language models to select among a
+finite set of answers without requiring additional training. It scores each
+candidate by its mean conditional token log-probability and normalizes these
+scores across candidates. Shared-prefix execution reduces repeated inference
+work while isolating candidate state. The RTX 4090 evaluation covers all
+14,042 MMLU test questions with six models under both Vulkan and CUDA, plus
+a LoRA-adapted Qwen3.5-4B under CUDA. The highest measured configuration,
+\jetresult{best}{model}, has \jetresult{best}{accuracy}\% accuracy.
+The adapted 4B model scores \jetresult{full-4b-lora-cuda}{accuracy}\%,
+compared with \jetresult{full-4b-cuda}{accuracy}\% for a separately sourced
+Q8\_0 reference. These comparisons characterize deployed artifacts rather
+than isolate the effect of adaptation. Jev and published larger-model results
+provide external context under different protocols. All RTX 4090 runs are
+complete; Arc A770 and controlled shared-prefix measurements remain follow-up
+work.

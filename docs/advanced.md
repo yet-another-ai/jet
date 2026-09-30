@@ -14,6 +14,24 @@ JSON is the external API, not the model prompt. Jet renders each question throug
 into human-readable context, instruction, and semantic candidate sections. It scores those semantic
 answers and maps the winner back to the original boolean, choice key, or score index.
 
+## Candidate score normalization
+
+Jet uses mean token log-probability for text and multimodal decisions.
+For each candidate it sums the teacher-forced token log-probabilities, divides by the
+number of scored candidate tokens, then applies softmax across the candidate scores
+without additional temperature scaling. The token count includes the rendered answer's
+quotation marks and escaped content; it excludes prompt, thinking, image, and unscored
+end-of-turn tokens.
+
+The response's probability fields contain these normalized decision weights. They are
+not calibrated probabilities of correctness or the original sequence likelihoods
+normalized over candidates. `noul` returns the true candidate's weight, `choice` selects
+the largest weight, and `score` returns the weighted zero-based index.
+
+Taking the mean reduces the direct penalty for longer answers, but wording, tokenization,
+and answer priors still matter. Easily predicted padding can increase a mean score.
+Calibration requires separate empirical evaluation for each answer type.
+
 ## Build
 
 The English technical report template lives in [paper/](paper/README.md). Install its

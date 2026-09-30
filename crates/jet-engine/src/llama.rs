@@ -2558,6 +2558,16 @@ mod tests {
             ));
         }
         for (reference, batched) in reference.iter().zip(batched) {
+            assert_eq!(reference.target_token_counts, batched.target_token_counts);
+            assert_eq!(
+                reference.log_probabilities.len(),
+                batched.log_probabilities.len()
+            );
+            assert_eq!(
+                reference.log_probabilities.len(),
+                reference.target_token_counts.len()
+            );
+            assert!(!reference.target_token_counts.contains(&0));
             for ((reference_logp, batched_logp), token_count) in reference
                 .log_probabilities
                 .iter()
@@ -2570,9 +2580,16 @@ mod tests {
                     "reference={reference_logp}, batched={batched_logp}, tokens={token_count}, tolerance={tolerance}"
                 );
             }
-            let reference_probabilities =
-                normalize_log_probabilities(&reference.log_probabilities)?;
-            let batched_probabilities = normalize_log_probabilities(&batched.log_probabilities)?;
+            let means = |score: &ScoreResult| {
+                score
+                    .log_probabilities
+                    .iter()
+                    .zip(&score.target_token_counts)
+                    .map(|(logp, count)| logp / *count as f64)
+                    .collect::<Vec<_>>()
+            };
+            let reference_probabilities = normalize_log_probabilities(&means(reference))?;
+            let batched_probabilities = normalize_log_probabilities(&means(batched))?;
             for (reference, batched) in reference_probabilities.iter().zip(batched_probabilities) {
                 assert!(
                     (reference.normalized_probability - batched.normalized_probability).abs()

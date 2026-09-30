@@ -1,26 +1,24 @@
 \section{Conclusion}
 \label{sec:conclusion}
 JET applies pretrained language and vision-language models to finite decisions
-through candidate likelihood evaluation without requiring additional training.
-The accuracy--throughput comparison in Figure~\ref{fig:mmlu-throughput} shows
-the range of local deployment choices with full GPU placement on an Arc A770
-and an RTX 4090. In the six-model full-MMLU Vulkan comparison on an RTX 4090,
-Qwen3.5-27B has the highest accuracy, 85.09\% at 2.21 requests/s.
-Qwen3.6-35B-A3B reaches 82.62\% at 4.17 requests/s, offering 1.89 times
-the throughput at 2.47 percentage points lower accuracy.
-In the corresponding CUDA series, Qwen3.5-27B reaches 84.92\% at
-3.66 requests/s and Qwen3.6-35B-A3B reaches 82.57\% at 4.96 requests/s.
-Jev provides a reference for decision quality and
-request rate, although differences in evaluation and timing prevent a controlled
-performance ranking.
-The LoRA-adapted Qwen3.5-4B scores 74.39\% on full-MMLU CUDA versus 66.46\%
-for a separately sourced Q8\_0 baseline under the same JET scoring protocol.
-The differing source/conversion provenance and lack of repeat runs prevent a
-LoRA-only causal or speed-equivalence claim. Application-specific holdouts
-remain necessary.
+through mean-token candidate scoring. Prefix sharing and recurrent-state
+isolation organize the required inference without changing this decision rule.
+The RTX 4090 campaign measures six models with Vulkan and CUDA on full MMLU.
+Its highest measured configuration is \jetresult{best}{model}, with
+\jetresult{best}{accuracy}\% accuracy. Figure~\ref{fig:mmlu-throughput}
+reports complete-process throughput from the same runs. Jev provides a
+reference, although different evaluation and timing protocols prevent a
+controlled performance ranking.
 
-The 2.18--2.23-fold speedups from prefix reuse and cache management show that
-this execution optimization reduces cost while preserving outputs in the tested
-configurations. Future work
-should measure calibration, latency distributions, and
-multimodal decision quality, and compare decision systems under matched conditions.
+The LoRA-adapted Qwen3.5-4B and separately sourced Q8\_0 reference score
+\jetresult{full-4b-lora-cuda}{accuracy}\% and
+\jetresult{full-4b-cuda}{accuracy}\%, respectively, under the same CUDA
+evaluation protocol. Their signed accuracy difference is
+\jetresult{paired-lora}{gain} percentage points. Source and conversion
+differences prevent a LoRA-only causal claim, and one timing run per variant
+does not establish a repeatable speedup.
+
+The RTX 4090 campaign is complete. Arc A770 measurements and a controlled
+shared-prefix study remain pending. Further evaluation should
+address calibration, latency distributions, multimodal decision quality,
+and application-specific holdouts, with matched decision-system baselines.
