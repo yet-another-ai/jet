@@ -9,8 +9,9 @@ questions across 57 subjects, with reasoning disabled. A fixed subset supports
 backend controls. Appendix~\ref{sec:reproducibility} specifies the protocol.
 
 All thirteen RTX 4090 full-set runs and eighteen backend controls are complete
-with mean-token scoring. The Arc A770 full-set and shared-prefix studies remain
-pending and are excluded from the current accuracy--throughput figure.
+with mean-token scoring. Four Arc A770 full-set runs are also complete and are
+included in the accuracy--throughput figure. The controlled shared-prefix
+study remains pending.
 
 Accuracy measures agreement with the reference answer, treating identical
 answer texts under different option labels as equivalent. Gold negative
@@ -27,11 +28,10 @@ has one run, with no repeat-run variance estimate.
 
 \subsection{Local Deployment on Consumer Systems}
 \label{sec:local-deployment}
-The current campaign uses full GPU placement on an RTX 4090. Models up to
-Qwen3.5-9B use Q8\_0 weights; Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M.
-The follow-up on a 16\,GiB Arc A770 will cover Qwen3.5-0.8B, 2B, 4B, and 9B
-with Vulkan and the same decision rule. Until that follow-up is complete,
-this revision makes no measured comparison between these two devices.
+The RTX 4090 campaign uses full GPU placement. Models up to Qwen3.5-9B use
+Q8\_0 weights; Qwen3.5-27B and Qwen3.6-35B-A3B use Q4\_K\_M. The four
+Qwen3.5 Q8\_0 Arc A770 runs use Vulkan and the same decision rule. The
+different host systems do not support a controlled hardware comparison.
 
 \subsection{Full-MMLU Model Comparison}
 \label{sec:mmlu-comparison}
@@ -54,6 +54,25 @@ Qwen3.5-4B & Q8\_0 & \jetresult{full-4b-vulkan}{correct} & \jetresult{full-4b-vu
 Qwen3.5-9B & Q8\_0 & \jetresult{full-9b-vulkan}{correct} & \jetresult{full-9b-vulkan}{accuracy} & \jetresult{full-9b-vulkan}{wall} & \jetresult{full-9b-vulkan}{rate} \\
 Qwen3.5-27B & Q4\_K\_M & \jetresult{full-27b-vulkan}{correct} & \jetresult{full-27b-vulkan}{accuracy} & \jetresult{full-27b-vulkan}{wall} & \jetresult{full-27b-vulkan}{rate} \\
 Qwen3.6-35B-A3B & Q4\_K\_M & \jetresult{full-35b-vulkan}{correct} & \jetresult{full-35b-vulkan}{accuracy} & \jetresult{full-35b-vulkan}{wall} & \jetresult{full-35b-vulkan}{rate} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering\small
+\caption{Full MMLU on Arc A770 with Vulkan, 14,042 requests per model.
+All models use Q8\_0 and full GPU placement. Wall time includes model loading
+and shutdown. One completed fresh-process run per model, with no repeat-run
+variance estimate.}
+\label{tab:a770-full-mmlu}
+\begin{tabular}{llrrrr}
+\toprule
+Model & Quantization & Correct & MMLU (\%) & Wall (s) & Req./s \\
+\midrule
+Qwen3.5-0.8B & Q8\_0 & \jetresult{a770-08b}{correct} & \jetresult{a770-08b}{accuracy} & \jetresult{a770-08b}{wall} & \jetresult{a770-08b}{rate} \\
+Qwen3.5-2B & Q8\_0 & \jetresult{a770-2b}{correct} & \jetresult{a770-2b}{accuracy} & \jetresult{a770-2b}{wall} & \jetresult{a770-2b}{rate} \\
+Qwen3.5-4B & Q8\_0 & \jetresult{a770-4b}{correct} & \jetresult{a770-4b}{accuracy} & \jetresult{a770-4b}{wall} & \jetresult{a770-4b}{rate} \\
+Qwen3.5-9B & Q8\_0 & \jetresult{a770-9b}{correct} & \jetresult{a770-9b}{accuracy} & \jetresult{a770-9b}{wall} & \jetresult{a770-9b}{rate} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -91,8 +110,8 @@ are reported in Appendix~\ref{sec:backend-sensitivity}.
 
 Each displayed JET point combines accuracy and throughput from the same
 complete full-MMLU run. Section~\ref{sec:finetuning} describes the separately
-marked LoRA adaptation. No partial run or pending Arc A770 result supplies
-a point. External model-card results have no corresponding JET throughput.
+marked LoRA adaptation. No partial run supplies a point. External model-card
+results have no corresponding JET throughput.
 
 \subsection{Reference Comparison with Larger Models and Jev}
 The author's manual Jev 1.13 measurement is 89.06\% on full MMLU,
@@ -141,8 +160,8 @@ with a shared prefix~\cite{jev-docs,jev-workflows}.
 
 \subsection{Shared-Prefix Execution: Pending Follow-Up}
 \label{sec:prefix-results}
-The Arc A770 follow-up will compare independent candidate execution with
-prefix reuse and metadata-only cache resets under the same mean-token rule.
+The follow-up will compare independent candidate execution with prefix reuse
+and metadata-only cache resets under the same mean-token rule.
 The fixed workload comprises 256 BoolQ validation examples and five MMLU
 test examples from each subject, totaling 541 requests~\cite{boolq,mmlu}.
 Speedup, prefix-token counts, and exact-response equivalence require new

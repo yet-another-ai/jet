@@ -96,11 +96,11 @@ are recorded with the campaign evidence. Aggregate accuracy can conceal compensa
 changes between correct and incorrect answers. A single-device ablation does
 not establish the cause of differences between the RTX 4090 and Arc A770.
 
-\subsection{Pending Arc A770 and Prefix Studies}
-The Arc A770 follow-up targets an i9-13900K, 64\,GiB RAM, and a 16\,GiB GPU.
-Four full-MMLU runs will use Qwen3.5-0.8B, 2B, 4B, and 9B Q8\_0 with Vulkan
-and the same mean-token scoring and runtime flags as the RTX 4090 campaign.
-Their results and figure points remain pending until complete runs are available.
+\subsection{Arc A770 and Prefix Studies}
+The four Arc A770 full-MMLU runs are complete. Table~\ref{tab:a770-full-mmlu}
+and Figure~\ref{fig:mmlu-throughput} report their results. Run summaries are
+retained under
+\texttt{tests/accuracy/generated/a770-qwen35-<model>-mmlu-full-mean-20260930-v3/}.
 
 The shared-prefix follow-up uses 256 label-balanced BoolQ validation examples
 and five MMLU test examples from each of 57 subjects, totaling 541 requests

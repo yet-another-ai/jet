@@ -70,7 +70,10 @@ An existing TeX Live installation with the same packages can instead run
 - `references.bib`: BibTeX references; cite with `\cite{key}`.
 - `figures/workflow.tex`: editable TikZ vector diagram of the local decision workflow.
 - `figures/mmlu-results.json`: accuracy and throughput data for Figure 2.
+- `figures/a770-results.json`: validated Arc A770 measurements used by the
+  full-MMLU table and the accuracy--throughput figure.
 - `figures/rtx4090-results.tex`: generated numeric macros for tables and prose.
+- `figures/a770-results.tex`: generated numeric macros for the A770 table.
 - `figures/rtx4090-evidence.json`: validated aggregate results and paired comparisons.
 - `update_results.py`: validate a complete rerun campaign and regenerate its
   manuscript macros, evidence, and figure data; `--pending` initializes placeholders.
@@ -107,10 +110,8 @@ for the artifact paths, validation requirements, and provenance boundaries.
 Each displayed JET figure point combines accuracy and complete-process
 throughput from the same full run. No partial measurement supplies a point.
 
-The Arc A770 full-set comparison for Qwen3.5-0.8B, 2B, 4B, and 9B remains
-pending until the machine switch. Its table and figure points are withheld.
-The controlled shared-prefix and state-isolation studies also require fresh
-measurements; old speedup and exact-response claims are not carried forward.
+The Arc A770 full-set comparison for Qwen3.5-0.8B, 2B, 4B, and 9B is complete
+and appears in the table and figure. The shared-prefix study remains pending.
 
 On the Linux A770 host, synchronize this working tree (including the scoring
 change) and rebuild the local Vulkan executable before running the four full
@@ -119,15 +120,12 @@ files available:
 
 ```sh
 mise exec rust@1.98 -- cargo build --release --locked -p jet-cli --features vulkan
-JET_A770_RUN_TAG=mean-20260930 JET_A770_BINARY=target/release/jet \
+JET_A770_RUN_TAG=mean-20260930-v3 JET_A770_BINARY=target/release/jet \
   bash scripts/run-a770-full-mmlu.sh 08b 2b 4b 9b
 ```
 
-Use a new run tag if that output directory already contains results from another
-binary. The harness disables reasoning, and each completed full run must have
-14,042 responses and zero evaluation failures. Keep the A770 artifacts separate
-from the completed 4090 campaign. The 541-request prefix comparison described
-in the appendix is a separate follow-up.
+The completed campaign used this tag. Choose a fresh tag for any new run. The
+541-request prefix comparison described in the appendix is a separate follow-up.
 
 Jev 1.13 (author-supplied 89.06% and 2.86 requests/s via API) and published
 larger-model scores remain external references with their original protocols.

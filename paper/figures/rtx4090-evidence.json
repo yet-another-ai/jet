@@ -1,7 +1,7 @@
 {
   "state": "complete",
   "scoring_method": "mean_token_log_probability",
-  "a770": "Pending reruns on the Arc A770 machine; superseded measurements are not plotted.",
+  "a770": "Separate full-MMLU campaign completed with the current method; see evidence.md. Cross-host values do not isolate hardware effects.",
   "suite": "E:\\projects\\github.com\\yet-another-ai\\jet\\tests\\accuracy\\generated\\4090-token-mean-20260930",
   "binary_sha256": "b3c0cc3ee41ef66d144b0462356858326dc0fdc41c28085b516cfa8cc8d9fe56",
   "generated_at_utc": "2026-09-30T03:49:38.066815+00:00",

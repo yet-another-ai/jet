@@ -175,7 +175,7 @@ def main():
                **{f"control-{model}-backends": comparison_metrics for model in ("08b", "2b", "35b")}}
     values.update({(case, key): "pending" for case, keys in derived.items() for key in keys})
     evidence = {"state": "pending", "scoring_method": "mean_token_log_probability",
-                "a770": "Pending reruns on the Arc A770 machine; superseded measurements are not plotted."}
+                "a770": "Separate full-MMLU campaign completed with the current method; see evidence.md. Cross-host values do not isolate hardware effects."}
     if args.suite:
         suite = args.suite.resolve()
         manifest, status, result_map, responses, summaries, datasets = validated_suite(suite, runner)

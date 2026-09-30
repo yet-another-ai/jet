@@ -7,8 +7,9 @@ historical artifacts and are not evidence for current accuracy, calibration,
 throughput, prefix equivalence, or hardware comparisons.
 
 The RTX 4090 campaign is **complete**: 13 full-MMLU runs and 18 backend
-controls finished on September 29--30, 2026 (UTC). Arc A770 full-set and
-shared-prefix measurements remain pending for the machine switch.
+controls finished on September 29--30, 2026 (UTC). The four-run Arc A770
+full-set campaign is also **complete** under the current mean-token method.
+The controlled shared-prefix study remains pending.
 
 ## Current result sources
 
@@ -20,14 +21,32 @@ shared-prefix measurements remain pending for the machine switch.
 - Manuscript numeric source: `figures/rtx4090-results.tex`, consumed through
   `\jetresult{case-id}{metric}`. `update_results.py` emits pending entries
   before completion and imports validated campaign results afterward.
-- Accuracy/throughput figure data: `figures/mmlu-results.json`.
-  Displayed JET points require complete mean-token full-MMLU measurements;
-  pending Arc A770 and historical execution-study points are excluded.
+- RTX 4090 accuracy/throughput data: `figures/mmlu-results.json`.
+- Arc A770 accuracy/throughput data: `figures/a770-results.json`; the chart
+  generator combines both sources and emits `figures/a770-results.tex` for the
+  A770 table. Displayed JET points require complete mean-token full-MMLU runs.
 
 The exporter validated the complete 31-case matrix before publishing this
 campaign. No previous accuracy or runtime fills a missing case. Signed model
 differences, CUDA/Vulkan changed-answer counts, LoRA transitions and subject
 counts, and the Jev gap derive from the same new records.
+
+## Full-MMLU Arc A770 results
+
+Campaign tag: `mean-20260930-v3`. All four Vulkan runs use the current
+mean-token method and cover 14,042 questions with zero evaluation failures.
+One fresh-process run was completed per model; wall time includes model loading
+and shutdown.
+
+| Model | Correct | Accuracy | Wall time (s) | Requests/s | Summary |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Qwen3.5-0.8B | 4,695 | 33.44% | 3,178.82 | 4.42 | `a770-qwen35-08b-mmlu-full-mean-20260930-v3/summary.json` |
+| Qwen3.5-2B | 6,800 | 48.43% | 4,442.30 | 3.16 | `a770-qwen35-2b-mmlu-full-mean-20260930-v3/summary.json` |
+| Qwen3.5-4B | 9,305 | 66.27% | 9,797.73 | 1.43 | `a770-qwen35-4b-mmlu-full-mean-20260930-v3/summary.json` |
+| Qwen3.5-9B | 10,345 | 73.67% | 13,393.47 | 1.05 | `a770-qwen35-9b-mmlu-full-mean-20260930-v3/summary.json` |
+
+Summaries and responses are retained under
+`tests/accuracy/generated/a770-qwen35-*-mmlu-full-mean-20260930-v3/`.
 
 ## Full-MMLU RTX 4090 protocol
 
@@ -136,15 +155,9 @@ export of that checkpoint has not been evaluated. The comparison therefore
 characterizes deployed artifacts under a matched protocol, not a LoRA-only
 causal effect. One timing run per artifact does not establish a repeatable speedup.
 
-## Arc A770 and execution studies: pending
+## Shared-prefix execution study: pending
 
-Four Qwen3.5 Q8_0 full-MMLU reruns are required on the Arc A770: 0.8B, 2B,
-4B, and 9B. Use the current mean-token binary, a fresh campaign tag, and
-`scripts/run-a770-full-mmlu.sh`. No old A770 measurement supplies a current
-table row or figure point. Hardware for the planned follow-up is an i9-13900K,
-64 GiB RAM, and a 16 GiB Arc A770.
-
-The shared-prefix study also requires a fresh comparison under the current
+The shared-prefix study requires a fresh comparison under the current
 decision rule. Its workload is 256 label-balanced BoolQ validation examples
 plus five MMLU test examples per subject, totaling 541 requests
 (seed 20260921). Intended settings are eight requests per chunk, nine

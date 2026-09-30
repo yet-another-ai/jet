@@ -1,13 +1,12 @@
 \section{Discussion and Limitations}
 \label{sec:limitations}
 Figure~\ref{fig:mmlu-throughput} summarizes completed mean-token measurements
-on the RTX 4090. Arc A770
-measurements and controlled execution studies remain pending; their earlier
-results are not evidence for the current decision rule.
+on the RTX 4090 and Arc A770. The shared-prefix study remains pending.
 Performance still depends on model size, candidate count and length, and hardware.
 
 The model comparison evaluates the complete MMLU test set but has one run per
-model and backend, so it provides no repeat-run variance estimate. Model versions,
+model and backend, including each Arc A770 model, so it provides no repeat-run
+variance estimate. Model versions,
 quantization, placement, and timing boundaries differ across studies, so their
 results cannot be treated as a controlled hardware comparison. The planned
 prefix study changes both state reuse and cache management; it will not isolate their

@@ -6,6 +6,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 rows = [r for r in json.loads((ROOT / 'mmlu-results.json').read_text())
         if r.get('show_in_figure', False)]
+a770_rows = [r for r in json.loads((ROOT / 'a770-results.json').read_text())
+             if r.get('show_in_figure', False)]
+a770_by_group = {r['group']: r for r in a770_rows}
+combined = []
+for row in rows:
+    combined.append(row)
+    if (row.get('deployment') == '4090' and row.get('backend') == 'Vulkan'
+            and row.get('scope') == 'mmlu'):
+        a770 = a770_by_group.get(row['group'])
+        if a770:
+            combined.append(a770)
+rows = combined
+
+macro_lines = [r'% Generated from a770-results.json by generate_mmlu_chart.py.']
+for row in a770_rows:
+    case = row['case']
+    macro_values = {
+        'correct': f"{row['correct']:,}",
+        'accuracy': f"{row['accuracy']:.2f}",
+        'wall': f"{row['wall_s']:,.2f}",
+        'rate': f"{(row['requests'] / row['wall_s']):.2f}",
+    }
+    for metric, value in macro_values.items():
+        macro_lines.append(r"\expandafter\def\csname jetresult@" + case + "@" + metric + r"\endcsname{" + value + "}")
+(ROOT / 'a770-results.tex').write_text('\n'.join(macro_lines) + '\n')
 
 
 def throughput(row):
@@ -65,6 +90,6 @@ for r in rows:
     lines.append(rf'\node[anchor=east] at (15.5,{y}) {{{label}}};')
     y = round(y - 0.43, 2)
 lines += [r'\end{tikzpicture}',
-          r'\caption{Full-MMLU accuracy and throughput with reasoning disabled and mean token log-probability scoring for JET. Teal: RTX 4090 (Vulkan); violet: RTX 4090 (CUDA); green outlined: Qwen3.5-4B LoRA (CUDA); orange: Jev 1.13 hosted API. Each JET point combines accuracy and complete-process throughput from the same completed 14,042-question run. Arc A770 reruns remain pending and are excluded. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
+          r'\caption{Full-MMLU accuracy and throughput with reasoning disabled and mean token log-probability scoring for JET. Teal: RTX 4090 (Vulkan); blue: Arc A770 (Vulkan); violet: RTX 4090 (CUDA); green outlined: Qwen3.5-4B LoRA (CUDA); orange: Jev 1.13 hosted API. Each JET point combines accuracy and complete-process throughput from the same completed 14,042-question run. Jev uses full-MMLU accuracy and a separately reported API rate. Each metric uses a common horizontal scale.}',
           r'\label{fig:mmlu-throughput}', r'\end{figure}']
 (ROOT / 'mmlu-throughput.tex').write_text('\n'.join(lines) + '\n')

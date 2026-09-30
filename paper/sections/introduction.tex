@@ -24,9 +24,8 @@ improve its decisions without changing the inference interface.
 
 We evaluate decision accuracy and throughput jointly on full MMLU using
 an RTX 4090 with CUDA and Vulkan. Jev provides an external reference
-(Figure~\ref{fig:mmlu-throughput}). The completed runs apply the mean-token
-decision rule to each pretrained and adapted model. Arc A770 evaluation and a shared-prefix comparison
-on a fixed MMLU/BoolQ workload remain follow-up experiments.
+(Figure~\ref{fig:mmlu-throughput}). The four Arc A770 full-MMLU runs are
+complete; a shared-prefix comparison remains a follow-up experiment.
 Section~\ref{sec:finetuning} reports the separate fine-tuning experiment and
 its deployment limitations.
 The evaluation assesses the quality and cost of local decisions; differing
