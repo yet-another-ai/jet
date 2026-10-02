@@ -10,6 +10,9 @@ $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 $os = if ($IsWindows) { 'windows' } elseif ($IsMacOS) { 'macos' } elseif ($IsLinux) { 'linux' } else { throw 'Unsupported OS' }
 $hostPlatform = "$os-$arch"
+if ($hostPlatform -notin @('windows-x64', 'linux-x64', 'linux-arm64', 'macos-arm64')) {
+    throw "Unsupported native CPU packaging platform: $hostPlatform"
+}
 if (-not $Platform) { $Platform = $hostPlatform }
 if ($Platform -ne $hostPlatform) { throw "Native packaging requires $Platform; current host is $hostPlatform" }
 

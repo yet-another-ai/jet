@@ -12,6 +12,9 @@ Superseded runs are cancelled; no repository settings are changed by the workflo
 - Linux x64, Windows x64 and macOS arm64 run locked CPU-only Cargo Clippy and
   workspace tests. Linux also checks formatting and the CPU `vision` feature's
   validation/unit tests. Model-dependent tests keep their existing `#[ignore]`.
+- macOS supports Apple Silicon ARM64 only. Both component workflows verify
+  `runner.arch` and `uname -m` before any checkout/build/test. There are no Intel
+  macOS matrix entries or archives; the native packager also rejects that host.
 - Linux checks Python syntax/undefined names with Ruff's `E4,E7,E9,F` rules,
   installs only the locked Python `dev` dependency group (Ruff), then runs
   offline data/tokenization/training-safety/evaluation helper tests and evaluator
@@ -28,17 +31,23 @@ Native CPU hosts produce these CLI archives, plus SHA-256 sidecars, retained for
 
 | Host | Artifact |
 | --- | --- |
-| Windows x64 (`windows-2025`) | `jet-cpu-windows-x64.zip` |
-| Linux x64 (`ubuntu-24.04`) | `jet-cpu-linux-x64.tar.gz` |
-| Linux arm64 (`ubuntu-24.04-arm`) | `jet-cpu-linux-arm64.tar.gz` |
-| macOS arm64 (`macos-15`) | `jet-cpu-macos-arm64.tar.gz` |
+| Windows x64 (`windows-latest`) | `jet-cpu-windows-x64.zip` |
+| Linux x64 (`ubuntu-26.04`) | `jet-cpu-linux-x64.tar.gz` |
+| Linux arm64 (`ubuntu-26.04-arm`) | `jet-cpu-linux-arm64.tar.gz` |
+| macOS arm64 (`macos-latest`) | `jet-cpu-macos-arm64.tar.gz` |
+
+The [official runner image list](https://github.com/actions/runner-images#available-images)
+was checked on 2026-10-02: `macos-latest` maps to macOS 26 ARM64, and
+`windows-latest` maps to Windows Server 2025. Ubuntu's newest available image is
+26.04; `ubuntu-latest` still maps to 24.04, so both Linux architectures use the
+newer explicit 26.04 labels. The single Gate and Python checks also use 26.04.
 
 `scripts/package-cpu.ps1` builds the actual release CLI with `--locked` and no
 optional features; the release optimization profile is preserved. It includes
 Jet/llama.cpp licenses, README, small JSONL fixtures and source/build metadata.
 It extracts each archive and checks `--version`, `--help`, and model-free
 `export-prompts` JSONL output. It never publishes a release or signs an artifact.
-Linux packages use the host glibc/C++ runtime (Ubuntu 24.04 baseline), macOS uses
+Linux packages use the host glibc/C++ runtime (Ubuntu 26.04 baseline), macOS uses
 system libraries, and Windows statically links the MSVC runtime. These are CPU packages, not
 GPU runtime bundles. GPU packaging scripts remain available for local use.
 
