@@ -48,8 +48,7 @@ jobs:
           cache-scope: release-default
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
       - name: Build CPU archive and smoke test extracted CLI
-        shell: pwsh
-        run: ./scripts/package-cpu.ps1 -Platform ${{ matrix.platform }}
+        run: cargo xtask package --platform ${{ matrix.platform }}
       - name: Upload CPU archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

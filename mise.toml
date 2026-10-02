@@ -33,8 +33,8 @@ description = "Build and package Jet for Apple Silicon Metal"
 run = 'sh scripts/package-metal.sh'
 
 [tasks."package:cpu"]
-description = "Build, archive and smoke test the portable CPU CLI (PowerShell 7 required)"
-run = 'pwsh -File scripts/package-cpu.ps1'
+description = "Build, archive and smoke test the portable CPU CLI with Rust xtask"
+run = 'cargo xtask package'
 
 [tasks.paper]
 description = "Build the technical report"

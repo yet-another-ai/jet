@@ -42,7 +42,7 @@ was checked on 2026-10-02: `macos-latest` maps to macOS 26 ARM64, and
 26.04; `ubuntu-latest` still maps to 24.04, so both Linux architectures use the
 newer explicit 26.04 labels. The single Gate and Python checks also use 26.04.
 
-`scripts/package-cpu.ps1` builds the actual release CLI with `--locked` and no
+`cargo xtask package` builds the actual release CLI with `--locked` and no
 optional features; the release optimization profile is preserved. It includes
 Jet/llama.cpp licenses, README and small JSONL fixtures.
 It extracts each archive and checks `--version`, `--help`, and model-free
@@ -54,8 +54,11 @@ GPU runtime bundles. GPU packaging scripts remain available for local use.
 `JET_CPU_PORTABLE=1` disables build-host CPU tuning and SSE4.2/AVX/AVX2/BMI2/FMA/F16C for
 portable x64 artifacts, and sets the ARM CPU baseline to `armv8-a`. This trades
 performance for portability; local builds retain normal native tuning unless
-explicitly opted in. Run `mise run package:cpu` with PowerShell 7 and the native
-platform toolchain installed. Running the task again replaces its CPU archive.
+explicitly opted in. Run `cargo xtask package` (or `mise run package:cpu`) with
+the native platform toolchain installed; CI uses the same Rust entry point with
+`--platform` to check the expected host. Rust libraries generate and extract both
+archive formats without PowerShell, Bash or external archivers. Running the task
+again replaces its CPU archive.
 
 ## Dependencies, permissions and caches
 
@@ -63,7 +66,8 @@ Mise 2026.10.0 is pinned separately from action revisions; the already-merged
 tooling PR #1 supplies the minimum version. Only Rust/CMake or uv are installed
 with `--locked` from `mise.lock`. Cargo uses `Cargo.lock`; Ruff is installed with
 `uv sync --locked --only-group dev` and uses `training/.python-version`. No lockfile
-is regenerated. Actions are pinned to immutable commit SHAs.
+is regenerated in CI. Cargo.lock also locks the xtask archive dependencies.
+Actions are pinned to immutable commit SHAs.
 
 All workflows have `contents: read`; checkout disables persisted credentials.
 PR setup receives an explicitly empty token, with no downstream token default.

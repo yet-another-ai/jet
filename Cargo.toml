@@ -4,6 +4,7 @@ members = [
     "crates/jet-llama-sys",
     "crates/jet-engine",
     "crates/jet-cli",
+    "xtask",
 ]
 resolver = "3"
 
