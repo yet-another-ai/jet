@@ -17,3 +17,5 @@ __pycache__/
 
 # LaTeX report (including local PDF previews)
 /paper/build/
+# APM dependencies
+apm_modules/

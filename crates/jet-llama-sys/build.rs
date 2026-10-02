@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=CUDAToolkit_ROOT");
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
     println!("cargo:rerun-if-env-changed=CUDACXX");
+    println!("cargo:rerun-if-env-changed=JET_CPU_PORTABLE");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
@@ -115,6 +116,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("GGML_VULKAN", if vulkan { "ON" } else { "OFF" })
         .define("GGML_HIP", "OFF")
         .define("GGML_SYCL", "OFF");
+    if target_env == "msvc"
+        && env::var("CARGO_CFG_TARGET_FEATURE")
+            .unwrap_or_default()
+            .split(',')
+            .any(|feature| feature == "crt-static")
+    {
+        // CMake's modern MSVC runtime property overrides the /MT compiler flag.
+        config
+            .static_crt(true)
+            .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreaded");
+    }
+    // CI archives must run on other CPUs, not just the build runner's ISA.
+    if env::var("JET_CPU_PORTABLE").as_deref() == Ok("1") {
+        config.define("GGML_NATIVE", "OFF");
+        for instruction in ["SSE42", "AVX", "AVX2", "BMI2", "FMA", "F16C"] {
+            config.define(format!("GGML_{instruction}"), "OFF");
+        }
+        if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64") {
+            config.define("GGML_CPU_ARM_ARCH", "armv8-a");
+        }
+    }
     if cuda {
         if let Some(architectures) = env::var_os("JET_CUDA_ARCHITECTURES") {
             config.define("CMAKE_CUDA_ARCHITECTURES", architectures);

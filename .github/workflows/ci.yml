@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/test.yml
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yml
+  gate:
+    name: Gate
+    if: ${{ always() }}
+    needs: [test, build]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Require successful tests and packaging
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          echo "Test: $TEST_RESULT; Build: $BUILD_RESULT"
+          [[ "$TEST_RESULT" == success && "$BUILD_RESULT" == success ]]

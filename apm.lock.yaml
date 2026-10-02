@@ -1,0 +1,47 @@
+lockfile_version: '1'
+apm_version: 0.30.0
+dependencies:
+- repo_url: lennney/stop-that-shit
+  name: stop-that-shit
+  host: github.com
+  resolved_commit: ce1f9bc82b13f4a6e65431fde9d3cc375ec959ff
+  version: unknown
+  virtual_path: skills/stop-that-shit
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/stop-that-shit
+  - .agents/skills/stop-that-shit/SKILL.md
+  - .agents/skills/stop-that-shit/agents/openai.yaml
+  deployed_file_hashes:
+    .agents/skills/stop-that-shit/SKILL.md: sha256:d414f5d6532230cef2ee104c9bd8f77507114026e5497245fb794ee46088283b
+    .agents/skills/stop-that-shit/agents/openai.yaml: sha256:e899bc82bf4aa161c7fd4a19e163abddbe43418315ac29a865217dee76deb0db
+  content_hash: sha256:68ed7164a6def20e3eec36fc04334d9606a3636ef841ca131b982f6842d6ef7c
+deployments:
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/stop-that-shit
+  runtime: null
+  scope: project
+  owners:
+  - lennney/stop-that-shit/skills/stop-that-shit
+  active_owner: lennney/stop-that-shit/skills/stop-that-shit
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/stop-that-shit/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - lennney/stop-that-shit/skills/stop-that-shit
+  active_owner: lennney/stop-that-shit/skills/stop-that-shit
+  content_hash: sha256:d414f5d6532230cef2ee104c9bd8f77507114026e5497245fb794ee46088283b
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/stop-that-shit/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - lennney/stop-that-shit/skills/stop-that-shit
+  active_owner: lennney/stop-that-shit/skills/stop-that-shit
+  content_hash: sha256:e899bc82bf4aa161c7fd4a19e163abddbe43418315ac29a865217dee76deb0db
