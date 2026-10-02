@@ -17,6 +17,9 @@ runs:
         MISE_GITHUB_TOKEN: ${{ inputs.github-token }}
       with:
         version: 2026.10.0
+        # Direct installed-tool PATH avoids shim-triggered installation of the
+        # repository's unrelated developer tools (LLVM/TinyTeX/etc.).
+        add_shims_to_path: false
         install_args: --locked rust cmake
         github_token: ${{ inputs.github-token }}
         cache_save: ${{ github.event_name != 'pull_request' }}

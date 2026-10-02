@@ -73,6 +73,7 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && github.token || '' }}
         with:
           version: 2026.10.0
+          add_shims_to_path: false
           install_args: --locked uv
           github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
           cache_save: ${{ github.event_name != 'pull_request' }}
