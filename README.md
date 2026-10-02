@@ -16,7 +16,7 @@ Jet uses the model's chat template to present the context and candidate answers 
 
 ## Quick start
 
-You'll need [mise](https://mise.jdx.dev/) and a platform toolchain capable of building Rust and the bundled llama.cpp. The following steps build the CPU version and download the pinned Qwen3 example model:
+You'll need [mise](https://mise.jdx.dev/) 2026.10.0 or newer and a platform toolchain capable of building Rust and the bundled llama.cpp. The following steps build the CPU version and download the pinned Qwen3 example model:
 
 ```sh
 git clone --recurse-submodules https://github.com/yet-another-ai/jet.git
