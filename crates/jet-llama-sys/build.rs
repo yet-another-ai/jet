@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=CUDAToolkit_ROOT");
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
     println!("cargo:rerun-if-env-changed=CUDACXX");
+    println!("cargo:rerun-if-env-changed=JET_CPU_PORTABLE");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
@@ -115,6 +116,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("GGML_VULKAN", if vulkan { "ON" } else { "OFF" })
         .define("GGML_HIP", "OFF")
         .define("GGML_SYCL", "OFF");
+    // CI archives must run on other CPUs, not just the build runner's ISA.
+    if env::var("JET_CPU_PORTABLE").as_deref() == Ok("1") {
+        config.define("GGML_NATIVE", "OFF");
+        for instruction in ["AVX", "AVX2", "FMA", "F16C"] {
+            config.define(format!("GGML_{instruction}"), "OFF");
+        }
+        if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64") {
+            config.define("GGML_CPU_ARM_ARCH", "armv8-a");
+        }
+    }
     if cuda {
         if let Some(architectures) = env::var_os("JET_CUDA_ARCHITECTURES") {
             config.define("CMAKE_CUDA_ARCHITECTURES", architectures);

@@ -1,0 +1,99 @@
+name: Test
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '1'
+  CARGO_PROFILE_TEST_DEBUG: '1'
+  CARGO_BUILD_JOBS: '2'
+  JET_CPU_PORTABLE: '1'
+  HF_HUB_OFFLINE: '1'
+  HF_DATASETS_OFFLINE: '1'
+  JET_RUN_TRAINING_RUNTIME: '0'
+
+jobs:
+  rust:
+    name: CPU Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: ${{ matrix.os == 'windows-2025' && '-C target-feature=+crt-static' || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup-cpu
+        with:
+          cache-scope: test-default-vision
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: cargo fmt --all -- --check
+      - name: Lint CPU targets
+        run: cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
+      - name: Test CPU targets without model fixtures
+        run: cargo test --locked --workspace --no-default-features
+      - name: Lint CPU vision targets
+        if: runner.os == 'Linux'
+        run: cargo clippy --locked --workspace --all-targets --no-default-features --features jet-cli/vision -- -D warnings
+      - name: Test CPU vision validation without models
+        if: runner.os == 'Linux'
+        run: cargo test --locked --workspace --no-default-features --features jet-cli/vision
+      - name: Save trusted build cache
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            target
+          key: ${{ env.JET_BUILD_CACHE_KEY }}
+  python:
+    name: Offline Python tools
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && github.token || '' }}
+        with:
+          version: 2026.10.0
+          install_args: --locked uv
+          github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
+          cache_key_prefix: jet-mise-python-v1-${{ runner.os }}-${{ runner.arch }}
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/uv
+          key: jet-uv-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.lock', 'training/.python-version', 'training/uv.lock', 'training/pyproject.toml') }}
+      - name: Install only locked lint dependencies
+        run: uv sync --directory training --locked --only-group dev
+      - name: Lint Python tools
+        run: uv run --directory training --no-sync ruff check --select E4,E7,E9,F jet_training tests ../scripts ../tests/accuracy/test_evaluate_accuracy.py
+      - name: Test offline data, tokenization and evaluation helpers
+        env:
+          PYTHONPATH: training
+        run: |
+          uv run --project training --no-sync python -m unittest discover -s training/tests
+          uv run --project training --no-sync python -m unittest discover -s tests/accuracy
+      - name: Save trusted Python cache
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/uv
+          key: jet-uv-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.lock', 'training/.python-version', 'training/uv.lock', 'training/pyproject.toml') }}
