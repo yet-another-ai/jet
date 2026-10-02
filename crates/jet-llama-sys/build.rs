@@ -130,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CI archives must run on other CPUs, not just the build runner's ISA.
     if env::var("JET_CPU_PORTABLE").as_deref() == Ok("1") {
         config.define("GGML_NATIVE", "OFF");
-        for instruction in ["AVX", "AVX2", "FMA", "F16C"] {
+        for instruction in ["SSE42", "AVX", "AVX2", "BMI2", "FMA", "F16C"] {
             config.define(format!("GGML_{instruction}"), "OFF");
         }
         if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64") {

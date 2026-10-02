@@ -42,7 +42,7 @@ Linux packages use the host glibc/C++ runtime (Ubuntu 24.04 baseline), macOS use
 system libraries, and Windows statically links the MSVC runtime. These are CPU packages, not
 GPU runtime bundles. GPU packaging scripts remain available for local use.
 
-`JET_CPU_PORTABLE=1` disables build-host CPU tuning and AVX/AVX2/FMA/F16C for
+`JET_CPU_PORTABLE=1` disables build-host CPU tuning and SSE4.2/AVX/AVX2/BMI2/FMA/F16C for
 portable x64 artifacts, and sets the ARM CPU baseline to `armv8-a`. This trades
 performance for portability; local builds retain normal native tuning unless
 explicitly opted in. Run `mise run package:cpu` with PowerShell 7 and the native

@@ -26,6 +26,7 @@ runs:
       shell: bash
       run: |
         echo "llama=$(git rev-parse HEAD:vendor/llama.cpp)" >> "$GITHUB_OUTPUT"
+        echo "image=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
         rustc --version
         cmake --version
     - name: Restore dependency and native build cache
@@ -37,9 +38,9 @@ runs:
           ~/.cargo/registry/cache
           ~/.cargo/registry/src
           target
-        key: jet-cpu-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ inputs.cache-scope }}-${{ hashFiles('mise.toml', 'mise.lock', 'Cargo.lock', '**/Cargo.toml', 'crates/**/build.rs') }}-${{ steps.native.outputs.llama }}-${{ github.sha }}
+        key: jet-cpu-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native.outputs.image }}-${{ inputs.cache-scope }}-${{ hashFiles('mise.toml', 'mise.lock', 'Cargo.lock', '**/Cargo.toml', 'crates/**/build.rs', '.github/workflows/*.yml', '.github/actions/setup-cpu/action.yml', 'scripts/package-cpu.ps1') }}-${{ steps.native.outputs.llama }}-${{ github.sha }}
         restore-keys: |
-          jet-cpu-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ inputs.cache-scope }}-${{ hashFiles('mise.toml', 'mise.lock', 'Cargo.lock', '**/Cargo.toml', 'crates/**/build.rs') }}-${{ steps.native.outputs.llama }}-
+          jet-cpu-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native.outputs.image }}-${{ inputs.cache-scope }}-${{ hashFiles('mise.toml', 'mise.lock', 'Cargo.lock', '**/Cargo.toml', 'crates/**/build.rs', '.github/workflows/*.yml', '.github/actions/setup-cpu/action.yml', 'scripts/package-cpu.ps1') }}-${{ steps.native.outputs.llama }}-
     # Only trusted main/manual runs publish caches; PRs may restore them.
     - name: Register cache key
       shell: bash
