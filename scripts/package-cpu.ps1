@@ -33,15 +33,11 @@ try {
     $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { 'target' }
     $binaryName = if ($IsWindows) { 'jet.exe' } else { 'jet' }
     $binary = Join-Path $target "release/$binaryName"
-    if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing CLI: $binary" }
     $name = "jet-cpu-$Platform"
     $dist = Join-Path $repo 'dist'
     New-Item -ItemType Directory -Path $dist -Force | Out-Null
     $extension = if ($IsWindows) { '.zip' } else { '.tar.gz' }
     $archive = Join-Path $dist "$name$extension"
-    if ((Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath "$archive.sha256")) {
-        throw "Output already exists: $archive"
-    }
     $stage = Join-Path $dist ('.cpu-stage-' + [guid]::NewGuid().ToString('N'))
     $payload = Join-Path $stage $name
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
@@ -49,20 +45,12 @@ try {
     Copy-Item -LiteralPath 'LICENSE', 'README.md' -Destination $payload
     Copy-Item -LiteralPath 'vendor/llama.cpp/LICENSE' -Destination (Join-Path $payload 'LLAMA-LICENSE')
     Copy-Item -LiteralPath 'tests/fixtures/decisions.jsonl' -Destination $payload
-    $commit = & git rev-parse HEAD
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot identify source commit' }
-    $llama = & git rev-parse HEAD:vendor/llama.cpp
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot identify pinned llama.cpp' }
-    [ordered]@{ platform = $Platform; backend = 'cpu'; features = @(); portable_cpu = $true; commit = $commit; llama_cpp = $llama } |
-        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $payload 'BUILD.json') -Encoding utf8
     if ($IsWindows) {
-        Compress-Archive -LiteralPath $payload -DestinationPath $archive
+        Compress-Archive -LiteralPath $payload -DestinationPath $archive -Force
     } else {
         & tar -C $stage -czf $archive $name
         if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed' }
     }
-    $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-    "$digest  $(Split-Path -Leaf $archive)" | Set-Content -LiteralPath "$archive.sha256" -Encoding ascii
 
     # Exercise the actual extracted artifact, with no model and outside the repo cwd.
     $extracted = Join-Path $stage 'extracted'
@@ -91,7 +79,7 @@ try {
             }
         }
     } finally { Pop-Location }
-    Write-Host "Packaged and verified $archive ($digest)"
+    Write-Host "Packaged and verified $archive"
 } finally {
     $env:JET_CPU_PORTABLE = $previousPortable
     $env:RUSTFLAGS = $previousRustFlags

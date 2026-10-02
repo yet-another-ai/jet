@@ -26,7 +26,7 @@ Superseded runs are cancelled; no repository settings are changed by the workflo
 
 ## Packaging
 
-Native CPU hosts produce these CLI archives, plus SHA-256 sidecars, retained for
+Native CPU hosts produce these CLI archives, retained for
 14 days as Actions artifacts:
 
 | Host | Artifact |
@@ -44,7 +44,7 @@ newer explicit 26.04 labels. The single Gate and Python checks also use 26.04.
 
 `scripts/package-cpu.ps1` builds the actual release CLI with `--locked` and no
 optional features; the release optimization profile is preserved. It includes
-Jet/llama.cpp licenses, README, small JSONL fixtures and source/build metadata.
+Jet/llama.cpp licenses, README and small JSONL fixtures.
 It extracts each archive and checks `--version`, `--help`, and model-free
 `export-prompts` JSONL output. It never publishes a release or signs an artifact.
 Linux packages use the host glibc/C++ runtime (Ubuntu 26.04 baseline), macOS uses
@@ -55,7 +55,7 @@ GPU runtime bundles. GPU packaging scripts remain available for local use.
 portable x64 artifacts, and sets the ARM CPU baseline to `armv8-a`. This trades
 performance for portability; local builds retain normal native tuning unless
 explicitly opted in. Run `mise run package:cpu` with PowerShell 7 and the native
-platform toolchain installed. Existing archives are never silently overwritten.
+platform toolchain installed. Running the task again replaces its CPU archive.
 
 ## Dependencies, permissions and caches
 
@@ -72,8 +72,12 @@ are inherited, and `pull_request_target` is not used.
 
 Mise caches include tool version, OS/architecture, install subset and config/lock
 hashes. Cargo caches separate test/release configurations and include OS,
-architecture, runner image version, tool/config/lock/build-script hashes and the
-pinned llama.cpp gitlink; restore prefixes never cross those boundaries. The
-commit suffix allows fresh successful main builds to refresh native build trees.
-Python's uv cache is keyed by OS/architecture and tool/Python/dependency locks.
+architecture, runner image version, tool/dependency locks and the pinned
+llama.cpp gitlink. These identify the native toolchain and dependency inputs;
+Cargo/CMake track changed source files. The run ID lets successful trusted runs
+refresh build caches without hashing workflow/source files. Python's uv cache
+uses OS/architecture and `uv.lock`; uv tracks wheel/interpreter compatibility.
 PRs restore caches but cannot publish them. Build output archives are not cached.
+
+Run `apm install` to restore the project-local Stop That Shit skill from
+`lennney/stop-that-shit/skills/stop-that-shit` at its locked revision.
