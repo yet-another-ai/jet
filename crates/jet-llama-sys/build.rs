@@ -116,6 +116,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .define("GGML_VULKAN", if vulkan { "ON" } else { "OFF" })
         .define("GGML_HIP", "OFF")
         .define("GGML_SYCL", "OFF");
+    if target_env == "msvc"
+        && env::var("CARGO_CFG_TARGET_FEATURE")
+            .unwrap_or_default()
+            .split(',')
+            .any(|feature| feature == "crt-static")
+    {
+        // CMake's modern MSVC runtime property overrides the /MT compiler flag.
+        config
+            .static_crt(true)
+            .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreaded");
+    }
     // CI archives must run on other CPUs, not just the build runner's ISA.
     if env::var("JET_CPU_PORTABLE").as_deref() == Ok("1") {
         config.define("GGML_NATIVE", "OFF");
