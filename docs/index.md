@@ -16,30 +16,16 @@ hero:
       link: https://github.com/yet-another-ai/jet
 
 features:
-  - icon: ◎
-    title: Fixed candidate scoring
+  - title: Fixed candidate scoring
     details: Choose an answer, make a yes/no decision, or rate an item without parsing free-form model output.
-  - icon: ↯
-    title: Local inference
+  - title: Local inference
     details: Run GGUF models on CPU, CUDA, Metal, or Vulkan without an HTTP service.
-  - icon: ⇥
-    title: Streaming JSONL
+  - title: Streaming JSONL
     details: Process one request per line and receive ordered, machine-readable results from the CLI.
-  - icon: ◫
-    title: Image decisions
+  - title: Image decisions
     details: Use the optional vision feature to score the same structured questions against PNG or JPEG inputs.
-  - icon: ◇
-    title: Rust API
+  - title: Rust API
     details: Embed the decision engine directly with typed requests, responses, configuration, and error handling.
-  - icon: ∿
-    title: Predictable outputs
+  - title: Predictable outputs
     details: Candidate keys and score indexes come from your schema, so downstream code does not need an output parser.
 ---
-
-<div class="vp-doc" style="margin: 32px auto 0; max-width: 688px">
-
-```json
-{"state":{"ticket":"Login fails for all users"},"questions":{"urgent":{"type":"noul","instructions":"Is this urgent?"},"owner":{"type":"choice","instructions":"Choose the owner","criteria":{"app":"Application team","infra":"Infrastructure team"}}}}
-```
-
-</div>
