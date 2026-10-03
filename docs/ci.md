@@ -1,6 +1,11 @@
-# CPU CI
+---
+title: Continuous integration
+description: Jet's CPU test, package, dependency, permission, and cache policies.
+---
 
-CI follows Heron's separate reusable Test and Build workflows, with one final
+# Continuous integration
+
+CI uses separate reusable Test, Build, and Documentation workflows, with one final
 aggregate `Gate` in the entry workflow. It runs on every pull
 request, main push, or manual dispatch. All required jobs must succeed, including
 every matrix leg. Failures, cancellations and unexpected job skips fail the gate.
@@ -22,7 +27,15 @@ Superseded runs are cancelled; no repository settings are changed by the workflo
 - No CUDA, Metal or Vulkan feature/toolkit, GPU runner, pretrained model, dataset
   preparation/download, training, inference benchmark or accuracy evaluation is
   enabled. Offline Hugging Face flags and `JET_RUN_TRAINING_RUNTIME=0` reinforce
-  that boundary. There are no JavaScript/Electron deliverables or checks in Jet.
+  that boundary. There is no Electron deliverable.
+
+## Documentation
+
+The Documentation workflow installs the locked Node and pnpm tools, restores the
+frozen dependency graph, and builds the VitePress site. The build validates page
+rendering and internal links, then uploads the static output as a GitHub Pages
+artifact. Pull requests must pass this build. A successful main-branch Gate deploys
+the same artifact to GitHub Pages.
 
 ## Packaging
 

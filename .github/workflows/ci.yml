@@ -20,10 +20,13 @@ jobs:
   build:
     name: Build
     uses: ./.github/workflows/build.yml
+  docs:
+    name: Documentation
+    uses: ./.github/workflows/docs.yml
   gate:
     name: Gate
     if: ${{ always() }}
-    needs: [test, build]
+    needs: [test, build, docs]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -31,6 +34,28 @@ jobs:
         env:
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
         run: |
-          echo "Test: $TEST_RESULT; Build: $BUILD_RESULT"
-          [[ "$TEST_RESULT" == success && "$BUILD_RESULT" == success ]]
+          echo "Test: $TEST_RESULT; Build: $BUILD_RESULT; Documentation: $DOCS_RESULT"
+          [[ "$TEST_RESULT" == success && "$BUILD_RESULT" == success && "$DOCS_RESULT" == success ]]
+  deploy-docs:
+    name: Deploy documentation
+    if: ${{ !cancelled() && needs.gate.result == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+    needs: [gate]
+    runs-on: ubuntu-26.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

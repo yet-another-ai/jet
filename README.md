@@ -84,6 +84,8 @@ Some models expose a supported reasoning protocol. `--thinking auto --thinking-t
 
 ## Documentation
 
+- [Documentation website](https://yet-another-ai.github.io/jet/)
+- [Getting started](https://yet-another-ai.github.io/jet/guide/getting-started)
 - [Build, GPU backends, CLI options, and multimodal usage](docs/advanced.md)
 - [Rust API crates](crates/jet-engine/src/lib.rs)
 - [Accuracy evaluation](tests/accuracy/README.md)
