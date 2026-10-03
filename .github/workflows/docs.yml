@@ -1,0 +1,36 @@
+name: Documentation
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: VitePress
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && github.token || '' }}
+        with:
+          version: 2026.10.0
+          add_shims_to_path: false
+          install_args: --locked node pnpm
+          github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
+          cache_key_prefix: jet-mise-docs-v1
+      - name: Install documentation dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: Build documentation
+        run: mise exec -- pnpm docs:build
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: docs/.vitepress/dist

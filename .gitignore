@@ -17,5 +17,12 @@ __pycache__/
 
 # LaTeX report (including local PDF previews)
 /paper/build/
+
+# VitePress documentation
+/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/
+/docs/.vitepress/temp/
+
 # APM dependencies
 apm_modules/

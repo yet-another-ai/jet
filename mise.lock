@@ -213,9 +213,8 @@ url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0.tar.gz"
 install = "source"
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:622424efb5dc0c26c93fbb619ff10737ee289c605b837c88778e186925d82777"
-url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0.tar.gz"
-install = "source"
+checksum = "sha256:6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-musl"]
 checksum = "sha256:622424efb5dc0c26c93fbb619ff10737ee289c605b837c88778e186925d82777"

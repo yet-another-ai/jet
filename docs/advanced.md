@@ -1,3 +1,8 @@
+---
+title: Build and advanced usage
+description: GPU backends, performance controls, thinking, multimodal decisions, and packaging for Jet.
+---
+
 # Build and advanced usage
 
 Jet is a local decisions engine. It scores a fixed set of structured candidates with teacher
@@ -34,7 +39,7 @@ Calibration requires separate empirical evaluation for each answer type.
 
 ## Build
 
-The English technical report template lives in [paper/](paper/README.md). Install its
+The English technical report template lives in [paper/](https://github.com/yet-another-ai/jet/tree/main/paper). Install its
 LaTeX toolchain with `mise install vfox:tinytex`, then run `mise run paper` to generate
 `paper/build/main.pdf`.
 
@@ -249,6 +254,6 @@ as well as text tokens. Use `--backend cuda` with `--features 'vision,cuda'` or 
 with `--features 'vision,vulkan'` when the corresponding SDK
 and device are available.
 
-The [Doom demo](demos/doom/README.md) connects this interface to a running game: 160×100 frames,
+The [Doom demo](https://github.com/yet-another-ai/jet/tree/main/demos/doom) connects this interface to a running game: 160×100 frames,
 nine discrete actions, and asynchronous inference capped at two requests per second. It uses
 ViZDoom's bundled Freedoom2 assets by default and supports your own Doom IWAD.
