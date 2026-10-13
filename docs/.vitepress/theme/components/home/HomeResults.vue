@@ -1,17 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
 import { withBase } from "vitepress"
-import {
-  paperBestResult,
-  paperResultsSeries,
-  type ResultsSeries
-} from "./paper-results"
+import { paperBestResult, paperResultsSeries } from "./paper-results"
 import { useRevealOnce } from "./home-motion"
 
 const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.2)
 
-/** Shared model axis for the overall landing dot plot. */
+/** Model axis for the landing summary (best score across all measured series). */
 const modelAxis = [
   "Qwen3.5-0.8B",
   "Qwen3.5-2B",
@@ -22,64 +18,58 @@ const modelAxis = [
   "Qwen3.6-35B-A3B"
 ] as const
 
-const seriesStyle: Record<
-  ResultsSeries,
-  { label: string; color: string; short: string }
-> = {
-  vulkan: { label: "RTX 4090 · Vulkan", color: "var(--home-cyan)", short: "Vulkan" },
-  cuda: { label: "RTX 4090 · CUDA", color: "var(--home-violet)", short: "CUDA" },
-  a770: { label: "Arc A770 · Vulkan", color: "var(--home-amber)", short: "A770" }
-}
-
 interface Dot {
-  series: ResultsSeries
   model: string
+  short: string
   accuracy: number
   x: number
   y: number
-  caseId: string
 }
 
 const width = 720
-const height = 280
-const pad = { top: 28, right: 24, bottom: 72, left: 48 }
+const height = 260
+const pad = { top: 36, right: 24, bottom: 56, left: 48 }
 const plotW = width - pad.left - pad.right
 const plotH = height - pad.top - pad.bottom
 const yMin = 25
 const yMax = 90
 
-const seriesOffset: Record<ResultsSeries, number> = {
-  vulkan: -10,
-  cuda: 0,
-  a770: 10
-}
-
-function xFor(index: number, series: ResultsSeries): number {
-  return pad.left + (index / (modelAxis.length - 1)) * plotW + seriesOffset[series]
+function xFor(index: number): number {
+  return pad.left + (index / (modelAxis.length - 1)) * plotW
 }
 
 function yFor(accuracy: number): number {
   return pad.top + (1 - (accuracy - yMin) / (yMax - yMin)) * plotH
 }
 
-const dots = computed((): Dot[] => {
-  const points: Dot[] = []
-  for (const series of ["vulkan", "cuda", "a770"] as const) {
-    for (const row of paperResultsSeries[series].rows) {
-      const index = modelAxis.indexOf(row.model as (typeof modelAxis)[number])
-      if (index < 0) continue
-      points.push({
-        series,
-        model: row.model,
-        accuracy: row.accuracy,
-        x: xFor(index, series),
-        y: yFor(row.accuracy),
-        caseId: row.caseId
-      })
+function shortLabel(model: string): string {
+  if (model.includes("LoRA")) return "4B LoRA"
+  if (model.includes("35B")) return "35B-A3B"
+  return model.replace("Qwen3.5-", "").replace("Qwen3.6-", "")
+}
+
+/** Best full-MMLU accuracy for each model across Vulkan / CUDA / A770 paper rows. */
+const dots = computed((): Dot[] =>
+  modelAxis.flatMap((model, index) => {
+    let best: number | undefined
+    for (const series of Object.values(paperResultsSeries)) {
+      for (const row of series.rows) {
+        if (row.model !== model) continue
+        best = best === undefined ? row.accuracy : Math.max(best, row.accuracy)
+      }
     }
-  }
-  return points
-})
+    if (best === undefined) return []
+    return [
+      {
+        model,
+        short: shortLabel(model),
+        accuracy: best,
+        x: xFor(index),
+        y: yFor(best)
+      }
+    ]
+  })
+)
 
 const yTicks = [30, 45, 60, 75, 90]
 const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
@@ -93,22 +83,21 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
         Full MMLU on consumer GPUs.
       </h2>
       <p class="results__lead reveal-line" style="--line: 2">
-        One compact view of mean-token full-MMLU accuracy from the Jet technical report.
-        The best measured configuration is {{ paperBestResult.model }} at
-        {{ paperBestResult.accuracy.toFixed(2) }}%. Detailed tables live on the comparison
-        page.
+        Best mean-token full-MMLU accuracy per model from the Jet technical report
+        (14,042 questions). Peak result: {{ paperBestResult.model }} at
+        {{ paperBestResult.accuracy.toFixed(2) }}%. Backend and hardware breakdowns are
+        on the comparison page.
       </p>
     </header>
 
     <div class="results__panel reveal-line" style="--line: 3">
       <div class="results__meta">
-        <h3>MMLU accuracy by model</h3>
+        <h3>Best MMLU accuracy by model</h3>
         <p>
-          Same 14,042-question protocol across series. Source macros:
+          One point per model—the highest score across the published RTX&nbsp;4090 and
+          Arc&nbsp;A770 runs. Source:
           <code>paper/figures/rtx4090-results.tex</code>,
-          <code>paper/figures/a770-results.tex</code>
-          (tables <code>tab:full-mmlu</code>, <code>tab:full-mmlu-cuda</code>,
-          <code>tab:a770-full-mmlu</code>).
+          <code>paper/figures/a770-results.tex</code>.
         </p>
       </div>
 
@@ -116,7 +105,7 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
         class="results__plot"
         :viewBox="`0 0 ${width} ${height}`"
         role="img"
-        aria-label="Dot plot of full MMLU accuracy for Jet models on RTX 4090 Vulkan, RTX 4090 CUDA, and Arc A770 Vulkan"
+        aria-label="Dot plot of each Jet model's best full-MMLU accuracy from the technical report"
       >
         <line
           v-for="line in gridLines"
@@ -138,41 +127,18 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
           {{ line.tick }}%
         </text>
 
-        <g v-for="(model, index) in modelAxis" :key="model">
-          <text
-            class="results__xlabel"
-            :x="xFor(index, 'cuda')"
-            :y="height - 18"
-            text-anchor="middle"
-          >
-            <template v-if="model.includes('LoRA')">4B LoRA</template>
-            <template v-else-if="model.includes('35B')">35B-A3B</template>
-            <template v-else>{{ model.replace('Qwen3.5-', '').replace('Qwen3.6-', '') }}</template>
+        <g v-for="dot in dots" :key="dot.model">
+          <text class="results__xlabel" :x="dot.x" :y="height - 16" text-anchor="middle">
+            {{ dot.short }}
+          </text>
+          <circle class="results__dot" :cx="dot.x" :cy="dot.y" r="8">
+            <title>{{ dot.model }} · {{ dot.accuracy.toFixed(2) }}%</title>
+          </circle>
+          <text class="results__value" :x="dot.x" :y="dot.y - 14" text-anchor="middle">
+            {{ dot.accuracy.toFixed(1) }}%
           </text>
         </g>
-
-        <circle
-          v-for="dot in dots"
-          :key="dot.caseId"
-          class="results__dot"
-          :cx="dot.x"
-          :cy="dot.y"
-          r="7"
-          :fill="seriesStyle[dot.series].color"
-        >
-          <title>
-            {{ seriesStyle[dot.series].label }} · {{ dot.model }} ·
-            {{ dot.accuracy.toFixed(2) }}%
-          </title>
-        </circle>
       </svg>
-
-      <ul class="results__legend">
-        <li v-for="(style, key) in seriesStyle" :key="key">
-          <i :style="{ background: style.color }" />
-          {{ style.label }}
-        </li>
-      </ul>
     </div>
 
     <p class="results__links reveal-line" style="--line: 4">
@@ -206,7 +172,7 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
 }
 
 .results__panel {
-  padding: 28px 24px 22px;
+  padding: 28px 24px 18px;
   border: 1px solid var(--home-edge);
   border-radius: 24px;
   background: var(--home-panel);
@@ -235,7 +201,7 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
   display: block;
   width: 100%;
   height: auto;
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .results__grid {
@@ -244,41 +210,27 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
 }
 
 .results__tick,
-.results__xlabel {
+.results__xlabel,
+.results__value {
   fill: var(--home-ink-2);
   font-family: var(--vp-font-family-mono);
-  font-size: 11px;
   font-weight: 650;
+}
+
+.results__tick,
+.results__xlabel {
+  font-size: 11px;
+}
+
+.results__value {
+  fill: var(--home-ink);
+  font-size: 12px;
 }
 
 .results__dot {
+  fill: var(--home-cyan);
   stroke: var(--home-window-solid);
   stroke-width: 2;
-}
-
-.results__legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 18px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.results__legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--home-ink-2);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.results__legend i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--home-ink) 12%, transparent);
 }
 
 .results__links {
@@ -312,7 +264,7 @@ const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
   }
 
   .results__panel {
-    padding: 22px 14px 18px;
+    padding: 22px 14px 14px;
   }
 }
 
