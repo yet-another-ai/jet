@@ -1,10 +1,15 @@
 name: Test
 
 on:
+  workflow_dispatch:
   workflow_call:
 
 permissions:
   contents: read
+
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -36,7 +41,7 @@ jobs:
           RUNNER_ARCH: ${{ runner.arch }}
         run: |
           [[ "$RUNNER_ARCH" == ARM64 && "$(uname -m)" == arm64 ]]
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7
         with:
           submodules: true
           persist-credentials: false
@@ -59,7 +64,7 @@ jobs:
         run: cargo test --locked --workspace --no-default-features --features jet-cli/vision
       - name: Save trusted build cache
         if: ${{ success() && github.event_name != 'pull_request' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/save@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -72,10 +77,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+      - uses: jdx/mise-action@v5
         env:
           MISE_GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && github.token || '' }}
         with:
@@ -85,7 +90,7 @@ jobs:
           github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
           cache_save: ${{ github.event_name != 'pull_request' }}
           cache_key_prefix: jet-mise-python-v1
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.cache/uv
           key: jet-uv-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('training/uv.lock') }}
@@ -101,7 +106,7 @@ jobs:
           uv run --project training --no-sync python -m unittest discover -s tests/accuracy
       - name: Save trusted Python cache
         if: ${{ success() && github.event_name != 'pull_request' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.cache/uv
           key: jet-uv-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('training/uv.lock') }}

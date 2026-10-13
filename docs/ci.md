@@ -6,11 +6,14 @@ description: Jet's CPU test, package, dependency, permission, and cache policies
 # Continuous integration
 
 CI uses separate reusable Test, Build, and Documentation workflows, with one final
-aggregate `Gate` in the entry workflow. It runs on every pull
-request, main push, or manual dispatch. All required jobs must succeed, including
-every matrix leg. Failures, cancellations and unexpected job skips fail the gate.
+aggregate `Gate` in the entry workflow. Protect `main` with that single required
+check (`Gate` under the `CI` workflow). It runs on every pull request, main push,
+or manual dispatch. The reusable workflows also accept `workflow_dispatch` so a
+leg can be re-run on its own. All required jobs must succeed, including every
+matrix leg. Failures, cancellations and unexpected job skips fail the gate.
 Linux-only format/vision steps are intentionally skipped on other test hosts.
-Superseded runs are cancelled; no repository settings are changed by the workflow.
+Concurrency groups cancel superseded runs on the same PR or ref; no repository
+settings are changed by the workflow.
 
 ## Tests
 
@@ -80,7 +83,10 @@ tooling PR #1 supplies the minimum version. Only Rust/CMake or uv are installed
 with `--locked` from `mise.lock`. Cargo uses `Cargo.lock`; Ruff is installed with
 `uv sync --locked --only-group dev` and uses `training/.python-version`. No lockfile
 is regenerated in CI. Cargo.lock also locks the xtask archive dependencies.
-Actions are pinned to immutable commit SHAs.
+GitHub Actions use floating major tags (for example `actions/checkout@v7`,
+`jdx/mise-action@v5`) rather than commit SHAs or exact patch pins. Renovate
+watches the `github-actions` manager with digest pinning disabled so those majors
+stay current.
 
 All workflows have `contents: read`; checkout disables persisted credentials.
 PR setup receives an explicitly empty token, with no downstream token default.
