@@ -16,7 +16,7 @@ import ResultPanel from "./panels/ResultPanel.vue"
 import ScoresPanel from "./panels/ScoresPanel.vue"
 import StreamPanel from "./panels/StreamPanel.vue"
 
-const REST_TIME = 2.4
+const REST_TIME = 4.8
 const t = homeCopy
 const intro = ref<HTMLElement>()
 const scroller = ref<HTMLElement>()
@@ -185,7 +185,7 @@ function show(key: CapabilityKey) {
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.28;
-  transition: background 0.8s ease;
+  transition: background 1.2s ease;
 }
 
 .showcase__card {

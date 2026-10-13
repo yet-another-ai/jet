@@ -4,7 +4,7 @@ import AppWindow from "../AppWindow.vue"
 
 const props = defineProps<{ t: number }>()
 
-const pulse = computed(() => 0.5 + 0.5 * Math.sin(props.t * 1.4))
+const pulse = computed(() => 0.5 + 0.5 * Math.sin(props.t * 0.75))
 </script>
 
 <template>
@@ -17,8 +17,17 @@ const pulse = computed(() => 0.5 + 0.5 * Math.sin(props.t * 1.4))
   },
   <span class="k">"questions"</span>: {
     <span class="k">"urgent"</span>: { <span class="k">"type"</span>: <span class="s">"noul"</span> },
-    <span class="k">"owner"</span>: { <span class="k">"type"</span>: <span class="s">"choice"</span> },
-    <span class="k">"severity"</span>: { <span class="k">"type"</span>: <span class="s">"score"</span> }
+    <span class="k">"owner"</span>: {
+      <span class="k">"type"</span>: <span class="s">"choice"</span>,
+      <span class="k">"criteria"</span>: {
+        <span class="k">"app"</span>: <span class="s">"…"</span>,
+        <span class="k">"infra"</span>: <span class="s">"…"</span>
+      }
+    },
+    <span class="k">"severity"</span>: {
+      <span class="k">"type"</span>: <span class="s">"score"</span>,
+      <span class="k">"criteria"</span>: [<span class="s">"low"</span>, <span class="s">"medium"</span>, <span class="s">"high"</span>]
+    }
   }
 <span class="k">}</span></code></pre>
       <div class="chip" :style="{ opacity: 0.55 + pulse * 0.45 }">schema locked</div>
@@ -46,8 +55,8 @@ const pulse = computed(() => 0.5 + 0.5 * Math.sin(props.t * 1.4))
   overflow: hidden;
   color: var(--home-ink-2);
   font-family: var(--vp-font-family-mono);
-  font-size: 0.92em;
-  line-height: 1.55;
+  font-size: 0.78em;
+  line-height: 1.45;
   white-space: pre;
 }
 

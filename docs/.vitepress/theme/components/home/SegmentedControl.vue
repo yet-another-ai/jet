@@ -81,8 +81,8 @@ watch([model, () => props.options], () => nextTick(place))
 .segmented__indicator.is-ready {
   opacity: 1;
   transition:
-    translate 0.35s var(--home-ease),
-    width 0.35s var(--home-ease);
+    translate 0.5s var(--home-ease),
+    width 0.5s var(--home-ease);
 }
 
 .segmented__option {

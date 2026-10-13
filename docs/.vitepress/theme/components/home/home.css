@@ -71,9 +71,9 @@
   filter: none;
   transform: none;
   transition:
-    opacity 0.6s var(--home-ease) calc(var(--line, 0) * 70ms),
-    filter 0.6s var(--home-ease) calc(var(--line, 0) * 70ms),
-    transform 0.7s var(--home-ease) calc(var(--line, 0) * 70ms);
+    opacity 0.9s var(--home-ease) calc(var(--line, 0) * 110ms),
+    filter 0.9s var(--home-ease) calc(var(--line, 0) * 110ms),
+    transform 1.05s var(--home-ease) calc(var(--line, 0) * 110ms);
 }
 
 .home-kicker {

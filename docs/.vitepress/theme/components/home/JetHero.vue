@@ -8,7 +8,8 @@ import RequestPanel from "./panels/RequestPanel.vue"
 import ResultPanel from "./panels/ResultPanel.vue"
 import ScoresPanel from "./panels/ScoresPanel.vue"
 
-const REST_TIME = 2.4
+/** Mid-question freeze frame for reduced-motion readers. */
+const REST_TIME = 4.8
 const t = homeCopy
 const hero = ref<HTMLElement>()
 const reduced = usePrefersReducedMotion()
@@ -127,9 +128,9 @@ onMounted(() => {
   filter: blur(14px);
   transform: translate3d(var(--from-x), var(--from-y), 0) rotateX(54deg) rotateZ(-36deg) scale(0.5);
   transition:
-    transform 1.4s cubic-bezier(0.2, 1, 0.3, 1) calc(var(--i) * 90ms + 120ms),
-    filter 1s ease calc(var(--i) * 90ms + 260ms),
-    opacity 0.5s ease calc(var(--i) * 90ms);
+    transform 2.1s cubic-bezier(0.2, 1, 0.3, 1) calc(var(--i) * 140ms + 180ms),
+    filter 1.5s ease calc(var(--i) * 140ms + 380ms),
+    opacity 0.75s ease calc(var(--i) * 140ms);
 }
 
 .is-assembled .desk__motion {
@@ -141,7 +142,7 @@ onMounted(() => {
 .desk__float {
   width: 100%;
   height: 100%;
-  animation: desk-float 7s ease-in-out calc(var(--i) * -1.7s) infinite alternate;
+  animation: desk-float 11s ease-in-out calc(var(--i) * -2.6s) infinite alternate;
 }
 
 .desk__copy {

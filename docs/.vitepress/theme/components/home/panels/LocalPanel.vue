@@ -11,7 +11,7 @@ const backends = [
   { name: "Vulkan", ready: true }
 ]
 
-const load = computed(() => 0.35 + 0.2 * Math.sin(props.t * 1.2))
+const load = computed(() => 0.35 + 0.2 * Math.sin(props.t * 0.65))
 </script>
 
 <template>

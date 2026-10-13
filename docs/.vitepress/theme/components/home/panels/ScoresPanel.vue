@@ -1,42 +1,41 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import AppWindow from "../AppWindow.vue"
+import { animatedProbabilities, demoQuestion } from "../demo-scenario"
 
 const props = defineProps<{ t: number }>()
 
-const rows = [
-  { key: "app", label: "Application team", base: 0.82, color: "var(--home-cyan)" },
-  { key: "infra", label: "Infrastructure team", base: 0.41, color: "var(--home-violet)" },
-  { key: "support", label: "Support team", base: 0.18, color: "var(--home-amber)" }
-]
-
-const widths = computed(() =>
-  rows.map((row, i) => {
-    const wobble = 0.04 * Math.sin(props.t * 1.7 + i * 1.1)
-    return Math.min(0.96, Math.max(0.08, row.base + wobble))
-  })
-)
-
+const question = computed(() => demoQuestion(props.t))
+const probabilities = computed(() => animatedProbabilities(props.t, question.value))
 const winner = computed(() => {
   let best = 0
-  for (let i = 1; i < widths.value.length; i++) {
-    if (widths.value[i]! > widths.value[best]!) best = i
+  for (let i = 1; i < probabilities.value.length; i++) {
+    if (probabilities.value[i]! > probabilities.value[best]!) best = i
   }
   return best
 })
+
+function formatProbability(value: number): string {
+  return `${(value * 100).toFixed(0)}%`
+}
 </script>
 
 <template>
   <AppWindow title="candidate scores" :basis="40">
-    <template #bar><span class="meta">softmax</span></template>
+    <template #bar><span class="meta">{{ question.name }} · softmax</span></template>
     <div class="panel">
-      <div v-for="(row, i) in rows" :key="row.key" class="row" :class="{ 'is-top': i === winner }">
+      <div
+        v-for="(row, i) in question.candidates"
+        :key="`${question.name}-${row.key}`"
+        class="row"
+        :class="{ 'is-top': i === winner }"
+      >
         <div class="row__head">
           <span>{{ row.label }}</span>
-          <span class="row__key">{{ row.key }}</span>
+          <span class="row__prob">{{ formatProbability(probabilities[i]!) }}</span>
         </div>
         <div class="bar">
-          <i :style="{ width: `${widths[i]! * 100}%`, background: row.color }" />
+          <i :style="{ width: `${probabilities[i]! * 100}%`, background: row.color }" />
         </div>
       </div>
     </div>
@@ -68,10 +67,11 @@ const winner = computed(() => {
   font-weight: 650;
 }
 
-.row__key {
+.row__prob {
   color: var(--home-ink-2);
   font-family: var(--vp-font-family-mono);
   font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
 }
 
 .bar {
@@ -85,10 +85,11 @@ const winner = computed(() => {
   display: block;
   height: 100%;
   border-radius: inherit;
-  transition: width 120ms linear;
+  transition: width 220ms linear;
 }
 
-.row.is-top .row__head span:first-child {
+.row.is-top .row__head span:first-child,
+.row.is-top .row__prob {
   color: var(--home-cyan-ink);
 }
 

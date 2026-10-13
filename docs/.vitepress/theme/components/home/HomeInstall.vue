@@ -233,8 +233,8 @@ async function copyCommand() {
 .install-swap-enter-active,
 .install-swap-leave-active {
   transition:
-    opacity 0.22s ease,
-    transform 0.3s var(--home-ease);
+    opacity 0.35s ease,
+    transform 0.45s var(--home-ease);
 }
 
 .install-swap-enter-from {

@@ -11,7 +11,7 @@ const lines = [
   { kind: "out", text: '{"answers":{"owner":"app"},"usage":{…}}' }
 ]
 
-const visible = computed(() => Math.min(lines.length, 1 + Math.floor(props.t / 1.15) % lines.length))
+const visible = computed(() => Math.min(lines.length, 1 + Math.floor(props.t / 2.1) % lines.length))
 </script>
 
 <template>

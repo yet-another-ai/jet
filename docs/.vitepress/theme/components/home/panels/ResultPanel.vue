@@ -1,16 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import AppWindow from "../AppWindow.vue"
+import { demoPhase, demoQuestions } from "../demo-scenario"
 
 const props = defineProps<{ t: number }>()
 
-const answers = [
-  { name: "urgent", value: "true", tone: "var(--home-amber)" },
-  { name: "owner", value: '"app"', tone: "var(--home-cyan)" },
-  { name: "severity", value: "2", tone: "var(--home-violet)" }
-]
-
-const active = computed(() => Math.floor(props.t / 1.6) % answers.length)
+const active = computed(() => demoPhase(props.t))
 </script>
 
 <template>
@@ -20,17 +15,17 @@ const active = computed(() => Math.floor(props.t / 1.6) % answers.length)
       <div class="label">answers</div>
       <ul>
         <li
-          v-for="(answer, i) in answers"
+          v-for="(answer, i) in demoQuestions"
           :key="answer.name"
           :class="{ 'is-active': i === active }"
         >
           <span class="name">{{ answer.name }}</span>
-          <span class="value" :style="{ color: answer.tone }">{{ answer.value }}</span>
+          <span class="value" :style="{ color: answer.tone }">{{ answer.answer }}</span>
         </li>
       </ul>
       <div class="usage">
         <span>prompt 184</span>
-        <span>candidates 3</span>
+        <span>candidates {{ demoQuestions[active]!.candidates.length }}</span>
       </div>
     </div>
   </AppWindow>
@@ -77,9 +72,9 @@ li {
   border-radius: 0.75em;
   background: var(--home-fill);
   transition:
-    border-color 200ms ease,
-    background 200ms ease,
-    transform 200ms ease;
+    border-color 320ms ease,
+    background 320ms ease,
+    transform 320ms ease;
 }
 
 li.is-active {
