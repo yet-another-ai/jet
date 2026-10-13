@@ -83,10 +83,10 @@ export const homeCopy: HomeCopy = {
       tab: "Local",
       kicker: "Local inference",
       title: "Run where the data already is.",
-      body: "Use GGUF models on CPU by default, or offload to CUDA, Metal, or Vulkan. With vision enabled, score the same structured questions against PNG or JPEG inputs.",
+      body: "Use GGUF models on CPU by default, or offload to CUDA, Metal, or Vulkan. With vision enabled, score the same structured questions against PNG or JPEG inputs—including the Doom demo’s screenshot-driven controls.",
       links: [
         { label: "Build and backends", href: "/advanced" },
-        { label: "Multimodal decisions", href: "/advanced#multimodal-decisions" }
+        { label: "Doom multimodal demo", href: "/#doom" }
       ]
     },
     {
