@@ -3,7 +3,14 @@ import { computed, onMounted, ref, watch } from "vue"
 import { withBase } from "vitepress"
 import { homeCopy, type InstallBackend, type InstallPlatform } from "./home-copy"
 import { useRevealOnce } from "./home-motion"
+import PlatformIcon from "./PlatformIcon.vue"
 import SegmentedControl from "./SegmentedControl.vue"
+
+const platformIcons = {
+  macos: "macOS",
+  windows: "Windows",
+  linux: "Linux"
+} as const satisfies Record<InstallPlatform, "macOS" | "Windows" | "Linux">
 
 const t = homeCopy
 const root = ref<HTMLElement>()
@@ -74,7 +81,11 @@ async function copyCommand() {
           v-model="platform"
           :options="platformOptions"
           :label="t.installKicker"
-        />
+        >
+          <template #icon="{ value }">
+            <PlatformIcon :name="platformIcons[value]" />
+          </template>
+        </SegmentedControl>
         <div class="install__row">
           <SegmentedControl
             v-model="backend"

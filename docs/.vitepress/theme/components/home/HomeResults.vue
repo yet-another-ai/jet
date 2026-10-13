@@ -7,20 +7,82 @@ import {
   type ResultsSeries
 } from "./paper-results"
 import { useRevealOnce } from "./home-motion"
-import SegmentedControl from "./SegmentedControl.vue"
 
 const root = ref<HTMLElement>()
-const shown = useRevealOnce(root, 0.15)
-const series = ref<ResultsSeries>("vulkan")
+const shown = useRevealOnce(root, 0.2)
 
-const options = (["vulkan", "cuda", "a770"] as const).map((value) => ({
-  value,
-  label: paperResultsSeries[value].tab
-}))
-const active = computed(() => paperResultsSeries[series.value])
-const maxAccuracy = computed(() =>
-  Math.max(...active.value.rows.map((row) => row.accuracy))
-)
+/** Shared model axis for the overall landing dot plot. */
+const modelAxis = [
+  "Qwen3.5-0.8B",
+  "Qwen3.5-2B",
+  "Qwen3.5-4B",
+  "Qwen3.5-4B + LoRA",
+  "Qwen3.5-9B",
+  "Qwen3.5-27B",
+  "Qwen3.6-35B-A3B"
+] as const
+
+const seriesStyle: Record<
+  ResultsSeries,
+  { label: string; color: string; short: string }
+> = {
+  vulkan: { label: "RTX 4090 · Vulkan", color: "var(--home-cyan)", short: "Vulkan" },
+  cuda: { label: "RTX 4090 · CUDA", color: "var(--home-violet)", short: "CUDA" },
+  a770: { label: "Arc A770 · Vulkan", color: "var(--home-amber)", short: "A770" }
+}
+
+interface Dot {
+  series: ResultsSeries
+  model: string
+  accuracy: number
+  x: number
+  y: number
+  caseId: string
+}
+
+const width = 720
+const height = 280
+const pad = { top: 28, right: 24, bottom: 72, left: 48 }
+const plotW = width - pad.left - pad.right
+const plotH = height - pad.top - pad.bottom
+const yMin = 25
+const yMax = 90
+
+const seriesOffset: Record<ResultsSeries, number> = {
+  vulkan: -10,
+  cuda: 0,
+  a770: 10
+}
+
+function xFor(index: number, series: ResultsSeries): number {
+  return pad.left + (index / (modelAxis.length - 1)) * plotW + seriesOffset[series]
+}
+
+function yFor(accuracy: number): number {
+  return pad.top + (1 - (accuracy - yMin) / (yMax - yMin)) * plotH
+}
+
+const dots = computed((): Dot[] => {
+  const points: Dot[] = []
+  for (const series of ["vulkan", "cuda", "a770"] as const) {
+    for (const row of paperResultsSeries[series].rows) {
+      const index = modelAxis.indexOf(row.model as (typeof modelAxis)[number])
+      if (index < 0) continue
+      points.push({
+        series,
+        model: row.model,
+        accuracy: row.accuracy,
+        x: xFor(index, series),
+        y: yFor(row.accuracy),
+        caseId: row.caseId
+      })
+    }
+  }
+  return points
+})
+
+const yTicks = [30, 45, 60, 75, 90]
+const gridLines = yTicks.map((tick) => ({ tick, y: yFor(tick) }))
 </script>
 
 <template>
@@ -31,70 +93,90 @@ const maxAccuracy = computed(() =>
         Full MMLU on consumer GPUs.
       </h2>
       <p class="results__lead reveal-line" style="--line: 2">
-        Numbers are copied from the Jet technical report’s full-MMLU tables—mean-token
-        scoring over 14,042 questions—not invented for this page. The best measured
-        configuration is {{ paperBestResult.model }} at
-        {{ paperBestResult.accuracy.toFixed(2) }}%.
+        One compact view of mean-token full-MMLU accuracy from the Jet technical report.
+        The best measured configuration is {{ paperBestResult.model }} at
+        {{ paperBestResult.accuracy.toFixed(2) }}%. Detailed tables live on the comparison
+        page.
       </p>
     </header>
 
-    <div class="results__controls reveal-line" style="--line: 3">
-      <SegmentedControl v-model="series" :options="options" label="Result series" />
+    <div class="results__panel reveal-line" style="--line: 3">
+      <div class="results__meta">
+        <h3>MMLU accuracy by model</h3>
+        <p>
+          Same 14,042-question protocol across series. Source macros:
+          <code>paper/figures/rtx4090-results.tex</code>,
+          <code>paper/figures/a770-results.tex</code>
+          (tables <code>tab:full-mmlu</code>, <code>tab:full-mmlu-cuda</code>,
+          <code>tab:a770-full-mmlu</code>).
+        </p>
+      </div>
+
+      <svg
+        class="results__plot"
+        :viewBox="`0 0 ${width} ${height}`"
+        role="img"
+        aria-label="Dot plot of full MMLU accuracy for Jet models on RTX 4090 Vulkan, RTX 4090 CUDA, and Arc A770 Vulkan"
+      >
+        <line
+          v-for="line in gridLines"
+          :key="line.tick"
+          class="results__grid"
+          :x1="pad.left"
+          :x2="width - pad.right"
+          :y1="line.y"
+          :y2="line.y"
+        />
+        <text
+          v-for="line in gridLines"
+          :key="`y-${line.tick}`"
+          class="results__tick"
+          :x="pad.left - 10"
+          :y="line.y + 4"
+          text-anchor="end"
+        >
+          {{ line.tick }}%
+        </text>
+
+        <g v-for="(model, index) in modelAxis" :key="model">
+          <text
+            class="results__xlabel"
+            :x="xFor(index, 'cuda')"
+            :y="height - 18"
+            text-anchor="middle"
+          >
+            <template v-if="model.includes('LoRA')">4B LoRA</template>
+            <template v-else-if="model.includes('35B')">35B-A3B</template>
+            <template v-else>{{ model.replace('Qwen3.5-', '').replace('Qwen3.6-', '') }}</template>
+          </text>
+        </g>
+
+        <circle
+          v-for="dot in dots"
+          :key="dot.caseId"
+          class="results__dot"
+          :cx="dot.x"
+          :cy="dot.y"
+          r="7"
+          :fill="seriesStyle[dot.series].color"
+        >
+          <title>
+            {{ seriesStyle[dot.series].label }} · {{ dot.model }} ·
+            {{ dot.accuracy.toFixed(2) }}%
+          </title>
+        </circle>
+      </svg>
+
+      <ul class="results__legend">
+        <li v-for="(style, key) in seriesStyle" :key="key">
+          <i :style="{ background: style.color }" />
+          {{ style.label }}
+        </li>
+      </ul>
     </div>
 
-    <Transition name="results-swap" mode="out-in">
-      <div :key="series" class="results__panel">
-        <div class="results__meta">
-          <h3>{{ active.title }}</h3>
-          <p>{{ active.protocol }}</p>
-          <p class="results__cite">Source: {{ active.citation }}</p>
-        </div>
-
-        <div class="results__chart" aria-hidden="true">
-          <div
-            v-for="row in active.rows"
-            :key="row.caseId"
-            class="results__bar"
-            :style="{ '--w': `${(row.accuracy / maxAccuracy) * 100}%` }"
-          >
-            <span class="results__bar-label">{{ row.model }}</span>
-            <i />
-            <span class="results__bar-value">{{ row.accuracy.toFixed(2) }}%</span>
-          </div>
-        </div>
-
-        <div class="results__table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Model</th>
-                <th scope="col">Quant.</th>
-                <th scope="col">Correct</th>
-                <th scope="col">MMLU (%)</th>
-                <th scope="col">Wall (s)</th>
-                <th scope="col">Req./s</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in active.rows" :key="row.caseId">
-                <th scope="row">
-                  {{ row.model }}
-                  <small v-if="row.note">{{ row.note }}</small>
-                </th>
-                <td>{{ row.quantization }}</td>
-                <td>{{ row.correct }}</td>
-                <td>{{ row.accuracy.toFixed(2) }}</td>
-                <td>{{ row.wall }}</td>
-                <td>{{ row.rate.toFixed(2) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </Transition>
-
     <p class="results__links reveal-line" style="--line: 4">
-      <a :href="withBase('/results')">Full comparison page <span aria-hidden="true">→</span></a>
+      <a :href="withBase('/results')">Full comparison tables <span aria-hidden="true">→</span></a>
       <a href="https://github.com/yet-another-ai/jet/tree/main/paper"
         >Technical report sources <span aria-hidden="true">→</span></a
       >
@@ -104,7 +186,7 @@ const maxAccuracy = computed(() =>
 
 <style scoped>
 .results {
-  width: min(1120px, calc(100% - 48px));
+  width: min(960px, calc(100% - 48px));
   margin: 0 auto;
   padding: clamp(96px, 12vw, 150px) 0 40px;
   scroll-margin-top: calc(var(--vp-nav-height) - 40px);
@@ -123,14 +205,8 @@ const maxAccuracy = computed(() =>
   line-height: 1.55;
 }
 
-.results__controls {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 18px;
-}
-
 .results__panel {
-  padding: 28px 24px 24px;
+  padding: 28px 24px 22px;
   border: 1px solid var(--home-edge);
   border-radius: 24px;
   background: var(--home-panel);
@@ -151,97 +227,58 @@ const maxAccuracy = computed(() =>
   line-height: 1.55;
 }
 
-.results__cite {
-  margin-top: 8px !important;
-  font-family: var(--vp-font-family-mono);
-  font-size: 12px !important;
+.results__meta code {
+  font-size: 0.9em;
 }
 
-.results__chart {
-  display: grid;
-  gap: 10px;
-  margin: 24px 0 8px;
-}
-
-.results__bar {
-  display: grid;
-  grid-template-columns: minmax(120px, 180px) 1fr auto;
-  align-items: center;
-  gap: 12px;
-}
-
-.results__bar-label {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.results__bar i {
+.results__plot {
   display: block;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--home-cyan), var(--home-violet));
-  transform-origin: left center;
-  width: var(--w);
-}
-
-.results__bar-value {
-  min-width: 4.5em;
-  color: var(--home-ink-2);
-  font-family: var(--vp-font-family-mono);
-  font-size: 13px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.results__table-wrap {
-  overflow-x: auto;
+  width: 100%;
+  height: auto;
   margin-top: 18px;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13.5px;
+.results__grid {
+  stroke: var(--home-edge);
+  stroke-width: 1;
 }
 
-th,
-td {
-  padding: 10px 12px;
-  border-top: 1px solid var(--home-edge);
-  text-align: left;
-  white-space: nowrap;
-}
-
-thead th {
-  color: var(--home-ink-2);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-top: none;
-}
-
-tbody th {
+.results__tick,
+.results__xlabel {
+  fill: var(--home-ink-2);
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
   font-weight: 650;
 }
 
-tbody th small {
-  display: block;
-  max-width: 280px;
-  color: var(--home-ink-2);
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1.4;
-  white-space: normal;
+.results__dot {
+  stroke: var(--home-window-solid);
+  stroke-width: 2;
 }
 
-td {
-  font-family: var(--vp-font-family-mono);
-  font-variant-numeric: tabular-nums;
+.results__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--home-ink-2);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.results__legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--home-ink) 12%, transparent);
 }
 
 .results__links {
@@ -269,50 +306,17 @@ td {
   transform: translateX(3px);
 }
 
-.results-swap-enter-active,
-.results-swap-leave-active {
-  transition:
-    opacity 0.35s ease,
-    transform 0.45s var(--home-ease);
-}
-
-.results-swap-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.results-swap-leave-to {
-  opacity: 0;
-}
-
 @media (max-width: 720px) {
   .results {
     width: calc(100% - 32px);
   }
 
-  .results__bar {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "label value"
-      "bar bar";
-  }
-
-  .results__bar-label {
-    grid-area: label;
-  }
-
-  .results__bar-value {
-    grid-area: value;
-  }
-
-  .results__bar i {
-    grid-area: bar;
+  .results__panel {
+    padding: 22px 14px 18px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .results-swap-enter-active,
-  .results-swap-leave-active,
   .results__links a span {
     transition: none;
   }
