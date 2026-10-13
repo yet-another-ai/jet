@@ -1,11 +1,17 @@
 :root {
+  --vp-font-family-base: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: "JetBrains Mono Variable", ui-monospace, monospace;
   --vp-c-brand-1: #0f766e;
   --vp-c-brand-2: #0d9488;
   --vp-c-brand-3: #14b8a6;
   --vp-c-brand-soft: rgba(20, 184, 166, 0.14);
   --vp-home-hero-name-color: transparent;
   --vp-home-hero-name-background: linear-gradient(120deg, #0f766e 10%, #0ea5e9 72%);
-  --vp-home-hero-image-background-image: radial-gradient(circle, rgba(20, 184, 166, 0.28), transparent 68%);
+  --vp-home-hero-image-background-image: radial-gradient(
+    circle,
+    rgba(20, 184, 166, 0.28),
+    transparent 68%
+  );
   --vp-home-hero-image-filter: blur(48px);
 }
 
@@ -16,11 +22,59 @@
   --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
 }
 
-.VPHero .name,
-.VPHero .text {
-  letter-spacing: -0.035em;
+body {
+  letter-spacing: -0.005em;
 }
 
-.VPFeature {
-  border-color: color-mix(in srgb, var(--vp-c-brand-1) 18%, var(--vp-c-divider));
+.VPNavBarTitle .title {
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.VPDoc h1,
+.VPDoc h2,
+.VPDoc h3 {
+  letter-spacing: -0.025em;
+}
+
+.VPDoc h1 {
+  font-size: clamp(38px, 5vw, 52px);
+  line-height: 1;
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.jet-landing .VPNavBar::before {
+  background-color: color-mix(in srgb, var(--vp-c-bg) 62%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+.jet-landing .VPNavBar .divider-line {
+  background-color: transparent;
+}
+
+.jet-landing .VPFooter {
+  border-top-color: var(--vp-c-divider) !important;
+  background: var(--vp-c-bg) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    transition: none;
+  }
 }
