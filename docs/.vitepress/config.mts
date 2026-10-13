@@ -6,11 +6,11 @@ export default defineConfig({
   title: 'Jet',
   titleTemplate: ':title · Jet',
   description: 'Local structured decisions with language models',
-  base: '/jet/',
+  base: '/',
   cleanUrls: true,
   lastUpdated: true,
   sitemap: {
-    hostname: 'https://yet-another-ai.github.io/jet/'
+    hostname: 'https://jet.yetanother.ai'
   },
   head: [
     ['meta', { property: 'og:type', content: 'website' }],
