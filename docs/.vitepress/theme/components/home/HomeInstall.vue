@@ -1,29 +1,48 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 import { withBase } from "vitepress"
-import { homeCopy, type InstallBackend } from "./home-copy"
+import { homeCopy, type InstallBackend, type InstallPlatform } from "./home-copy"
 import { useRevealOnce } from "./home-motion"
 import SegmentedControl from "./SegmentedControl.vue"
 
 const t = homeCopy
 const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.15)
+const platform = ref<InstallPlatform>("linux")
 const backend = ref<InstallBackend>("cpu")
 const copied = ref(false)
 
+const platformOptions = computed(() =>
+  (["macos", "windows", "linux"] as const).map((value) => ({
+    value,
+    label: t.installPlatforms[value]
+  }))
+)
 const backendOptions = computed(() =>
-  (["cpu", "cuda", "metal", "vulkan"] as const).map((value) => ({
+  t.installBackendsByPlatform[platform.value].map((value) => ({
     value,
     label: t.installBackends[value]
   }))
 )
-const target = computed(() => t.install[backend.value])
+const target = computed(() => t.install[platform.value][backend.value]!)
 const commandLines = computed(() =>
   target.value.command.lines.map((line) => {
     const [program = "", ...args] = line.split(" ")
     return { line, program, args: args.join(" ") }
   })
 )
+
+watch(platform, (next) => {
+  const allowed = t.installBackendsByPlatform[next]
+  if (!allowed.includes(backend.value)) backend.value = allowed[0]!
+})
+
+onMounted(() => {
+  const agent = navigator.userAgent
+  if (/Windows/i.test(agent)) platform.value = "windows"
+  else if (/Mac/i.test(agent)) platform.value = "macos"
+  else if (/Linux/i.test(agent) && !/Android/i.test(agent)) platform.value = "linux"
+})
 
 let resetCopied = 0
 async function copyCommand() {
@@ -52,14 +71,22 @@ async function copyCommand() {
 
       <div class="install__controls reveal-line" style="--line: 4">
         <SegmentedControl
-          v-model="backend"
-          :options="backendOptions"
+          v-model="platform"
+          :options="platformOptions"
           :label="t.installKicker"
         />
+        <div class="install__row">
+          <SegmentedControl
+            v-model="backend"
+            :options="backendOptions"
+            :label="t.installBackends[backend]"
+            size="small"
+          />
+        </div>
       </div>
 
       <Transition name="install-swap" mode="out-in">
-        <div :key="backend" class="install__target">
+        <div :key="`${platform}-${backend}`" class="install__target">
           <div class="install__block">
             <div class="install__head">
               <span>{{ target.command.label }}</span>
@@ -104,8 +131,11 @@ async function copyCommand() {
   margin-bottom: 32px;
   border-radius: 16px;
   color: var(--vp-c-bg);
-  background:
-    linear-gradient(145deg, var(--home-cyan), color-mix(in srgb, var(--home-violet) 55%, var(--home-cyan)));
+  background: linear-gradient(
+    145deg,
+    var(--home-cyan),
+    color-mix(in srgb, var(--home-violet) 55%, var(--home-cyan))
+  );
   box-shadow: 0 14px 30px -12px var(--home-shadow);
   font-size: 28px;
   font-weight: 780;
@@ -113,7 +143,7 @@ async function copyCommand() {
 }
 
 .install__lead {
-  max-width: 580px;
+  max-width: 620px;
   margin: 14px 0 32px;
   color: var(--home-ink-2);
   font-size: 18px;
@@ -125,6 +155,14 @@ async function copyCommand() {
   justify-items: stretch;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.install__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
 }
 
 .install__target {
@@ -143,6 +181,7 @@ async function copyCommand() {
   height: 40px;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 4px 8px 0 18px;
   color: var(--home-ink-2);
   font-size: 12px;
@@ -152,6 +191,7 @@ async function copyCommand() {
 
 .install__head button {
   height: 30px;
+  flex: none;
   padding: 0 12px;
   border-radius: 10px;
   color: var(--home-ink-2);
@@ -177,7 +217,7 @@ async function copyCommand() {
   padding: 2px 18px 16px;
   overflow-x: auto;
   font-family: var(--vp-font-family-mono);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.8;
 }
 
@@ -223,7 +263,7 @@ async function copyCommand() {
 .install__links a span {
   display: inline-block;
   color: var(--home-cyan-ink);
-  transition: transform 160ms ease;
+  transition: transform 220ms ease;
 }
 
 .install__links a:hover span {
@@ -250,11 +290,16 @@ async function copyCommand() {
   .install {
     padding-inline: 16px;
   }
+
+  .install__row > :first-child {
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .install-swap-enter-active,
-  .install-swap-leave-active {
+  .install-swap-leave-active,
+  .install__links a span {
     transition: none;
   }
 }

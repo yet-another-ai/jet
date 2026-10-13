@@ -1,4 +1,5 @@
 export type CapabilityKey = "decide" | "local" | "embed"
+export type InstallPlatform = "macos" | "windows" | "linux"
 export type InstallBackend = "cpu" | "cuda" | "metal" | "vulkan"
 
 export interface HomeLink {
@@ -47,10 +48,13 @@ export interface HomeCopy {
   installKicker: string
   installTitle: string
   installLead: string
+  installPlatforms: Record<InstallPlatform, string>
   installBackends: Record<InstallBackend, string>
+  /** Backends documented for each OS in README / advanced.md. */
+  installBackendsByPlatform: Record<InstallPlatform, InstallBackend[]>
   copy: string
   copied: string
-  install: Record<InstallBackend, InstallTarget>
+  install: Record<InstallPlatform, Partial<Record<InstallBackend, InstallTarget>>>
   installLinks: HomeLink[]
 }
 
@@ -125,51 +129,122 @@ export const homeCopy: HomeCopy = {
   installKicker: "Get Jet",
   installTitle: "Build it once. Run it locally.",
   installLead:
-    "Install the pinned toolchain, download the example model, and build the CLI for the backend you need.",
+    "Pick your OS and backend. Commands below match the repository getting-started and advanced guides—clone with submodules first, then install mise 2026.10.0 or newer.",
+  installPlatforms: {
+    macos: "macOS",
+    windows: "Windows",
+    linux: "Linux"
+  },
   installBackends: {
     cpu: "CPU",
     cuda: "CUDA",
     metal: "Metal",
     vulkan: "Vulkan"
   },
+  installBackendsByPlatform: {
+    macos: ["cpu", "metal"],
+    windows: ["cpu", "cuda", "vulkan"],
+    linux: ["cpu", "cuda", "vulkan"]
+  },
   copy: "Copy",
   copied: "Copied",
   install: {
-    cpu: {
-      command: {
-        label: "Build the CPU CLI",
-        lines: [
-          "mise install",
-          "./scripts/download-test-model.sh",
-          "mise exec -- cargo build --release -p jet-cli"
-        ]
+    macos: {
+      cpu: {
+        command: {
+          label: "Build and run the CPU CLI",
+          lines: [
+            "mise install",
+            "./scripts/download-test-model.sh",
+            "mise exec -- cargo build --release -p jet-cli",
+            "./target/release/jet judge --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "CPU is the default backend. Requires mise and a toolchain that can build Rust plus the bundled llama.cpp."
       },
-      note: "CPU is the default backend. No GPU toolchain is required."
+      metal: {
+        command: {
+          label: "Build and run with Metal",
+          lines: [
+            "mise exec -- cargo build --release -p jet-cli --features metal",
+            "./target/release/jet judge --backend metal --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "Apple Silicon with Xcode Command Line Tools. Download the example model first if you have not already. mise run package:metal produces dist/jet-metal-macos-arm64.tar.gz."
+      }
     },
-    cuda: {
-      command: {
-        label: "Build with CUDA",
-        lines: ["mise exec -- cargo build --release -p jet-cli --features cuda"]
+    windows: {
+      cpu: {
+        command: {
+          label: "Build and run the CPU CLI",
+          lines: [
+            "mise install",
+            "./scripts/download-test-model.sh",
+            "mise exec -- cargo build --release -p jet-cli",
+            "./target/release/jet judge --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "CPU is the default backend. The model download script is a POSIX shell script; run it from Git Bash, WSL, or another sh-compatible shell. mise run package:cpu produces a Windows x64 archive."
       },
-      note: "Needs an NVIDIA driver and CUDA Toolkit. Pass --backend cuda when you run Jet."
+      cuda: {
+        command: {
+          label: "Build and run with CUDA",
+          lines: [
+            "mise exec -- cargo build --release -p jet-cli --features cuda",
+            "./target/release/jet judge --backend cuda --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "Needs an NVIDIA driver and CUDA Toolkit with nvcc. To package CUDA runtime DLLs for distribution, see the Windows PowerShell steps in the advanced guide (mise run package:cuda)."
+      },
+      vulkan: {
+        command: {
+          label: "Build and run with Vulkan",
+          lines: [
+            "mise exec -- cargo build --release -p jet-cli --features vulkan",
+            "./target/release/jet judge --backend vulkan --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "Install the Vulkan SDK (loader, headers, SPIR-V headers, and glslc). An explicit --backend vulkan fails if the feature or device is unavailable."
+      }
     },
-    metal: {
-      command: {
-        label: "Build with Metal",
-        lines: ["mise exec -- cargo build --release -p jet-cli --features metal"]
+    linux: {
+      cpu: {
+        command: {
+          label: "Build and run the CPU CLI",
+          lines: [
+            "mise install",
+            "./scripts/download-test-model.sh",
+            "mise exec -- cargo build --release -p jet-cli",
+            "./target/release/jet judge --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "CPU is the default backend. Clone with --recurse-submodules so the pinned llama.cpp submodule is present."
       },
-      note: "Requires Apple Silicon and Xcode Command Line Tools. Pass --backend metal when you run Jet."
-    },
-    vulkan: {
-      command: {
-        label: "Build with Vulkan",
-        lines: ["mise exec -- cargo build --release -p jet-cli --features vulkan"]
+      cuda: {
+        command: {
+          label: "Build and run with CUDA",
+          lines: [
+            "mise exec -- cargo build --release -p jet-cli --features cuda",
+            "./target/release/jet judge --backend cuda --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "Needs an NVIDIA driver and CUDA Toolkit with nvcc. Set JET_CUDA_ARCHITECTURES when building for a different GPU or without a local GPU."
       },
-      note: "Needs a Vulkan loader, development headers, SPIR-V headers, and glslc."
+      vulkan: {
+        command: {
+          label: "Build and run with Vulkan",
+          lines: [
+            "mise exec -- cargo build --release -p jet-cli --features vulkan",
+            "./target/release/jet judge --backend vulkan --model-path models/Qwen3-0.6B-Q8_0.gguf --input tests/fixtures/decisions.jsonl --output -"
+          ]
+        },
+        note: "Install a Vulkan loader and development headers, SPIR-V headers, and glslc (from shaderc or the Vulkan SDK)."
+      }
     }
   },
   installLinks: [
     { label: "Getting started guide", href: "/guide/getting-started" },
+    { label: "Build and backends", href: "/advanced" },
     { label: "View on GitHub", href: "https://github.com/yet-another-ai/jet" }
   ]
 }
