@@ -42,7 +42,7 @@ interface ScatterPoint {
 
 const width = 720
 const height = 340
-const pad = { top: 28, right: 28, bottom: 52, left: 56 }
+const pad = { top: 28, right: 28, bottom: 52, left: 64 }
 const plotW = width - pad.left - pad.right
 const plotH = height - pad.top - pad.bottom
 const xMin = 0
@@ -173,11 +173,10 @@ function deactivate(id: string) {
 
           <text
             class="results__axis"
-            :x="12"
+            :x="18"
             :y="pad.top + plotH / 2"
             text-anchor="middle"
-            transform-origin="12px"
-            :transform="`rotate(-90 12 ${pad.top + plotH / 2})`"
+            :transform="`rotate(-90 18 ${pad.top + plotH / 2})`"
           >
             MMLU %
           </text>
