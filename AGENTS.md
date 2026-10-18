@@ -10,12 +10,13 @@ under `.agents/skills/`.
 - Product: local structured decision engine. Given context and a fixed set of
   candidate answers, Jet scores candidates with teacher forcing and returns a
   structured result instead of free-form generation.
-- Interfaces: JSONL CLI (`jet-cli`) and Rust API (`jet-core` protocol types,
-  `jet-engine` runtime). There is no HTTP service.
+- Interfaces: JSONL CLI and `jet serve` (`jet-cli`), Actix HTTP service
+  (`jet-server`), and Rust API (`jet-core` protocol types, `jet-engine` runtime).
 - Crates:
   - `jet-core` — request/response protocol, errors, and score normalization.
   - `jet-engine` — llama.cpp-backed scoring, prompts, backends, optional vision.
   - `jet-llama-sys` — FFI and build glue for the vendored llama.cpp submodule.
+  - `jet-server` — HTTP Decisions adapter, bounded scheduling, and server lifecycle.
   - `jet-cli` — command-line front end.
   - `xtask` — packaging and related repository tasks.
 - Backends: CPU by default; optional CUDA, Metal, and Vulkan features for local
@@ -61,6 +62,7 @@ repository-managed toolchain. On Windows, use PowerShell 7 (`pwsh`).
 
 - [Repository overview](README.md)
 - [User guide](docs/guide/getting-started.md)
+- [HTTP server](docs/guide/http-server.md)
 - [Architecture](agents/docs/architecture.md)
 - [Architecture decision records](agents/docs/adr/README.md)
 - [Engineering standards](agents/docs/engineering-standards.md)

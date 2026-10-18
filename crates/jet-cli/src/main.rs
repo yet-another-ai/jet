@@ -14,6 +14,8 @@ use jet_engine::{ImageInput, MultimodalDecisionRequest, VisionConfig};
 use serde::Deserialize;
 use serde::Serialize;
 
+mod serve;
+
 #[derive(Parser)]
 #[command(name = "jet", version, about = "Local teacher-forced decision scoring")]
 struct Cli {
@@ -24,6 +26,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Judge(JudgeArgs),
+    /// Serve the OpenRouter Decisions API with a resident local model.
+    Serve(serve::ServeArgs),
     /// Export exact JET messages and candidate targets without loading a model.
     ExportPrompts(ExportPromptsArgs),
     #[cfg(feature = "vision")]
@@ -87,10 +91,8 @@ struct JudgeMultimodalArgs {
 
 #[derive(clap::Args)]
 struct JudgeArgs {
-    #[arg(long)]
-    model_path: PathBuf,
-    #[arg(long, default_value = "qwen/qwen3-0.6b-q8_0")]
-    model_id: String,
+    #[command(flatten)]
+    engine: EngineArgs,
     #[arg(long, default_value = "-")]
     input: PathBuf,
     #[arg(long, default_value = "-")]
@@ -100,6 +102,14 @@ struct JudgeArgs {
     timings: Option<PathBuf>,
     #[arg(long, default_value_t = 8)]
     batch_requests: usize,
+}
+
+#[derive(clap::Args)]
+struct EngineArgs {
+    #[arg(long)]
+    model_path: PathBuf,
+    #[arg(long, default_value = "qwen/qwen3-0.6b-q8_0")]
+    model_id: String,
     #[arg(long, default_value_t = 2_048)]
     context_tokens: u32,
     #[arg(long, default_value_t = 2_048)]
@@ -226,6 +236,13 @@ fn main() -> ExitCode {
         .init();
 
     match Cli::parse().command {
+        Command::Serve(args) => match serve::run(args) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("jet: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Command::ExportPrompts(args) => match run_export_prompts(args) {
             Ok(had_errors) if had_errors => ExitCode::FAILURE,
             Ok(_) => ExitCode::SUCCESS,
@@ -288,7 +305,8 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
         validate_timings_path(timings, &args.input, &args.output)?;
     }
 
-    let config = engine_config(&args);
+    let mut config = engine_config(&args.engine);
+    config.collect_timings = args.timings.is_some();
     let mut engine = Engine::load(config)?;
     let input = open_input(&args.input)?;
     let mut output = open_output(&args.output)?;
@@ -321,7 +339,7 @@ fn run_judge(args: JudgeArgs) -> Result<bool> {
     Ok(had_errors)
 }
 
-fn engine_config(args: &JudgeArgs) -> EngineConfig {
+fn engine_config(args: &EngineArgs) -> EngineConfig {
     let mut config = match args.backend {
         BackendArg::Auto => EngineConfig::auto(&args.model_path, &args.model_id),
         BackendArg::Cpu => EngineConfig::cpu(&args.model_path, &args.model_id),
@@ -357,7 +375,6 @@ fn engine_config(args: &JudgeArgs) -> EngineConfig {
     config.thinking.top_k = args.thinking_top_k;
     config.thinking.top_p = args.thinking_top_p;
     config.thinking.seed = args.thinking_seed;
-    config.collect_timings = args.timings.is_some();
     config
 }
 
@@ -647,7 +664,7 @@ mod tests {
             "--model-path",
             "model.gguf",
         ])?)?;
-        assert!(matches!(default.backend, BackendArg::Auto));
+        assert!(matches!(default.engine.backend, BackendArg::Auto));
         let cuda = parsed_judge(Cli::try_parse_from([
             "jet",
             "judge",
@@ -656,7 +673,7 @@ mod tests {
             "--backend",
             "cuda",
         ])?)?;
-        assert!(matches!(cuda.backend, BackendArg::Cuda));
+        assert!(matches!(cuda.engine.backend, BackendArg::Cuda));
         let metal = parsed_judge(Cli::try_parse_from([
             "jet",
             "judge",
@@ -665,14 +682,14 @@ mod tests {
             "--backend",
             "metal",
         ])?)?;
-        assert!(matches!(metal.backend, BackendArg::Metal));
+        assert!(matches!(metal.engine.backend, BackendArg::Metal));
         Ok(())
     }
 
     fn parsed_judge(cli: Cli) -> std::result::Result<JudgeArgs, clap::Error> {
         match cli.command {
             Command::Judge(args) => Ok(args),
-            Command::ExportPrompts(_) => Err(clap::Error::raw(
+            Command::ExportPrompts(_) | Command::Serve(_) => Err(clap::Error::raw(
                 clap::error::ErrorKind::InvalidSubcommand,
                 "expected judge command",
             )),
@@ -724,7 +741,7 @@ mod tests {
     fn preparation_pipeline_defaults_to_enabled() -> std::result::Result<(), clap::Error> {
         let cli = Cli::try_parse_from(["jet", "judge", "--model-path", "model.gguf"])?;
         let args = parsed_judge(cli)?;
-        assert!(!args.no_preparation_pipeline);
+        assert!(!args.engine.no_preparation_pipeline);
         Ok(())
     }
 
@@ -741,8 +758,8 @@ mod tests {
             "--no-preparation-pipeline",
         ])?;
         let args = parsed_judge(cli)?;
-        assert_eq!(args.max_sequences, 4);
-        assert!(args.no_preparation_pipeline);
+        assert_eq!(args.engine.max_sequences, 4);
+        assert!(args.engine.no_preparation_pipeline);
         assert!(
             Cli::try_parse_from([
                 "jet",
@@ -773,8 +790,8 @@ mod tests {
             "30",
         ])?;
         let args = parsed_judge(cli)?;
-        assert_eq!(args.gpu_layers, Some(12));
-        assert_eq!(args.cpu_moe_layers, 30);
+        assert_eq!(args.engine.gpu_layers, Some(12));
+        assert_eq!(args.engine.cpu_moe_layers, 30);
         for option in ["--gpu-layers", "--cpu-moe-layers"] {
             assert!(
                 Cli::try_parse_from(["jet", "judge", "--model-path", "model.gguf", option, "-1",])

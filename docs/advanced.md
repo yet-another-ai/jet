@@ -10,9 +10,9 @@ forcing instead of generating free-form text. The default CPU-only build runs on
 CUDA, Metal, and Vulkan backends offload the model, KV cache, and supported operations to a local
 GPU.
 
-Jet supports `noul`, `choice`, and zero-based `score` questions through a Rust API and a JSONL
-command-line interface. It does not provide HTTP serving, NPU execution, or general free-text
-generation. An optional bounded thinking stage can run before candidate scoring when the model's
+Jet supports `noul`, `choice`, and zero-based `score` questions through a Rust API, a JSONL
+command-line interface, and an [HTTP server](./guide/http-server). It does not provide NPU
+execution or general free-text generation. An optional bounded thinking stage can run before candidate scoring when the model's
 embedded chat template exposes a supported reasoning protocol.
 
 JSON is the external API, not the model prompt. Jet renders each question through a Tera template
@@ -182,6 +182,11 @@ preserve recurrent-state behavior. `--batch-requests` controls the input chunk, 
 inference batch.
 
 ## CLI
+
+Use `judge` for JSONL streams and `serve` for an HTTP service with a loaded model.
+See the [HTTP server guide](./guide/http-server) for endpoints, queue limits,
+authentication, and per-request inference timing. Both commands use the same
+model and backend configuration; thinking defaults to disabled.
 
 ```sh
 mise exec -- cargo run -p jet-cli -- judge \

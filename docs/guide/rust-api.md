@@ -9,7 +9,10 @@ Jet separates its public protocol from model execution:
 
 - `jet-core` contains request, question, answer, usage, and error types.
 - `jet-engine` loads a GGUF model and evaluates single or batched requests.
-- `jet-cli` wraps both crates in the JSONL command-line interface.
+- `jet-server` exposes text Decisions over HTTP using Actix and a dedicated inference thread.
+- `jet-cli` provides the JSONL command-line interface and the `serve` subcommand.
+
+Use the [HTTP server](./http-server) when clients should share a model in a separate process.
 
 ## Load an engine
 

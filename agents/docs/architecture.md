@@ -11,10 +11,12 @@ API, not raw JSON.
 | `jet-core` | Protocol types, errors, score normalization | llama.cpp, I/O, CLI parsing |
 | `jet-engine` | Model load, prompt export, teacher-forced scoring, backends, optional vision | CLI argument parsing, packaging archives |
 | `jet-llama-sys` | FFI, C++ glue, and build of vendored llama.cpp | Product protocol or CLI UX |
-| `jet-cli` | JSONL CLI, feature-gated multimodal entry points | Scoring math or FFI details |
+| `jet-server` | Actix HTTP adapter, admission control, dedicated inference thread, server lifecycle | Scoring math or FFI details |
+| `jet-cli` | JSONL CLI, `serve` configuration, feature-gated multimodal entry points | Scoring math or FFI details |
 | `xtask` | Repository packaging tasks | Runtime inference behavior |
 
-Dependency direction flows toward `jet-core`. `jet-cli` and packaging tools may
+Dependency direction flows toward `jet-core`. `jet-cli` depends on `jet-server`
+and `jet-engine`; `jet-server` depends on `jet-engine`. Packaging tools may
 depend on `jet-engine`; `jet-core` must remain usable without a loaded model.
 
 ## Protocol
@@ -26,6 +28,33 @@ depend on `jet-engine`; `jet-core` must remain usable without a loaded model.
   panics at API boundaries.
 - Prompt rendering (Tera templates in `jet-engine`) is an implementation detail
   of scoring; public docs describe the JSON API users exchange.
+
+## HTTP service
+
+`jet serve` exposes the text `noul`, `choice`, and `score` subset of OpenRouter
+Decisions at `POST /api/alpha/decisions`. HTTP wire types live in `jet-core`;
+validation and transport errors are adapted by `jet-server` without changing
+the JSONL protocol or candidate scoring semantics. Each HTTP request names the
+single loaded model. This is not a general OpenRouter proxy or chat API.
+
+The inference thread creates, owns, and destroys `Engine` on that thread.
+Actix workers retain only a bounded task sender and asynchronously await replies.
+The model and native contexts remain loaded between requests, and startup warmup
+finishes before the service accepts traffic. HTTP worker count is independent
+of inference parallelism; there is one inference execution thread.
+
+Requests run immediately without a cross-request batching delay. Candidate
+batching within an engine request remains available. The waiting queue defaults
+to one request; a full queue returns `429` without waiting for admission.
+Expired or abandoned work is skipped before inference starts. A `504` deadline
+does not interrupt an already-running native inference call.
+
+Successful HTTP responses add `inference_ms`, measured with a monotonic clock
+around the individual `Engine::decide` call. This includes prompt preparation,
+tokenization, scoring, and normalization, but excludes queueing, HTTP work,
+model loading, and network transit. It is not pure GPU time or a cumulative
+`EngineTimings` counter. See the [HTTP server guide](../../docs/guide/http-server.md)
+for endpoint, authentication, and compatibility details.
 
 ## Backends and features
 
