@@ -48,7 +48,9 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
-      { text: 'Playground', link: '/playground/' },
+      // Full-page load: /playground/ is a separate SPA merged into dist, not a
+      // VitePress route. Without target, the client router 404s until refresh.
+      { text: 'Playground', link: '/playground/', target: '_self' },
       { text: 'Results', link: '/results' },
       { text: 'Advanced', link: '/advanced' },
       { text: 'Get Jet', link: '/#get-jet' },

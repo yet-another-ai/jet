@@ -12,7 +12,8 @@ Jet scores a fixed set of answers with a local language model. This guide builds
 Install [mise](https://mise.jdx.dev/) 2026.10.0 or newer and a platform toolchain capable of building Rust and the bundled llama.cpp.
 
 To try Jet in the browser without a local native build, open the
-[WebGPU playground](/playground/) (see the [playground guide](/guide/playground)).
+[WebGPU playground](/playground/){target="_self"} (see the
+[playground guide](/guide/playground)).
 
 ## Build Jet
 
