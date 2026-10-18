@@ -283,6 +283,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .include(&vendor_dir)
         .include(&ggml_include_dir)
         .warnings(false);
+    if target_env == "msvc" {
+        // llama.cpp headers contain UTF-8 literals; do not use the host code page.
+        wrapper_build.flag("/utf-8");
+    }
     if vision {
         wrapper_build
             .file(manifest_dir.join("src/vision.cpp"))

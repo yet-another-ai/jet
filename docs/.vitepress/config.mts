@@ -44,6 +44,7 @@ export default defineConfig({
         items: [
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'Requests and responses', link: '/guide/requests-and-responses' },
+          { text: 'HTTP server', link: '/guide/http-server' },
           { text: 'Rust API', link: '/guide/rust-api' }
         ]
       },

@@ -1,6 +1,6 @@
 # Jet
 
-Jet makes local decisions with a language model. Give it some context and a fixed set of possible answers; it scores the candidates and returns a structured result instead of generating free-form text. Use it from a JSONL command-line interface or a Rust API.
+Jet makes local decisions with a language model. Give it some context and a fixed set of possible answers; it scores the candidates and returns a structured result instead of generating free-form text. Use it from a JSONL command-line interface, an HTTP server, or a Rust API.
 
 Jet runs on CPU by default. Optional CUDA, Metal, and Vulkan backends can offload inference to a local GPU. With the `vision` feature and a compatible model, it can also answer questions about images.
 
@@ -12,7 +12,8 @@ The [WebGPU playground](playground/README.md) runs the full decision pipeline lo
 - **Make a yes/no decision:** Use a `noul` question for a boolean result.
 - **Rate an item:** Use a `score` question to select a zero-based index from an ordered scale.
 - **Process a stream:** Send one JSON request per line and receive one JSON result per line, in order.
-- **Use local models:** Run GGUF models on CPU or an available GPU, without an HTTP service.
+- **Serve decisions:** Keep a local model loaded and expose the OpenRouter Decisions request and response fields over HTTP, with per-request inference timing.
+- **Use local models:** Run GGUF models on CPU or an available GPU.
 
 Jet uses the model's chat template to present the context and candidate answers in natural language. The JSON request is an API format, not text passed directly to the model.
 
@@ -58,6 +59,16 @@ Then run:
 
 The question names (`urgent`, `owner`, `severity`) appear in the `answers` object. Choice answers use the keys you supplied in `criteria`; score answers use zero-based indexes.
 
+### Run an HTTP server
+
+```sh
+./target/release/jet serve \
+  --model-path models/Qwen3-0.6B-Q8_0.gguf \
+  --model-id local/jet
+```
+
+After loading and warming up the model, Jet listens on `127.0.0.1:8080`. Send text `noul`, `choice`, and `score` requests to `POST /api/alpha/decisions`, adding `"model":"local/jet"` to the request. Responses include `inference_ms`. A small bounded queue limits waiting, and a full queue returns `429` immediately. See the [HTTP server guide](docs/guide/http-server.md) for complete requests, authentication, timeouts, and compatibility limits.
+
 ## GPU support
 
 | Backend | Build feature | Requirement |
@@ -90,6 +101,7 @@ Some models expose a supported reasoning protocol. `--thinking auto --thinking-t
 - [Getting started](https://jet.yetanother.ai/guide/getting-started)
 - [Build, GPU backends, CLI options, and multimodal usage](docs/advanced.md)
 - [WebGPU playground](playground/README.md)
+- [HTTP server](docs/guide/http-server.md)
 - [Rust API crates](crates/jet-engine/src/lib.rs)
 - [Accuracy evaluation](tests/accuracy/README.md)
 - [Qwen3.5-4B LoRA training and public datasets](training/README.md)
@@ -97,4 +109,4 @@ Some models expose a supported reasoning protocol. `--thinking auto --thinking-t
 
 ## Scope
 
-Jet is designed for structured decisions over a fixed candidate set. It does not provide general text generation, HTTP serving, or NPU execution. Multimodal decisions currently require disabled thinking.
+Jet is designed for structured decisions over a fixed candidate set. It does not provide general text generation or NPU execution. The HTTP interface supports text Decisions requests; multimodal decisions use the Rust API or JSONL CLI and currently require disabled thinking.

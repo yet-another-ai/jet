@@ -5,6 +5,7 @@ members = [
     "crates/jet-llama-sys",
     "crates/jet-engine",
     "crates/jet-web",
+    "crates/jet-server",
     "crates/jet-cli",
     "xtask",
 ]
@@ -18,6 +19,8 @@ license = "Apache-2.0"
 repository = "https://github.com/yet-another-ai/jet"
 
 [workspace.dependencies]
+actix-web = { version = "4", default-features = false, features = ["macros"] }
+tokio = { version = "1", features = ["sync", "time"] }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -29,6 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 jet-core = { path = "crates/jet-core" }
 jet-decision = { path = "crates/jet-decision" }
 jet-engine = { path = "crates/jet-engine" }
+jet-server = { path = "crates/jet-server" }
 jet-llama-sys = { path = "crates/jet-llama-sys" }
 
 [workspace.lints.rust]

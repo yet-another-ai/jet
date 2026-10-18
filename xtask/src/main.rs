@@ -177,6 +177,16 @@ fn smoke(payload: &Path, binary_name: &str) -> Result<()> {
             .output()?,
         "help smoke",
     )?;
+    let serve_help = check_output(
+        Command::new(&cli)
+            .current_dir(payload)
+            .args(["serve", "--help"])
+            .output()?,
+        "serve help smoke",
+    )?;
+    if !String::from_utf8_lossy(&serve_help.stdout).contains("--queue-capacity") {
+        return Err("Packaged executable is missing the HTTP serving command".into());
+    }
     let requests = fs::read_to_string(payload.join("decisions.jsonl"))?;
     let mut child = Command::new(&cli)
         .current_dir(payload)
