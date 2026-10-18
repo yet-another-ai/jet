@@ -1,7 +1,9 @@
 use std::cell::Cell;
+use std::future::{Future, poll_fn};
 use std::rc::Rc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc as sync_mpsc;
+use std::task::Poll;
 
 use actix_web::test as awtest;
 use jet_core::{Answer, NoulAnswer, Usage};
@@ -12,6 +14,7 @@ use super::*;
 fn config() -> ServerConfig {
     ServerConfig {
         bind: SocketAddr::from(([127, 0, 0, 1], 0)),
+        queue_enabled: true,
         queue_capacity: 1,
         request_timeout: Duration::from_secs(5),
         http_workers: 1,
@@ -57,6 +60,7 @@ fn job(deadline: Instant) -> (Work, oneshot::Receiver<InferenceResult>) {
             queued_at: Instant::now(),
             deadline,
             reply,
+            slot: None,
         }),
         result,
     )
@@ -69,6 +73,27 @@ async fn call(state: Arc<State>) -> Result<HttpResponse> {
         web::Data::from(state),
     )
     .await)
+}
+
+async fn read_response(response: HttpResponse) -> Result<Value> {
+    let bytes = actix_web::body::to_bytes(response.into_body())
+        .await
+        .map_err(|error| JetError::NativeRuntime(error.to_string()))?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+async fn call_after_active_work_finishes(state: Arc<State>) -> Result<HttpResponse> {
+    tokio::time::timeout(Duration::from_secs(5), async move {
+        loop {
+            let response = call(state.clone()).await?;
+            if response.status() != StatusCode::TOO_MANY_REQUESTS {
+                return Ok(response);
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .map_err(|_| JetError::NativeRuntime("fixture inference slot was not released".to_owned()))?
 }
 
 #[actix_web::test]
@@ -121,6 +146,7 @@ async fn serves_decisions_with_thread_owned_non_send_engine() -> Result<()> {
     assert_eq!(result["answers"]["q"]["noul"], 0.75);
     assert_eq!(result["usage"]["input_tokens"], 12);
     assert!(result["inference_ms"].as_f64().is_some_and(|ms| ms >= 0.0));
+    assert!(result["queue_ms"].as_f64().is_some_and(|ms| ms >= 0.0));
     worker.shutdown().await?;
     let owner = *owner.lock().map_err(|_| worker_stopped())?;
     let dropped = *dropped.lock().map_err(|_| worker_stopped())?;
@@ -331,6 +357,185 @@ async fn full_queue_rejects_and_abandoned_or_expired_items_never_run() -> Result
     ));
     assert_eq!(call(worker.state.clone()).await?.status(), StatusCode::OK);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+    worker.shutdown().await
+}
+
+#[actix_web::test]
+async fn disabled_queue_rejects_busy_work_and_releases_successes_and_errors() -> Result<()> {
+    let mut configuration = config();
+    configuration.queue_enabled = false;
+    configuration.queue_capacity = 8;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let recorded = calls.clone();
+    let (began, running) = oneshot::channel();
+    let (release, gate) = sync_mpsc::channel();
+    let worker = start(&configuration, move || {
+        let mut began = Some(began);
+        Ok(move |_| {
+            let count = recorded.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Some(began) = began.take() {
+                let _ = began.send(());
+                gate.recv_timeout(Duration::from_secs(5))
+                    .map_err(|_| worker_stopped())?;
+            }
+            match count {
+                2 => Err(JetError::InvalidRequest(
+                    "fixture invalid request".to_owned(),
+                )),
+                3 => Err(JetError::NativeRuntime(
+                    "fixture inference error".to_owned(),
+                )),
+                _ => Ok(response()),
+            }
+        })
+    })
+    .await?;
+    let first = actix_web::rt::spawn(call(worker.state.clone()));
+    tokio::time::timeout(Duration::from_secs(5), running)
+        .await
+        .map_err(|_| JetError::NativeRuntime("fixture inference did not start".to_owned()))?
+        .map_err(|_| worker_stopped())?;
+    let busy = tokio::time::timeout(Duration::from_secs(1), call(worker.state.clone()))
+        .await
+        .map_err(|_| JetError::NativeRuntime("busy request was queued".to_owned()))??;
+    assert_eq!(busy.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        busy.headers().get(header::RETRY_AFTER),
+        Some(&header::HeaderValue::from_static("1"))
+    );
+    assert_eq!(read_response(busy).await?["error"]["code"], 429);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    release.send(()).map_err(|_| worker_stopped())?;
+    let first = first.await.map_err(|_| worker_stopped())??;
+    assert_eq!(first.status(), StatusCode::OK);
+    let first = read_response(first).await?;
+    for field in ["inference_ms", "queue_ms"] {
+        assert!(
+            first[field]
+                .as_f64()
+                .is_some_and(|ms| ms.is_finite() && ms >= 0.0)
+        );
+    }
+    // Each response must free admission before an immediately following request.
+    for expected in [
+        StatusCode::BAD_REQUEST,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::OK,
+    ] {
+        assert_eq!(call(worker.state.clone()).await?.status(), expected);
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    worker.shutdown().await
+}
+
+#[actix_web::test]
+async fn disabled_queue_keeps_active_slot_after_timeout_or_handler_cancellation() -> Result<()> {
+    for cancel_handler in [false, true] {
+        let mut configuration = config();
+        configuration.queue_enabled = false;
+        if !cancel_handler {
+            configuration.request_timeout = Duration::from_millis(250);
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let recorded = calls.clone();
+        let (began, running) = oneshot::channel();
+        let (release, gate) = sync_mpsc::channel();
+        let worker = start(&configuration, move || {
+            let mut began = Some(began);
+            Ok(move |_| {
+                recorded.fetch_add(1, Ordering::SeqCst);
+                if let Some(began) = began.take() {
+                    let _ = began.send(());
+                    gate.recv_timeout(Duration::from_secs(5))
+                        .map_err(|_| worker_stopped())?;
+                }
+                Ok(response())
+            })
+        })
+        .await?;
+        let first = actix_web::rt::spawn(call(worker.state.clone()));
+        tokio::time::timeout(Duration::from_secs(5), running)
+            .await
+            .map_err(|_| JetError::NativeRuntime("fixture inference did not start".to_owned()))?
+            .map_err(|_| worker_stopped())?;
+        if cancel_handler {
+            first.abort();
+            assert!(first.await.is_err_and(|error| error.is_cancelled()));
+        } else {
+            assert_eq!(
+                first.await.map_err(|_| worker_stopped())??.status(),
+                StatusCode::GATEWAY_TIMEOUT
+            );
+        }
+        // The handler has ended, but the native call still owns the only slot.
+        assert_eq!(
+            call(worker.state.clone()).await?.status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        release.send(()).map_err(|_| worker_stopped())?;
+        assert_eq!(
+            call_after_active_work_finishes(worker.state.clone())
+                .await?
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        worker.shutdown().await?;
+    }
+    Ok(())
+}
+
+#[actix_web::test]
+async fn enabled_queue_reports_time_spent_waiting_for_active_inference() -> Result<()> {
+    let (began, running) = oneshot::channel();
+    let (release, gate) = sync_mpsc::channel();
+    let worker = start(&config(), move || {
+        let mut began = Some(began);
+        Ok(move |_| {
+            if let Some(began) = began.take() {
+                let _ = began.send(());
+                gate.recv_timeout(Duration::from_secs(5))
+                    .map_err(|_| worker_stopped())?;
+            }
+            Ok(response())
+        })
+    })
+    .await?;
+    let first = actix_web::rt::spawn(call(worker.state.clone()));
+    tokio::time::timeout(Duration::from_secs(5), running)
+        .await
+        .map_err(|_| JetError::NativeRuntime("fixture inference did not start".to_owned()))?
+        .map_err(|_| worker_stopped())?;
+    let mut waiting = std::pin::pin!(call(worker.state.clone()));
+    // Poll through admission before measuring the interval held behind the first request.
+    assert!(poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx).is_pending())).await);
+    let held_since = Instant::now();
+    assert_eq!(
+        call(worker.state.clone()).await?.status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let held_ms = held_since.elapsed().as_secs_f64() * 1_000.0;
+    release.send(()).map_err(|_| worker_stopped())?;
+    assert_eq!(
+        first.await.map_err(|_| worker_stopped())??.status(),
+        StatusCode::OK
+    );
+    let result = waiting.await?;
+    assert_eq!(result.status(), StatusCode::OK);
+    let result = read_response(result).await?;
+    assert!(
+        result["queue_ms"]
+            .as_f64()
+            .is_some_and(|ms| ms.is_finite() && ms >= held_ms)
+    );
+    assert!(
+        result["inference_ms"]
+            .as_f64()
+            .is_some_and(|ms| ms.is_finite() && ms >= 0.0)
+    );
     worker.shutdown().await
 }
 

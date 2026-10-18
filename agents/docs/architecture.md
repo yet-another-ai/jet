@@ -38,23 +38,32 @@ the JSONL protocol or candidate scoring semantics. Each HTTP request names the
 single loaded model. This is not a general OpenRouter proxy or chat API.
 
 The inference thread creates, owns, and destroys `Engine` on that thread.
-Actix workers retain only a bounded task sender and asynchronously await replies.
+Actix workers retain admission state and a bounded task sender, and
+asynchronously await replies.
 The model and native contexts remain loaded between requests, and startup warmup
 finishes before the service accepts traffic. HTTP worker count is independent
 of inference parallelism; there is one inference execution thread.
 
 Requests run immediately without a cross-request batching delay. Candidate
-batching within an engine request remains available. The waiting queue defaults
-to one request; a full queue returns `429` without waiting for admission.
+batching within an engine request remains available. Queueing is enabled by
+default, with room for one waiting request; a full queue returns `429` without
+waiting for admission. `--no-queue` admits at most one request, including the
+handoff to the worker, and immediately rejects further requests with `429`.
+It conflicts with an explicit `--queue-capacity` value.
 Expired or abandoned work is skipped before inference starts. A `504` deadline
-does not interrupt an already-running native inference call.
+or cancelled HTTP handler does not interrupt an already-running native inference
+call or release its admission slot before the call completes.
 
 Successful HTTP responses add `inference_ms`, measured with a monotonic clock
 around the individual `Engine::decide` call. This includes prompt preparation,
 tokenization, scoring, and normalization, but excludes queueing, HTTP work,
 model loading, and network transit. It is not pure GPU time or a cumulative
-`EngineTimings` counter. See the [HTTP server guide](../../docs/guide/http-server.md)
-for endpoint, authentication, and compatibility details.
+`EngineTimings` counter. Responses also add `queue_ms`, measured from accepted
+submission after validation to the start of `Engine::decide`. This includes
+the cross-thread handoff, so a small positive value is possible with
+`--no-queue`. Error responses contain neither timing field. See the
+[HTTP server guide](../../docs/guide/http-server.md) for endpoint, authentication,
+and compatibility details.
 
 ## Backends and features
 

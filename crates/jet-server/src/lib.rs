@@ -13,11 +13,13 @@ use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use jet_core::http::{HttpDecisionRequest, HttpDecisionResponse, HttpErrorResponse};
 use jet_core::{DecisionRequest, DecisionResponse, JetError, NoulQuestion, Question, Result};
 use jet_engine::{Engine, EngineConfig};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 
 #[derive(Clone)]
 pub struct ServerConfig {
     pub bind: SocketAddr,
+    /// Allow requests to wait while another request is running.
+    pub queue_enabled: bool,
     pub queue_capacity: usize,
     /// Maximum queue and inference wait after HTTP decoding, not a native abort deadline.
     pub request_timeout: Duration,
@@ -140,6 +142,8 @@ struct Job {
     queued_at: Instant,
     deadline: Instant,
     reply: oneshot::Sender<InferenceResult>,
+    // Owned by the work, so an HTTP timeout cannot free a running inference slot.
+    slot: Option<OwnedSemaphorePermit>,
 }
 
 enum Work {
@@ -153,6 +157,7 @@ struct State {
     model_id: String,
     request_timeout: Duration,
     api_key: Option<String>,
+    immediate_slot: Option<Arc<Semaphore>>,
 }
 
 impl State {
@@ -183,7 +188,12 @@ impl Worker {
         F: FnOnce() -> Result<S> + Send + 'static,
         S: FnMut(DecisionRequest) -> Result<DecisionResponse> + 'static,
     {
-        let (sender, mut receiver) = mpsc::channel(config.queue_capacity);
+        let capacity = if config.queue_enabled {
+            config.queue_capacity
+        } else {
+            1 // A handoff to the owner thread, guarded by the single admission slot.
+        };
+        let (sender, mut receiver) = mpsc::channel(capacity);
         let accepting = Arc::new(AtomicBool::new(false));
         let state = Arc::new(State {
             sender,
@@ -191,6 +201,7 @@ impl Worker {
             model_id,
             request_timeout: config.request_timeout,
             api_key: config.api_key.clone(),
+            immediate_slot: (!config.queue_enabled).then(|| Arc::new(Semaphore::new(1))),
         });
         let (started, startup) = oneshot::channel();
         let thread = thread::Builder::new()
@@ -225,21 +236,24 @@ impl Worker {
                     }
                     let dequeued_at = Instant::now();
                     if dequeued_at >= job.deadline {
+                        drop(job.slot);
                         let _ = job.reply.send(Err(ServiceError::timeout()));
                         continue;
                     }
-                    let queue_ms =
-                        dequeued_at.duration_since(job.queued_at).as_secs_f64() * 1_000.0;
                     let started = Instant::now();
                     let result = decide(job.request);
                     let inference_ms = started.elapsed().as_secs_f64() * 1_000.0;
+                    let queue_ms = started.duration_since(job.queued_at).as_secs_f64() * 1_000.0;
                     tracing::debug!(queue_ms, inference_ms, "decision completed");
                     let result = result
                         .map(|decision| HttpDecisionResponse {
                             decision,
                             inference_ms,
+                            queue_ms,
                         })
                         .map_err(ServiceError::from_engine);
+                    // Release before waking the client so its next request can enter immediately.
+                    drop(job.slot);
                     let _ = job.reply.send(result);
                 }
             })?;
@@ -287,6 +301,7 @@ impl Drop for ResetReadiness {
 
 fn reject_work(work: Work) {
     if let Work::Decide(job) = work {
+        drop(job.slot);
         let _ = job.reply.send(Err(ServiceError::unavailable()));
     }
 }
@@ -338,6 +353,12 @@ impl ServiceError {
 
 fn error_response(status: StatusCode, message: impl Into<String>) -> HttpResponse {
     HttpResponse::build(status).json(HttpErrorResponse::new(status.as_u16(), message))
+}
+
+fn overloaded(message: &str) -> HttpResponse {
+    HttpResponse::TooManyRequests()
+        .insert_header((header::RETRY_AFTER, "1"))
+        .json(HttpErrorResponse::new(429, message))
 }
 
 fn json_config(limit: usize) -> web::JsonConfig {
@@ -411,6 +432,13 @@ async fn decisions(
         Ok(request) => request,
         Err(error) => return ServiceError::from_engine(error).response(),
     };
+    let slot = match &state.immediate_slot {
+        Some(slot) => match slot.clone().try_acquire_owned() {
+            Ok(permit) => Some(permit),
+            Err(_) => return overloaded("inference engine is busy; queueing is disabled"),
+        },
+        None => None,
+    };
     let queued_at = Instant::now();
     let Some(deadline) = queued_at.checked_add(state.request_timeout) else {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "invalid request timeout");
@@ -421,12 +449,11 @@ async fn decisions(
         queued_at,
         deadline,
         reply,
+        slot,
     })) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(_)) => {
-            return HttpResponse::TooManyRequests()
-                .insert_header((header::RETRY_AFTER, "1"))
-                .json(HttpErrorResponse::new(429, "inference queue is full"));
+            return overloaded("inference queue is full");
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
             return ServiceError::unavailable().response();

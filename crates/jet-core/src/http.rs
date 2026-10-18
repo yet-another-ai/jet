@@ -104,12 +104,17 @@ fn validate_text(value: &Value, field: &str) -> Result<()> {
     }
 }
 
-/// A Decisions response with engine execution time, excluding queueing and HTTP I/O.
+/// A Decisions response with separately measured engine execution and queueing time.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HttpDecisionResponse {
     #[serde(flatten)]
     pub decision: DecisionResponse,
+    /// Monotonic elapsed time around `Engine::decide`, excluding queueing and HTTP I/O.
     pub inference_ms: f64,
+    /// Monotonic elapsed time from accepted submission until `Engine::decide` begins.
+    /// Includes scheduler handoff, but excludes parsing, normalization, and network I/O.
+    /// May be slightly positive even when queueing is disabled.
+    pub queue_ms: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -256,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn response_keeps_decisions_fields_and_adds_inference_time() -> Result<()> {
+    fn response_keeps_decisions_fields_and_adds_inference_and_queue_times() -> Result<()> {
         let response = HttpDecisionResponse {
             decision: DecisionResponse {
                 model: "jet-test".to_owned(),
@@ -283,6 +288,7 @@ mod tests {
                 },
             },
             inference_ms: 12.25,
+            queue_ms: 0.5,
         };
         assert_eq!(
             serde_json::to_value(response)?,
@@ -294,7 +300,8 @@ mod tests {
                     "urgency": {"type": "score", "score": 0.0, "probabilities": {"0": 1.0}}
                 },
                 "usage": {"input_tokens": 42, "output_tokens": 3},
-                "inference_ms": 12.25
+                "inference_ms": 12.25,
+                "queue_ms": 0.5
             })
         );
         assert_eq!(

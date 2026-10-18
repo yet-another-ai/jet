@@ -14,8 +14,11 @@ pub(crate) struct ServeArgs {
     /// HTTP listen address. Set JET_API_KEY to require a Bearer token.
     #[arg(long, default_value = "127.0.0.1:8080")]
     bind: SocketAddr,
+    /// Reject requests immediately while the engine is busy instead of queueing them.
+    #[arg(long)]
+    no_queue: bool,
     /// Maximum waiting requests, excluding the request being evaluated.
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "1", conflicts_with = "no_queue")]
     queue_capacity: NonZeroUsize,
     /// Queue plus inference deadline; running native inference cannot be interrupted.
     #[arg(long, default_value = "30000")]
@@ -45,6 +48,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     };
     let config = ServerConfig {
         bind: args.bind,
+        queue_enabled: !args.no_queue,
         queue_capacity: args.queue_capacity.get(),
         request_timeout: Duration::from_millis(args.request_timeout_ms.get()),
         http_workers: args.http_workers.get(),
@@ -88,8 +92,32 @@ mod tests {
         assert_eq!(engine.thinking.mode, jet_engine::ThinkingMode::Disabled);
         assert_eq!(args.bind, "127.0.0.1:8080".parse::<SocketAddr>()?);
         assert_eq!(args.queue_capacity.get(), 1);
+        assert!(!args.no_queue);
         assert_eq!(args.request_timeout_ms.get(), 30_000);
         assert_eq!(args.http_workers.get(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn serving_can_disable_queueing() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let cli =
+            Cli::try_parse_from(["jet", "serve", "--model-path", "model.gguf", "--no-queue"])?;
+        let Command::Serve(args) = cli.command else {
+            return Err("expected serve arguments".into());
+        };
+        assert!(args.no_queue);
+        assert!(
+            Cli::try_parse_from([
+                "jet",
+                "serve",
+                "--model-path",
+                "model.gguf",
+                "--no-queue",
+                "--queue-capacity",
+                "2",
+            ])
+            .is_err()
+        );
         Ok(())
     }
 

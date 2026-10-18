@@ -10,7 +10,7 @@ Jet runs on CPU by default. Optional CUDA, Metal, and Vulkan backends can offloa
 - **Make a yes/no decision:** Use a `noul` question for a boolean result.
 - **Rate an item:** Use a `score` question to select a zero-based index from an ordered scale.
 - **Process a stream:** Send one JSON request per line and receive one JSON result per line, in order.
-- **Serve decisions:** Keep a local model loaded and expose the OpenRouter Decisions request and response fields over HTTP, with per-request inference timing.
+- **Serve decisions:** Keep a local model loaded and expose the OpenRouter Decisions request and response fields over HTTP, with per-request inference and queue timing.
 - **Use local models:** Run GGUF models on CPU or an available GPU.
 
 Jet uses the model's chat template to present the context and candidate answers in natural language. The JSON request is an API format, not text passed directly to the model.
@@ -65,7 +65,7 @@ The question names (`urgent`, `owner`, `severity`) appear in the `answers` objec
   --model-id local/jet
 ```
 
-After loading and warming up the model, Jet listens on `127.0.0.1:8080`. Send text `noul`, `choice`, and `score` requests to `POST /api/alpha/decisions`, adding `"model":"local/jet"` to the request. Responses include `inference_ms`. A small bounded queue limits waiting, and a full queue returns `429` immediately. See the [HTTP server guide](docs/guide/http-server.md) for complete requests, authentication, timeouts, and compatibility limits.
+After loading and warming up the model, Jet listens on `127.0.0.1:8080`. Send text `noul`, `choice`, and `score` requests to `POST /api/alpha/decisions`, adding `"model":"local/jet"` to the request. Responses include `inference_ms` and `queue_ms`. A small bounded queue limits waiting by default; add `--no-queue` to reject new requests with `429` while another request is admitted or running. See the [HTTP server guide](docs/guide/http-server.md) for complete requests, authentication, timeouts, and compatibility limits.
 
 ## GPU support
 
