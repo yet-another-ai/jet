@@ -2,10 +2,29 @@
 
 use std::collections::BTreeMap;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::{DecisionRequest, DecisionResponse, JetError, Question, Result};
+use crate::{
+    DecisionContentPart, DecisionRequest, DecisionResponse, ImageDecisionRequest, ImageInput,
+    JetError, Question, Result,
+};
+
+/// A normalized HTTP decision, ready for the appropriate engine entry point.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HttpDecisionInput {
+    Text(DecisionRequest),
+    Images(ImageDecisionRequest),
+}
+
+/// Limits on inline images, applied before admitting the request to the queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HttpImageLimits {
+    pub max_images: usize,
+    /// Maximum decoded file bytes per image, before native image decoding.
+    pub max_image_bytes: usize,
+}
 
 /// An HTTP request naming the model loaded by the server.
 ///
@@ -24,7 +43,75 @@ pub struct HttpDecisionRequest {
 
 impl HttpDecisionRequest {
     /// Validate the HTTP contract, normalize choice descriptions, and remove transport-only fields.
-    pub fn into_decision(mut self, model_id: &str) -> Result<DecisionRequest> {
+    /// Explicit media blocks require `into_input` with image support enabled.
+    pub fn into_decision(self, model_id: &str) -> Result<DecisionRequest> {
+        match self.into_input(model_id, None)? {
+            HttpDecisionInput::Text(request) => Ok(request),
+            HttpDecisionInput::Images(_) => Err(images_unavailable()),
+        }
+    }
+
+    /// Normalize text and optional inline images while retaining their input order.
+    /// Only media blocks directly inside a state array have multimodal semantics.
+    pub fn into_input(
+        self,
+        model_id: &str,
+        image_limits: Option<HttpImageLimits>,
+    ) -> Result<HttpDecisionInput> {
+        let request = self.normalize(model_id)?;
+        let Value::Array(parts) = &request.state else {
+            return Ok(HttpDecisionInput::Text(request));
+        };
+        let has_images = parts
+            .iter()
+            .any(|part| media_kind(part) == Some("image_url"));
+        for part in parts {
+            if matches!(
+                media_kind(part),
+                Some("input_image" | "input_audio" | "video_url")
+            ) {
+                return Err(JetError::InvalidRequest(
+                    "unsupported media block; use image_url with a PNG or JPEG base64 data URL"
+                        .to_owned(),
+                ));
+            }
+        }
+        if !has_images {
+            return Ok(HttpDecisionInput::Text(request));
+        }
+        let limits = image_limits.ok_or_else(images_unavailable)?;
+        let Value::Array(parts) = request.state else {
+            return Err(JetError::InvalidRequest(
+                "image context must be a state array".to_owned(),
+            ));
+        };
+        let mut state = Vec::with_capacity(parts.len());
+        let mut image_count = 0;
+        for part in parts {
+            if media_kind(&part) == Some("image_url") {
+                image_count += 1;
+                if image_count > limits.max_images {
+                    return Err(JetError::InvalidRequest(format!(
+                        "state must contain at most {} images",
+                        limits.max_images
+                    )));
+                }
+                state.push(DecisionContentPart::Image(decode_image(
+                    part,
+                    image_count,
+                    limits.max_image_bytes,
+                )?));
+            } else {
+                state.push(DecisionContentPart::Text(part));
+            }
+        }
+        Ok(HttpDecisionInput::Images(ImageDecisionRequest {
+            state,
+            questions: request.questions,
+        }))
+    }
+
+    fn normalize(mut self, model_id: &str) -> Result<DecisionRequest> {
         if self.model != model_id {
             return Err(JetError::InvalidRequest(format!(
                 "model must match the loaded model {model_id:?}"
@@ -94,6 +181,89 @@ impl HttpDecisionRequest {
     }
 }
 
+fn media_kind(value: &Value) -> Option<&str> {
+    value.as_object()?.get("type")?.as_str()
+}
+
+fn images_unavailable() -> JetError {
+    JetError::InvalidRequest(
+        "image input is unavailable; start a vision-enabled server with a matching mmproj"
+            .to_owned(),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpImagePart {
+    #[serde(rename = "type")]
+    _kind: String,
+    image_url: HttpImageUrl,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpImageUrl {
+    url: String,
+    /// Accepted for wire compatibility; resolution is controlled by the vision engine.
+    #[serde(rename = "detail")]
+    _detail: Option<ImageDetail>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ImageDetail {
+    Auto,
+    Low,
+    High,
+}
+
+fn decode_image(value: Value, index: usize, max_bytes: usize) -> Result<ImageInput> {
+    let part: HttpImagePart = serde_json::from_value(value).map_err(|_| {
+        JetError::InvalidRequest(
+            "image_url requires an object with url and optional detail (auto, low, or high)"
+                .to_owned(),
+        )
+    })?;
+    let (header, encoded) = part.image_url.url.split_once(',').ok_or_else(|| {
+        JetError::InvalidRequest(
+            "image_url.url must be a PNG or JPEG base64 data URL; remote URLs and file paths are unsupported"
+                .to_owned(),
+        )
+    })?;
+    let media_type = match header {
+        "data:image/png;base64" => "image/png",
+        "data:image/jpeg;base64" => "image/jpeg",
+        _ => {
+            return Err(JetError::InvalidRequest(
+                "image_url.url must use data:image/png;base64 or data:image/jpeg;base64".to_owned(),
+            ));
+        }
+    };
+    // At most two bytes of padding slack, without allocating an oversized decoded buffer.
+    if encoded.len() > max_bytes.div_ceil(3).saturating_mul(4) {
+        return Err(image_too_large(max_bytes));
+    }
+    let data = STANDARD.decode(encoded).map_err(|_| {
+        JetError::InvalidRequest("image_url.url contains invalid base64 image data".to_owned())
+    })?;
+    if data.len() > max_bytes {
+        return Err(image_too_large(max_bytes));
+    }
+    let image = ImageInput {
+        id: format!("image_{index}"),
+        media_type: media_type.to_owned(),
+        data,
+    };
+    image.validate_format()?;
+    Ok(image)
+}
+
+fn image_too_large(max_bytes: usize) -> JetError {
+    JetError::InvalidRequest(format!(
+        "each image must contain at most {max_bytes} decoded file bytes"
+    ))
+}
+
 fn validate_text(value: &Value, field: &str) -> Result<()> {
     if matches!(value, Value::String(_) | Value::Object(_) | Value::Array(_)) {
         Ok(())
@@ -109,9 +279,11 @@ fn validate_text(value: &Value, field: &str) -> Result<()> {
 pub struct HttpDecisionResponse {
     #[serde(flatten)]
     pub decision: DecisionResponse,
-    /// Monotonic elapsed time around `Engine::decide`, excluding queueing and HTTP I/O.
+    /// Monotonic elapsed time around the engine call, including native image decoding,
+    /// visual encoding, and candidate scoring. Excludes queueing, base64 normalization,
+    /// and HTTP I/O.
     pub inference_ms: f64,
-    /// Monotonic elapsed time from accepted submission until `Engine::decide` begins.
+    /// Monotonic elapsed time from accepted submission until the engine call begins.
     /// Includes scheduler handoff, but excludes parsing, normalization, and network I/O.
     /// May be slightly positive even when queueing is disabled.
     pub queue_ms: f64,
@@ -168,6 +340,207 @@ mod tests {
 
     fn convert(value: Value) -> Result<DecisionRequest> {
         serde_json::from_value::<HttpDecisionRequest>(value)?.into_decision("jet-test")
+    }
+
+    fn convert_input(value: Value, limits: Option<HttpImageLimits>) -> Result<HttpDecisionInput> {
+        serde_json::from_value::<HttpDecisionRequest>(value)?.into_input("jet-test", limits)
+    }
+
+    fn image_part(media_type: &str, data: &[u8]) -> Value {
+        json!({
+            "type": "image_url",
+            "image_url": {"url": format!("data:{media_type};base64,{}", STANDARD.encode(data))}
+        })
+    }
+
+    fn image_limits() -> HttpImageLimits {
+        HttpImageLimits {
+            max_images: 2,
+            max_image_bytes: 1024,
+        }
+    }
+
+    #[test]
+    fn image_context_preserves_text_image_order_and_normalizes_questions() -> Result<()> {
+        let red = include_bytes!("../../../tests/fixtures/vision/red.png");
+        let blue = include_bytes!("../../../tests/fixtures/vision/blue.png");
+        let mut input = request();
+        input["state"] = json!([
+            "Compare these images",
+            image_part("image/png", red),
+            {"note": "then this one", "weight": 2},
+            image_part("image/png", blue),
+            ["What changed?", null]
+        ]);
+        input["trace"] = json!({"trace_id": "not engine input"});
+        let converted = convert_input(input, Some(image_limits()))?;
+        let HttpDecisionInput::Images(converted) = converted else {
+            return Err(JetError::InvalidRequest(
+                "expected an image decision".to_owned(),
+            ));
+        };
+        assert_eq!(
+            converted.state,
+            vec![
+                DecisionContentPart::Text(json!("Compare these images")),
+                DecisionContentPart::Image(ImageInput {
+                    id: "image_1".to_owned(),
+                    media_type: "image/png".to_owned(),
+                    data: red.to_vec(),
+                }),
+                DecisionContentPart::Text(json!({"note": "then this one", "weight": 2})),
+                DecisionContentPart::Image(ImageInput {
+                    id: "image_2".to_owned(),
+                    media_type: "image/png".to_owned(),
+                    data: blue.to_vec(),
+                }),
+                DecisionContentPart::Text(json!(["What changed?", null])),
+            ]
+        );
+        let Some(Question::Choice(team)) = converted.questions.get("team") else {
+            return Err(JetError::InvalidRequest(
+                "expected a choice question".to_owned(),
+            ));
+        };
+        assert_eq!(team.criteria.get("billing"), Some(&json!("billing")));
+        Ok(())
+    }
+
+    #[test]
+    fn text_and_nested_json_keep_existing_semantics_with_or_without_vision() -> Result<()> {
+        for state in [
+            json!("plain text"),
+            json!({"type": "image_url", "image_url": {"url": "ordinary object"}}),
+            json!(["text", 42, true, null]),
+            json!([{"data": {"type": "image_url", "image_url": {"url": "nested"}}}]),
+            json!([[{"type": "input_audio", "input_audio": {"data": "nested"}}]]),
+            json!([{"type": "text", "text": "ordinary JSON"}]),
+        ] {
+            let mut input = request();
+            input["state"] = state;
+            let expected = HttpDecisionInput::Text(convert(input.clone())?);
+            assert_eq!(convert_input(input.clone(), None)?, expected);
+            assert_eq!(convert_input(input, Some(image_limits()))?, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn image_count_and_decoded_byte_limits_are_inclusive() -> Result<()> {
+        let png = include_bytes!("../../../tests/fixtures/vision/red.png");
+        let mut input = request();
+        input["state"] = json!([image_part("image/png", png), image_part("image/png", png)]);
+        let limits = HttpImageLimits {
+            max_images: 2,
+            max_image_bytes: png.len(),
+        };
+        convert_input(input.clone(), Some(limits))?;
+        for limits in [
+            HttpImageLimits {
+                max_images: 1,
+                ..limits
+            },
+            HttpImageLimits {
+                max_images: 0,
+                ..limits
+            },
+            HttpImageLimits {
+                max_image_bytes: png.len() - 1,
+                ..limits
+            },
+            HttpImageLimits {
+                max_image_bytes: 0,
+                ..limits
+            },
+        ] {
+            assert!(convert_input(input.clone(), Some(limits)).is_err());
+        }
+        // A one-byte size difference can have the same encoded length; check after decoding too.
+        let jpeg = b"\xff\xd8\xff\x01\x02";
+        input["state"] = json!([image_part("image/jpeg", jpeg)]);
+        assert!(
+            convert_input(
+                input,
+                Some(HttpImageLimits {
+                    max_images: 1,
+                    max_image_bytes: jpeg.len() - 1,
+                })
+            )
+            .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jpeg_and_supported_detail_hints_are_accepted() -> Result<()> {
+        // Full raster validity is checked by the native decoder, after this signature check.
+        let jpeg = b"\xff\xd8\xff\x01\x02";
+        for detail in [Value::Null, json!("auto"), json!("low"), json!("high")] {
+            let mut image = image_part("image/jpeg", jpeg);
+            image["image_url"]["detail"] = detail;
+            let mut input = request();
+            input["state"] = json!([image]);
+            assert!(matches!(
+                convert_input(input, Some(image_limits()))?,
+                HttpDecisionInput::Images(_)
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn disabled_vision_and_other_explicit_media_are_not_scored_as_text() -> Result<()> {
+        let mut input = request();
+        input["state"] = json!([image_part("image/png", b"\x89PNG\r\n\x1a\n")]);
+        let error = convert_input(input.clone(), None).err().ok_or_else(|| {
+            JetError::InvalidRequest("expected an unsupported image error".to_owned())
+        })?;
+        assert!(error.to_string().contains("image input is unavailable"));
+        assert!(convert(input).is_err());
+        for kind in ["input_image", "input_audio", "video_url"] {
+            let mut input = request();
+            input["state"] = json!([{"type": kind}]);
+            assert!(convert_input(input.clone(), None).is_err());
+            assert!(convert_input(input, Some(image_limits())).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_images_and_remote_sources_are_rejected_without_echoing_payloads() -> Result<()> {
+        let png = b"\x89PNG\r\n\x1a\n";
+        let payload = "PRIVATE_IMAGE_DATA".repeat(128);
+        let bad_images = [
+            json!({"type": "image_url"}),
+            json!({"type": "image_url", "image_url": payload}),
+            json!({"type": "image_url", "image_url": {"url": 123}}),
+            json!({"type": "image_url", "image_url": {"url": "https://example.org/image.png"}}),
+            json!({"type": "image_url", "image_url": {"url": "C:/images/frame.png"}}),
+            json!({"type": "image_url", "image_url": {"url": "file:///images/frame.png"}}),
+            json!({"type": "image_url", "image_url": {"url": "data:image/png,raw"}}),
+            image_part("image/gif", b"GIF89a"),
+            image_part("image/jpeg", png),
+            image_part("image/png", b"\xff\xd8\xff"),
+            image_part("image/png", b""),
+            json!({"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{payload}")}}),
+            json!({"type": "image_url", "image_url": {"url": "data:image/png;base64,%%%="}}),
+            json!({"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo=", "detail": payload}}),
+            json!({"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo=", "unexpected": true}}),
+            json!({"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}, "unexpected": true}),
+        ];
+        for image in bad_images {
+            let mut input = request();
+            input["state"] = json!([image]);
+            let error = convert_input(input, Some(image_limits()))
+                .err()
+                .ok_or_else(|| {
+                    JetError::InvalidRequest("expected an invalid image error".to_owned())
+                })?;
+            let message = error.to_string();
+            assert!(!message.contains("PRIVATE_IMAGE_DATA"));
+            assert!(message.len() < 256);
+        }
+        Ok(())
     }
 
     #[test]

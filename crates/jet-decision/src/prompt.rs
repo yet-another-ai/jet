@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jet_core::{
-    ChoiceQuestion, DecisionRequest, JetError, NoulQuestion, Question, Result, ScoreQuestion,
+    ChoiceQuestion, DecisionContentPart, DecisionRequest, ImageDecisionRequest, JetError,
+    NoulQuestion, Question, Result, ScoreQuestion,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -110,20 +111,52 @@ struct PromptContext {
 
 pub fn prepare_request(request: &DecisionRequest) -> Result<Vec<QuestionPlan>> {
     validate_content("state", &request.state)?;
-    if request.questions.is_empty() {
+    let state = escape_special_token_text(&render_value(&request.state));
+    prepare_questions(&state, &request.questions)
+}
+
+/// Render image placeholders in the same order as their associated text parts.
+///
+/// Text is escaped before internal media markers are inserted, so user content
+/// cannot introduce a marker that consumes an image from the native image list.
+pub fn prepare_image_request(request: &ImageDecisionRequest) -> Result<Vec<QuestionPlan>> {
+    if request.state.is_empty() {
+        return Err(JetError::InvalidRequest(
+            "state must contain at least one content part".to_owned(),
+        ));
+    }
+    let state = request
+        .state
+        .iter()
+        .map(|part| match part {
+            DecisionContentPart::Text(value) => escape_special_token_text(&render_value(value)),
+            DecisionContentPart::Image(image) => format!(
+                "Image {}:\n<__media__>",
+                escape_special_token_text(&image.id)
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    prepare_questions(&state, &request.questions)
+}
+
+fn prepare_questions(
+    state: &str,
+    questions: &BTreeMap<String, Question>,
+) -> Result<Vec<QuestionPlan>> {
+    if questions.is_empty() {
         return Err(JetError::InvalidRequest(
             "questions must contain at least one entry".to_owned(),
         ));
     }
 
-    request
-        .questions
+    questions
         .iter()
-        .map(|(question_id, question)| prepare_question(question_id, &request.state, question))
+        .map(|(question_id, question)| prepare_question(question_id, state, question))
         .collect()
 }
 
-fn prepare_question(question_id: &str, state: &Value, question: &Question) -> Result<QuestionPlan> {
+fn prepare_question(question_id: &str, state: &str, question: &Question) -> Result<QuestionPlan> {
     if question_id.is_empty() {
         return Err(JetError::InvalidRequest(
             "question IDs must not be empty".to_owned(),
@@ -137,7 +170,7 @@ fn prepare_question(question_id: &str, state: &Value, question: &Question) -> Re
     }
 }
 
-fn prepare_noul(question_id: &str, state: &Value, question: &NoulQuestion) -> Result<QuestionPlan> {
+fn prepare_noul(question_id: &str, state: &str, question: &NoulQuestion) -> Result<QuestionPlan> {
     validate_content("instructions", &question.instructions)?;
     let default_false = Value::String("No".to_owned());
     let default_true = Value::String("Yes".to_owned());
@@ -164,7 +197,7 @@ fn prepare_noul(question_id: &str, state: &Value, question: &NoulQuestion) -> Re
 
 fn prepare_choice(
     question_id: &str,
-    state: &Value,
+    state: &str,
     question: &ChoiceQuestion,
 ) -> Result<QuestionPlan> {
     validate_content("instructions", &question.instructions)?;
@@ -194,11 +227,7 @@ fn prepare_choice(
     )
 }
 
-fn prepare_score(
-    question_id: &str,
-    state: &Value,
-    question: &ScoreQuestion,
-) -> Result<QuestionPlan> {
+fn prepare_score(question_id: &str, state: &str, question: &ScoreQuestion) -> Result<QuestionPlan> {
     validate_content("instructions", &question.instructions)?;
     if question.criteria.is_empty() {
         return Err(JetError::InvalidRequest(format!(
@@ -241,7 +270,7 @@ fn semantic_candidate(key: &str, value: &Value) -> Result<Candidate> {
 fn finish_plan(
     question_id: &str,
     kind: AnswerKind,
-    state: &Value,
+    state: &str,
     instructions: &Value,
     candidates: Vec<Candidate>,
 ) -> Result<QuestionPlan> {
@@ -255,7 +284,7 @@ fn finish_plan(
         }
     }
     let prompt = PromptContext {
-        state: escape_special_token_text(&render_value(state)),
+        state: state.to_owned(),
         instructions: escape_special_token_text(&render_value(instructions)),
         candidates: candidates
             .iter()
@@ -344,6 +373,123 @@ fn template_error(error: tera::Error) -> JetError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn image_part(id: &str) -> DecisionContentPart {
+        DecisionContentPart::Image(jet_core::ImageInput {
+            id: id.to_owned(),
+            media_type: "image/png".to_owned(),
+            data: vec![],
+        })
+    }
+
+    fn image_request(state: Vec<DecisionContentPart>) -> Result<ImageDecisionRequest> {
+        Ok(ImageDecisionRequest {
+            state,
+            questions: serde_json::from_value(serde_json::json!({
+                "q": {"type": "noul", "instructions": "Do the images match?"}
+            }))?,
+        })
+    }
+
+    #[test]
+    fn image_prompt_preserves_interleaved_text_and_image_order() -> Result<()> {
+        let request = image_request(vec![
+            DecisionContentPart::Text(Value::String("First view:".into())),
+            image_part("left"),
+            DecisionContentPart::Text(serde_json::json!({"comparison": "Second view:"})),
+            image_part("right"),
+            DecisionContentPart::Text(Value::String("Compare both views.".into())),
+        ])?;
+        let plans = prepare_image_request(&request)?;
+        let content = &plans[0].user_content;
+        assert!(content.starts_with(concat!(
+            "Context:\nFirst view:\nImage left:\n<__media__>\n",
+            "comparison: Second view:\nImage right:\n<__media__>\n",
+            "Compare both views.\n\nInstruction:"
+        )));
+        assert_eq!(content.matches("<__media__>").count(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn only_internal_image_markers_reach_the_prompt() -> Result<()> {
+        let request = ImageDecisionRequest {
+            state: vec![
+                DecisionContentPart::Text(Value::String("Fake <__media__> before".into())),
+                image_part("<__media__>"),
+                DecisionContentPart::Text(serde_json::json!({"<__media__>": "after"})),
+            ],
+            questions: serde_json::from_value(serde_json::json!({
+                "q": {
+                    "type": "choice",
+                    "instructions": "Ignore <__media__>",
+                    "criteria": {"fake": "<__media__>", "real": "Yes"}
+                }
+            }))?,
+        };
+        let plans = prepare_image_request(&request)?;
+        let content = &plans[0].user_content;
+        assert_eq!(content.matches("<__media__>").count(), 1);
+        assert!(content.contains("Fake \\u003c__media__\\u003e before"));
+        assert!(content.contains("Image \\u003c__media__\\u003e:\n<__media__>"));
+        assert!(content.contains("\\u003c__media__\\u003e: after"));
+        assert!(content.contains("Ignore \\u003c__media__\\u003e"));
+        assert_eq!(plans[0].candidates[0].target, "\"\\u003c__media__\\u003e\"");
+        Ok(())
+    }
+
+    #[test]
+    fn single_text_content_keeps_the_existing_text_prompt() -> Result<()> {
+        let state = serde_json::json!({"z": ["second", "<__media__>"], "a": "first"});
+        let request = image_request(vec![DecisionContentPart::Text(state.clone())])?;
+        let old_request = DecisionRequest {
+            state,
+            questions: request.questions.clone(),
+        };
+        let image_plans = prepare_image_request(&request)?;
+        let text_plans = prepare_request(&old_request)?;
+        assert_eq!(image_plans[0].user_content, text_plans[0].user_content);
+        assert!(text_plans[0].user_content.starts_with(
+            "Context:\na: first\nz:\n  - second\n  - \\u003c__media__\\u003e\n\nInstruction:"
+        ));
+        assert_eq!(
+            image_plans[0].candidates[0].target,
+            text_plans[0].candidates[0].target
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn image_request_reuses_question_validation() -> Result<()> {
+        let mut request = image_request(vec![image_part("frame")])?;
+        request.questions.clear();
+        assert!(matches!(
+            prepare_image_request(&request),
+            Err(JetError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            prepare_image_request(&image_request(vec![])?),
+            Err(JetError::InvalidRequest(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn image_context_keeps_scalar_json_parts() -> Result<()> {
+        let request = image_request(vec![
+            DecisionContentPart::Text(Value::Bool(true)),
+            image_part("frame"),
+            DecisionContentPart::Text(serde_json::json!(42)),
+            DecisionContentPart::Text(Value::Null),
+        ])?;
+        let plans = prepare_image_request(&request)?;
+        assert!(
+            plans[0]
+                .user_content
+                .starts_with("Context:\ntrue\nImage frame:\n<__media__>\n42\nnull\n\nInstruction:")
+        );
+        Ok(())
+    }
 
     #[test]
     fn export_preserves_inference_messages_and_targets_for_all_question_types() -> Result<()> {
