@@ -1,82 +1,63 @@
-# JET WebGPU Playground
+# JET WebGPU playground runtime
 
-This playground runs the complete JET decision contract in a browser. It accepts a `DecisionRequest` and returns the same `DecisionResponse` shape as the native engine.
+The interactive playground UI lives in the VitePress docs theme
+(`docs/.vitepress/theme/components/playground/`) and is served at
+[`/playground/`](https://jet.yetanother.ai/playground/) as part of the
+documentation site.
 
-Production builds ship as part of the VitePress documentation site at
-[`/playground/`](https://jet.yetanother.ai/playground/) (same GitHub Pages deploy as the docs). There is no separate playground hosting.
+This directory holds the **Wasm build pipeline** for that page: scripts clone a
+pinned wllama commit, apply Jet patches, and emit the Emscripten/WebGPU module
+under `playground/generated/wllama` (gitignored). The docs build copies that
+tree into `docs/public/playground-runtime/` so the page can load it.
 
-The browser pipeline is one Emscripten module:
+## Build the Wasm module
 
-```text
-DecisionRequest
-      │
-      ▼
-jet-engine + jet-decision + jet-core (Rust)
-  validate + render + tokenize + schedule
-      │
-      ▼
-Jet's vendored llama.cpp (C/C++)
-  WebGPU inference + teacher-forced token log probabilities
-      │
-      ▼
-jet-decision (the same Rust code as native Jet)
-  length normalization + softmax + answer mapping + usage
-      │
-      ▼
-DecisionResponse
-```
-
-The module calls the original `Engine::decide` path. Prompt rendering, combined prompt-plus-target tokenization, prefix validation, scheduling, cache reuse, thinking, probability checks, response construction, and timings stay in `jet-engine`. wllama supplies browser workers, model download/cache, HeapFS, and the TypeScript facade. It does not implement a second scorer.
-
-The playground uses batched execution, the preparation pipeline, and disabled thinking. The request editor and the score view show the same `DecisionRequest` and `DecisionResponse` shapes as the native API.
-
-## Build and run
-
-Install the root mise toolchain first. Docker must be running because wllama builds llama.cpp with Emscripten in a pinned container.
+Install the root mise toolchain. Docker must be running because wllama builds
+llama.cpp with Emscripten in a pinned container.
 
 ```sh
 mise install
 mise run playground:dev
 ```
 
-The first run clones the pinned wllama commit, applies `patches/wllama-jet-engine.patch`, compiles `jet-web` and Jet's vendored llama.cpp into one WebGPU Wasm module, and installs the frontend dependencies. Open the local URL printed by Vite, load the default Qwen3 GGUF, then select **Load & run**.
+That builds Wasm, copies it to `docs/public/playground-runtime/` (with
+`ready.json`), and starts VitePress. Or prepare an existing build and serve docs:
 
-Embed the playground into a docs-site build (base path `/playground/`):
+```sh
+mise run playground:wllama
+mise run playground:prepare
+mise exec -- pnpm docs:dev
+```
+
+Production-style docs build (copies the runtime when present):
 
 ```sh
 mise run playground:wllama
 mise exec -- pnpm docs:build
+mise exec -- pnpm docs:preview
 ```
 
-`scripts/build-docs.sh` builds VitePress, then either embeds this app into
-`docs/.vitepress/dist/playground/` or writes a stub when the Wasm module is
-absent. CI builds the Wasm module in the Documentation workflow and merges the
-same assets into the Pages artifact.
+Without a Wasm build, `pnpm docs:build` still succeeds; the playground page shows
+an in-app stub. CI sets `JET_DOCS_REQUIRE_PLAYGROUND=1` so the Documentation
+workflow fails if the module is missing.
 
-The generated wllama package and single Wasm file are under `playground/generated/`. Local Vite output is under `playground/dist/` when you run `playground:build` without docs env overrides. Git ignores both directories.
+## Bindings
 
-`jet-llama-sys` uses bindings generated for Emscripten's memory32 ABI when `webgpu` and `external-link` are enabled. The normal native build keeps its 64-bit bindings. The browser bindings are generated on demand and are not tracked; `playground:dev` and `playground:build` generate them before compiling the module. Regenerate them after changing the wrapper or vendored llama.cpp headers with:
+`jet-llama-sys` uses bindings generated for Emscripten's memory32 ABI when
+`webgpu` and `external-link` are enabled. Bindings are generated on demand and
+are not tracked. Regenerate after changing the wrapper or vendored llama.cpp
+headers:
 
 ```sh
 mise run playground:bindings
 ```
 
-The generator uses the Emscripten 4.0.20 sysroot from the pinned wllama build. Rust layout assertions cover the generated memory32 types. Emscripten `static_assert`s validate the boundary structs during the final C++ link. The `webgpu` feature requires `external-link`. The wllama CMake build sets `GGML_WEBGPU=ON` and links Jet and llama.cpp into the single module.
+## Cross-origin isolation
 
-## Browser requirements
+The Wasm module needs `SharedArrayBuffer` (atomics / imported memory). Locally,
+VitePress sends COOP/COEP headers. On GitHub Pages, the playground page loads
+`/playground/coi-serviceworker.js` (scoped to `/playground/`) to patch those
+headers.
 
-- A browser with WebGPU enabled.
-- Enough device and system memory for the GGUF model and Jet inference context.
-- A model URL that allows cross-origin browser downloads.
-- Cross-origin isolation for `SharedArrayBuffer` (Wasm atomics / imported memory).
-
-Isolation is provided by:
-
-- Vite `server` / `preview` headers in this app and in the VitePress docs config
-  (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`).
-- On GitHub Pages (no custom headers), `playground/public/coi-serviceworker.js`
-  patches COOP/COEP for `/playground/` only.
-
-User-facing docs live under [WebGPU playground](https://jet.yetanother.ai/guide/playground).
-
-The adapter uses up to nine sequences per scoring wave. Large requests are split into additional waves when their prompts and candidate continuations exceed the sequence or context capacity.
+See the [user guide](https://jet.yetanother.ai/guide/playground) for browser
+requirements and the decision pipeline overview.

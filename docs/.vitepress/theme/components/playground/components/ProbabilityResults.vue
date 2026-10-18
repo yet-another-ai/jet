@@ -1,5 +1,5 @@
-<script setup vapor lang="ts">
-import type { ResultGroup } from '../playground';
+<script setup lang="ts">
+import type { ResultGroup } from '../types';
 
 defineProps<{ groups: ResultGroup[] }>();
 

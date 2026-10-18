@@ -1,5 +1,5 @@
-<script setup vapor lang="ts">
-import { draftId, type QuestionDraft } from '../playground';
+<script setup lang="ts">
+import { draftId, type QuestionDraft } from '../types';
 
 defineProps<{
   question: QuestionDraft;

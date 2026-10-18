@@ -14,9 +14,6 @@ export default defineConfig({
   base: '/',
   cleanUrls: true,
   lastUpdated: true,
-  // /playground/ is the WebGPU SPA merged after the VitePress build (CI or
-  // scripts/build-docs.sh). Ignore it during the VitePress link check.
-  ignoreDeadLinks: [/^\/playground/],
   sitemap: {
     hostname: 'https://jet.yetanother.ai'
   },
@@ -31,10 +28,9 @@ export default defineConfig({
     ['meta', { name: 'twitter:card', content: 'summary' }]
   ],
   vite: {
-    // Keep Vue SFC resolution quiet for the custom landing theme.
-    // COOP/COEP let the embedded /playground/ assets use SharedArrayBuffer
-    // during local docs:dev / docs:preview. GitHub Pages uses the
-    // coi-serviceworker shim instead (see playground/index.html).
+    // COOP/COEP enable SharedArrayBuffer for the playground Wasm runtime during
+    // local docs:dev / docs:preview. GitHub Pages uses coi-serviceworker under
+    // /playground/ instead (see ensure-coi.ts).
     server: {
       fs: {
         allow: ['..']
@@ -48,9 +44,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
-      // Full-page load: /playground/ is a separate SPA merged into dist, not a
-      // VitePress route. Without target, the client router 404s until refresh.
-      { text: 'Playground', link: '/playground/', target: '_self' },
+      { text: 'Playground', link: '/playground/' },
       { text: 'Results', link: '/results' },
       { text: 'Advanced', link: '/advanced' },
       { text: 'Get Jet', link: '/#get-jet' },
