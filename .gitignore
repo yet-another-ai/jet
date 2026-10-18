@@ -1,8 +1,6 @@
 /target/
 /dist/
-/playground/dist/
 /playground/generated/
-/playground/node_modules/
 # Generated Emscripten bindings for the WebGPU playground
 /crates/jet-llama-sys/src/bindings_emscripten.rs
 /models/
@@ -29,7 +27,8 @@ __pycache__/
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 /docs/.vitepress/temp/
-/docs/public/playground/
+# Built Wasm/runtime copied into public for the playground page
+/docs/public/playground-runtime/
 
 # APM dependencies
 apm_modules/

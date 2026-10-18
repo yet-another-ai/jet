@@ -1,4 +1,4 @@
-<script setup vapor lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 
 import AppWindow from './components/AppWindow.vue';
@@ -6,8 +6,10 @@ import JsonView from './components/JsonView.vue';
 import ProbabilityResults from './components/ProbabilityResults.vue';
 import QuestionEditor from './components/QuestionEditor.vue';
 import SegmentedControl from './components/SegmentedControl.vue';
-import { draftId, type DecisionResponse, type QuestionDraft, type ResultGroup } from './playground';
-import { isModelLoaded, loadModel, runDecision, supportsWebGpu } from './runtime';
+import { draftId, type DecisionResponse, type QuestionDraft, type ResultGroup } from './types'
+import { isModelLoaded, loadModel, probeRuntime, runDecision, supportsWebGpu } from './runtime'
+import { ensurePlaygroundCoi } from './ensure-coi'
+import './playground.css'
 
 const defaultModelUrl =
   'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf';
@@ -39,9 +41,8 @@ const response = ref<DecisionResponse>();
 const elapsedMs = ref(0);
 const requestView = ref<'editor' | 'json'>('editor');
 const resultView = ref<'scores' | 'json'>('scores');
-// index.html applies the stored or system theme before first paint.
-const theme = ref(document.documentElement.dataset.theme);
-const shown = ref(false);
+const shown = ref(false)
+const runtimeReady = ref(true)
 const busy = computed(() => loading.value || running.value);
 
 const downloadPercent = computed(() =>
@@ -84,13 +85,13 @@ watch(
   { deep: true },
 );
 
-onMounted(() => requestAnimationFrame(() => (shown.value = true)));
-
-function toggleTheme(): void {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = theme.value;
-  localStorage.setItem('jet-playground-theme', theme.value);
-}
+onMounted(() => {
+  ensurePlaygroundCoi()
+  void probeRuntime().then((ok) => {
+    runtimeReady.value = ok
+  })
+  requestAnimationFrame(() => (shown.value = true))
+})
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -193,38 +194,16 @@ async function run(): Promise<void> {
 </script>
 
 <template>
-  <div class="shell" :class="{ 'is-shown': shown }">
-    <nav class="nav">
-      <a class="nav__brand" href="/" aria-label="Jet home">
-        Jet <span>playground</span>
-      </a>
-      <div class="nav__actions">
-        <a class="nav__link" href="/guide/playground">Docs</a>
-        <a class="nav__icon" href="https://github.com/yet-another-ai/jet" aria-label="Jet on GitHub">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.84c.85 0 1.7.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
-            />
-          </svg>
-        </a>
-        <button
-          class="nav__icon"
-          type="button"
-          :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
-          @click="toggleTheme"
-        >
-          <svg v-if="theme === 'dark'" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
-          </svg>
-        </button>
-      </div>
-    </nav>
-
+  <div class="playground-shell shell" :class="{ 'is-shown': shown }">
+    <div v-if="!runtimeReady" class="runtime-missing" role="status">
+      <h2>Playground Wasm not built</h2>
+      <p>
+        This docs build did not include the WebGPU Wasm module. Build it locally,
+        then rebuild the docs:
+      </p>
+      <p><code>mise run playground:wllama && mise exec -- pnpm docs:build</code></p>
+      <p>See the <a href="/guide/playground">playground guide</a> for requirements.</p>
+    </div>
     <header class="hero">
       <p class="hero__kicker reveal" style="--line: 0">WebGPU playground</p>
       <h1 class="reveal" style="--line: 1">Jet, in your browser</h1>
@@ -369,7 +348,7 @@ async function run(): Promise<void> {
         v-if="!modelLoaded"
         class="island__button"
         type="button"
-        :disabled="busy || !webGpu"
+        :disabled="busy || !webGpu || !runtimeReady"
         @click="ensureModel"
       >
         Load model
@@ -377,7 +356,7 @@ async function run(): Promise<void> {
       <button
         class="island__button island__button--solid"
         type="button"
-        :disabled="busy || !webGpu"
+        :disabled="busy || !webGpu || !runtimeReady"
         @click="run"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7.5-4.5z" /></svg>
@@ -393,77 +372,45 @@ async function run(): Promise<void> {
   padding-bottom: 120px;
 }
 
-.nav {
-  position: sticky;
-  z-index: 20;
-  top: 0;
-  display: flex;
-  height: 60px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 14px 0 24px;
-  background: color-mix(in srgb, var(--bg) 62%, transparent);
-  backdrop-filter: blur(18px) saturate(1.4);
+.runtime-missing {
+  max-width: 40rem;
+  margin: 24px auto 0;
+  padding: 20px 22px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--panel);
+  text-align: left;
 }
 
-.nav__brand {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 10px;
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-decoration: none;
+.runtime-missing h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
 }
 
-.nav__brand span {
+.runtime-missing p {
+  margin: 0 0 8px;
   color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.nav__actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.nav__link {
-  padding: 0 12px;
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-decoration: none;
-}
-
-.nav__link:hover {
+.runtime-missing a {
   color: var(--teal-ink);
 }
 
-.nav__icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 20px;
-  color: var(--ink);
-  background: transparent;
+.runtime-missing code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
 }
 
-.nav__icon:hover {
-  background: var(--fill-strong);
-}
 
-.nav__icon svg {
-  width: 19px;
-  height: 19px;
-}
+
+
+
+
+
+
+
 
 .hero {
   max-width: 820px;
@@ -541,9 +488,9 @@ async function run(): Promise<void> {
 
 .workspace__result {
   position: sticky;
-  top: 76px;
+  top: 88px;
   min-height: 460px;
-  max-height: calc(100vh - 176px);
+  max-height: calc(100vh - 188px);
   scroll-margin-top: 72px;
 }
 
@@ -864,14 +811,6 @@ async function run(): Promise<void> {
 }
 
 @media (max-width: 620px) {
-  .nav {
-    padding: 0 6px 0 16px;
-  }
-
-  .nav__link {
-    display: none;
-  }
-
   .hero {
     padding: 32px 18px 28px;
   }

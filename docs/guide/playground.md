@@ -5,12 +5,15 @@ description: Run Jet's full decision pipeline in the browser with WebGPU and Was
 
 # WebGPU playground
 
-The [interactive playground](/playground/){target="_self"} runs Jet's decision
-contract in a compatible browser. It accepts a `DecisionRequest` and returns the
-same `DecisionResponse` shape as the native engine.
+The [interactive playground](/playground/) runs Jet's decision contract in a
+compatible browser. It accepts a `DecisionRequest` and returns the same
+`DecisionResponse` shape as the native engine.
 
-Open the live app:
-[jet.yetanother.ai/playground/](/playground/){target="_self"}
+Open the live app: [jet.yetanother.ai/playground/](/playground/)
+
+The UI is a VitePress page (no sidebar) that mounts client-only Vue components
+from the docs theme. The Wasm/wllama runtime is served from
+`/playground-runtime/` on the same site.
 
 ## What it runs
 
@@ -47,20 +50,17 @@ implement a second scorer.
 - Cross-origin isolation (`SharedArrayBuffer`), because the Wasm module is built
   with atomics / imported memory for multithreaded execution
 
-Links from the docs into `/playground/` use a full page load (`target="_self"`).
-The playground is a separate SPA merged into the docs deploy, not a VitePress
-route, so client-side routing would 404 until refresh. On GitHub Pages the
-playground may reload once more while the COOP/COEP service worker takes
-control.
-
 The docs site enables isolation in two ways:
 
 - **Local `docs:dev` / `docs:preview`:** Vite sends
   `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: require-corp`.
-- **GitHub Pages:** Pages cannot set those headers, so `/playground/` loads a
-  [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) shim that
-  patches COOP/COEP for that path only.
+- **GitHub Pages:** Pages cannot set those headers, so the playground page loads
+  a scoped [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker)
+  under `/playground/` (it may reload once to take control).
+
+Normal VitePress client navigation to `/playground/` works; the page is part of
+the docs SPA.
 
 ## Build locally
 
@@ -72,24 +72,21 @@ mise install
 mise run playground:dev
 ```
 
-The first run clones the pinned wllama commit, applies the Jet patches, compiles
-`jet-web` and llama.cpp into one WebGPU Wasm module, and starts Vite. Open the
-printed URL, load the default Qwen3 GGUF, then select **Load & run**.
-
-To embed the playground into a local docs build (same layout as production):
+That builds the Wasm module, copies it to `docs/public/playground-runtime/`
+(including `ready.json`), and starts VitePress. To reuse an existing Wasm build
+with a plain docs server:
 
 ```sh
-mise run playground:wllama
-mise exec -- pnpm docs:build
-mise exec -- pnpm docs:preview
+mise run playground:prepare
+mise exec -- pnpm docs:dev
 ```
 
-Without a Wasm build, `pnpm docs:build` still succeeds and leaves a stub at
-`/playground/`. CI sets `JET_DOCS_REQUIRE_PLAYGROUND=1` so the docs workflow
-fails if the module is missing.
+Without a Wasm build, `pnpm docs:build` still succeeds and the playground page
+shows an in-app stub. CI sets `JET_DOCS_REQUIRE_PLAYGROUND=1` so the docs
+workflow fails if the module is missing.
 
 Emscripten bindings stay on-demand and gitignored. Regenerate them after changing
 the wrapper or vendored llama.cpp headers with `mise run playground:bindings`.
 
 See [playground/README.md](https://github.com/yet-another-ai/jet/blob/main/playground/README.md)
-for the full developer notes.
+for Wasm build notes.

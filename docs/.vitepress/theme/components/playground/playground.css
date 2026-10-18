@@ -1,6 +1,6 @@
-/* Tokens follow the Jet landing page and its AUV-style desk. */
+/* Tokens follow the Jet landing page. Scoped to the playground shell. */
 
-:root {
+.playground-shell {
   --bg: #f6f7fb;
   --ink: #1b1d23;
   --ink-2: #5d6271;
@@ -22,9 +22,12 @@
   --red: #f07178;
   --red-ink: #b42318;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
+  position: relative;
+  isolation: isolate;
+  min-width: 320px;
   color: var(--ink);
   background: var(--bg);
   color-scheme: light;
@@ -35,7 +38,19 @@
   -webkit-font-smoothing: antialiased;
 }
 
-:root[data-theme="dark"] {
+.playground-shell::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(52% 46% at 16% 12%, color-mix(in srgb, var(--teal) 14%, transparent), transparent 70%),
+    radial-gradient(44% 42% at 88% 46%, color-mix(in srgb, var(--sky) 11%, transparent), transparent 70%),
+    radial-gradient(60% 40% at 38% 100%, color-mix(in srgb, var(--teal) 9%, transparent), transparent 70%);
+  content: '';
+  pointer-events: none;
+}
+
+html.dark .playground-shell {
   --bg: #0c0e13;
   --ink: #eceae4;
   --ink-2: #a5a8b3;
@@ -56,68 +71,50 @@
   color-scheme: dark;
 }
 
-* {
+.playground-shell,
+.playground-shell * {
   box-sizing: border-box;
 }
 
-body {
-  min-width: 320px;
-  min-height: 100vh;
-  margin: 0;
-  background: var(--bg);
-}
-
-body::before {
-  position: fixed;
-  z-index: -1;
-  inset: 0;
-  background:
-    radial-gradient(52% 46% at 16% 12%, color-mix(in srgb, var(--teal) 14%, transparent), transparent 70%),
-    radial-gradient(44% 42% at 88% 46%, color-mix(in srgb, var(--sky) 11%, transparent), transparent 70%),
-    radial-gradient(60% 40% at 38% 100%, color-mix(in srgb, var(--teal) 9%, transparent), transparent 70%);
-  content: "";
-  pointer-events: none;
-}
-
-button,
-input,
-textarea {
+.playground-shell button,
+.playground-shell input,
+.playground-shell textarea {
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
   outline: none;
 }
 
-input::placeholder,
-textarea::placeholder {
+.playground-shell input::placeholder,
+.playground-shell textarea::placeholder {
   color: color-mix(in srgb, var(--ink-2) 70%, transparent);
 }
 
-button {
+.playground-shell button {
   cursor: pointer;
 }
 
-button:disabled {
+.playground-shell button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-input:disabled,
-textarea:disabled {
+.playground-shell input:disabled,
+.playground-shell textarea:disabled {
   opacity: 0.7;
 }
 
-button:focus-visible,
-a:focus-visible {
+.playground-shell button:focus-visible,
+.playground-shell a:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
 
-::selection {
+.playground-shell ::selection {
   background: color-mix(in srgb, var(--teal) 28%, transparent);
 }
 
-svg {
+.playground-shell svg {
   width: 14px;
   height: 14px;
   flex: none;
@@ -128,7 +125,7 @@ svg {
   stroke-width: 1.7;
 }
 
-.field {
+.playground-shell .field {
   width: 100%;
   border: 0;
   color: var(--ink);
@@ -137,19 +134,19 @@ svg {
   transition: box-shadow 0.16s ease;
 }
 
-.field:focus-visible {
+.playground-shell .field:focus-visible {
   box-shadow:
     inset 0 0 0 1px var(--teal),
     0 0 0 3px color-mix(in srgb, var(--teal) 18%, transparent);
 }
 
-.card {
+.playground-shell .card {
   border: 1px solid var(--edge);
   border-radius: 14px;
   background: var(--fill);
 }
 
-.key {
+.playground-shell .key {
   color: var(--ink-2);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -157,7 +154,7 @@ svg {
   font-weight: 600;
 }
 
-.visually-hidden {
+.playground-shell .visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -170,9 +167,9 @@ svg {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
+  .playground-shell *,
+  .playground-shell ::before,
+  .playground-shell ::after {
     animation: none !important;
     transition: none !important;
   }

@@ -1,4 +1,4 @@
-<script setup vapor lang="ts" generic="T extends string">
+<script setup lang="ts" generic="T extends string">
 defineProps<{ options: { value: T; label: string }[]; label: string }>();
 
 const model = defineModel<T>({ required: true });

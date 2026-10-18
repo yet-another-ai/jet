@@ -58,26 +58,11 @@ run = "sh scripts/generate-emscripten-bindings.sh"
 description = "Build Jet's browser decision pipeline"
 run = "sh scripts/build-jet-web.sh"
 
-[tasks."playground:install"]
-description = "Install the playground frontend dependencies"
-dir = "playground"
-# Ignore the repo-root docs package.json so deps land in playground/node_modules.
-run = "pnpm install --ignore-workspace"
+[tasks."playground:prepare"]
+description = "Copy playground Wasm into docs/public/playground-runtime (writes ready.json)"
+run = "sh scripts/prepare-playground-runtime.sh"
 
 [tasks."playground:dev"]
-description = "Start the Jet WebGPU playground"
-depends = ["playground:install", "playground:wllama"]
-dir = "playground"
-run = "pnpm dev"
-
-[tasks."playground:build"]
-description = "Build the Jet WebGPU playground"
-depends = ["playground:install", "playground:wllama"]
-dir = "playground"
-run = "pnpm build"
-
-[tasks."playground:check"]
-description = "Type-check the Jet WebGPU playground"
-depends = ["playground:install", "playground:wllama"]
-dir = "playground"
-run = "pnpm typecheck"
+description = "Build playground Wasm and start VitePress with the runtime in docs/public"
+depends = ["playground:wllama", "playground:prepare"]
+run = "pnpm docs:dev"

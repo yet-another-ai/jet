@@ -4,7 +4,7 @@ Jet makes local decisions with a language model. Give it some context and a fixe
 
 Jet runs on CPU by default. Optional CUDA, Metal, and Vulkan backends can offload inference to a local GPU. With the `vision` feature and a compatible model, it can also answer questions about images.
 
-The [WebGPU playground](https://jet.yetanother.ai/playground/) runs the full decision pipeline in a compatible browser (Vue Vapor and a patched wllama runtime) and ships with the documentation site.
+The [WebGPU playground](https://jet.yetanother.ai/playground/) runs the full decision pipeline in a compatible browser (Vue + a patched wllama/WebGPU runtime) as a page of the documentation site.
 
 ## What you can do
 
