@@ -17,9 +17,10 @@ embed_playground() {
   echo "Embedding WebGPU playground into $playground_out"
   (
     cd "$repo_root/playground"
+    pnpm install --frozen-lockfile --ignore-workspace
     JET_PLAYGROUND_BASE=/playground/ \
       JET_PLAYGROUND_OUT_DIR="$playground_out" \
-      pnpm build
+      pnpm build --ignore-workspace
   )
 }
 

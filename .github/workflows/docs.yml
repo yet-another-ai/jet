@@ -69,12 +69,15 @@ jobs:
             mise run playground:wllama
           fi
       - name: Install playground frontend dependencies
-        run: mise exec -- pnpm --dir playground install --frozen-lockfile
+        # Parent docs package.json must not capture this install.
+        working-directory: playground
+        run: mise exec -- pnpm install --frozen-lockfile --ignore-workspace
       - name: Build playground frontend for docs
+        working-directory: playground
         env:
           JET_PLAYGROUND_BASE: /playground/
           JET_PLAYGROUND_OUT_DIR: ${{ github.workspace }}/playground/dist
-        run: mise exec -- pnpm --dir playground build
+        run: mise exec -- pnpm build --ignore-workspace
       - name: Upload playground dist
         uses: actions/upload-artifact@v7
         with:
