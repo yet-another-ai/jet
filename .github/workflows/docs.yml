@@ -77,7 +77,7 @@ jobs:
         env:
           JET_PLAYGROUND_BASE: /playground/
           JET_PLAYGROUND_OUT_DIR: ${{ github.workspace }}/playground/dist
-        run: mise exec -- pnpm build --ignore-workspace
+        run: mise exec -- pnpm build
       - name: Upload playground dist
         uses: actions/upload-artifact@v7
         with:

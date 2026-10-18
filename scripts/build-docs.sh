@@ -20,7 +20,7 @@ embed_playground() {
     pnpm install --frozen-lockfile --ignore-workspace
     JET_PLAYGROUND_BASE=/playground/ \
       JET_PLAYGROUND_OUT_DIR="$playground_out" \
-      pnpm build --ignore-workspace
+      pnpm build
   )
 }
 
