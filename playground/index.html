@@ -15,6 +15,12 @@
             ? 'dark'
             : 'light';
     </script>
+    <!--
+      GitHub Pages cannot set COOP/COEP. The service worker patches those headers
+      so SharedArrayBuffer / Wasm atomics work. When Vite already sends the
+      headers (dev/preview), the script no-ops because crossOriginIsolated is set.
+    -->
+    <script src="./coi-serviceworker.js"></script>
   </head>
   <body>
     <div id="app"></div>

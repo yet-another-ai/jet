@@ -36,11 +36,24 @@ settings are changed by the workflow.
 
 ## Documentation
 
-The Documentation workflow installs the locked Node and pnpm tools, restores the
-frozen dependency graph, and builds the VitePress site. The build validates page
-rendering and internal links, then uploads the static output as a GitHub Pages
-artifact. Pull requests must pass this build. A successful main-branch Gate deploys
-the same artifact to GitHub Pages.
+The Documentation workflow has two jobs:
+
+1. **Playground Wasm** builds the Emscripten/WebGPU module (Docker + nightly Rust
+   + Emscripten 4.0.20), then the playground frontend with base `/playground/`.
+   Generated bindings stay on-demand and are not committed. Trusted runs cache the
+   Wasm inputs/outputs; pull requests may restore that cache.
+2. **VitePress** installs the locked Node and pnpm tools, builds the docs site,
+   merges the playground dist at `/playground/`, and uploads the combined static
+   tree as a GitHub Pages artifact.
+
+Pull requests must pass this build. A successful main-branch Gate deploys the same
+artifact to GitHub Pages. GitHub Pages cannot set COOP/COEP headers; the playground
+registers a scoped `coi-serviceworker` so `SharedArrayBuffer` works in production.
+Local `docs:dev` / `docs:preview` send those headers from Vite instead.
+
+Locally, `pnpm docs:build` (`scripts/build-docs.sh`) embeds the playground when
+`playground/generated/wllama` exists; otherwise it writes a stub page unless
+`JET_DOCS_REQUIRE_PLAYGROUND=1`.
 
 ## Packaging
 

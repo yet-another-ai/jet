@@ -29,6 +29,7 @@ __pycache__/
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 /docs/.vitepress/temp/
+/docs/public/playground/
 
 # APM dependencies
 apm_modules/

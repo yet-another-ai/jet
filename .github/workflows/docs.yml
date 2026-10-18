@@ -12,10 +12,94 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  playground:
+    name: Playground Wasm
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && github.token || '' }}
+        with:
+          version: 2026.10.0
+          add_shims_to_path: false
+          install_args: --locked node pnpm cmake
+          github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
+          cache_key_prefix: jet-mise-docs-playground-v1
+      - name: Install Rust nightly for Wasm
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-emscripten
+          components: rust-src
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.20
+      - name: Identify playground cache inputs
+        id: playground-cache-meta
+        shell: bash
+        run: |
+          echo "llama=$(git rev-parse HEAD:vendor/llama.cpp)" >> "$GITHUB_OUTPUT"
+          echo "key=jet-playground-wasm-v1-${{ runner.os }}-${{ runner.arch }}-$(git rev-parse HEAD:vendor/llama.cpp)-${{ hashFiles('scripts/build-wllama-playground.sh', 'scripts/generate-emscripten-bindings.sh', 'scripts/build-jet-web.sh', 'patches/**', 'crates/jet-web/**', 'crates/jet-engine/**', 'crates/jet-llama-sys/**', 'crates/jet-core/**', 'crates/jet-decision/**', 'Cargo.lock', 'mise.lock') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore playground Wasm cache
+        uses: actions/cache/restore@v6
+        id: playground-cache
+        with:
+          path: |
+            playground/generated
+            target/wasm32-unknown-emscripten
+            target/wllama-playground-src
+            target/emscripten-4.0.20-sysroot
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+          key: ${{ steps.playground-cache-meta.outputs.key }}
+          restore-keys: |
+            jet-playground-wasm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.playground-cache-meta.outputs.llama }}-
+      - name: Build playground Wasm module
+        run: |
+          if [ -d playground/generated/wllama ]; then
+            echo "Using cached playground Wasm under playground/generated/wllama"
+          else
+            mise run playground:wllama
+          fi
+      - name: Install playground frontend dependencies
+        run: mise exec -- pnpm --dir playground install --frozen-lockfile
+      - name: Build playground frontend for docs
+        env:
+          JET_PLAYGROUND_BASE: /playground/
+          JET_PLAYGROUND_OUT_DIR: ${{ github.workspace }}/playground/dist
+        run: mise exec -- pnpm --dir playground build
+      - name: Upload playground dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: playground-dist
+          path: playground/dist
+          retention-days: 2
+      - name: Save playground Wasm cache
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            playground/generated
+            target/wasm32-unknown-emscripten
+            target/wllama-playground-src
+            target/emscripten-4.0.20-sysroot
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+          key: ${{ steps.playground-cache-meta.outputs.key }}
+
   build:
     name: VitePress
+    needs: [playground]
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,8 +117,13 @@ jobs:
           cache_key_prefix: jet-mise-docs-v1
       - name: Install documentation dependencies
         run: mise exec -- pnpm install --frozen-lockfile
-      - name: Build documentation
-        run: mise exec -- pnpm docs:build
+      - name: Build VitePress site
+        run: mise exec -- pnpm exec vitepress build docs
+      - name: Download playground dist
+        uses: actions/download-artifact@v7
+        with:
+          name: playground-dist
+          path: docs/.vitepress/dist/playground
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:

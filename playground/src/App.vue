@@ -195,11 +195,11 @@ async function run(): Promise<void> {
 <template>
   <div class="shell" :class="{ 'is-shown': shown }">
     <nav class="nav">
-      <a class="nav__brand" href="https://jet.yetanother.ai/" aria-label="Jet home">
+      <a class="nav__brand" href="/" aria-label="Jet home">
         Jet <span>playground</span>
       </a>
       <div class="nav__actions">
-        <a class="nav__link" href="https://jet.yetanother.ai/guide/getting-started">Guide</a>
+        <a class="nav__link" href="/guide/playground">Docs</a>
         <a class="nav__icon" href="https://github.com/yet-another-ai/jet" aria-label="Jet on GitHub">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
