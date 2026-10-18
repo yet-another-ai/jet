@@ -44,14 +44,15 @@ jobs:
         id: playground-cache-meta
         shell: bash
         run: |
+          # Exact key covers every rebuild input. Intermediate-only caches may
+          # restore across key prefixes; the Wasm build always runs so a partial
+          # hit cannot publish stale playground/generated output.
           echo "llama=$(git rev-parse HEAD:vendor/llama.cpp)" >> "$GITHUB_OUTPUT"
-          echo "key=jet-playground-wasm-v1-${{ runner.os }}-${{ runner.arch }}-$(git rev-parse HEAD:vendor/llama.cpp)-${{ hashFiles('scripts/build-wllama-playground.sh', 'scripts/generate-emscripten-bindings.sh', 'scripts/build-jet-web.sh', 'patches/**', 'crates/jet-web/**', 'crates/jet-engine/**', 'crates/jet-llama-sys/**', 'crates/jet-core/**', 'crates/jet-decision/**', 'Cargo.lock', 'mise.lock') }}" >> "$GITHUB_OUTPUT"
-      - name: Restore playground Wasm cache
+          echo "key=jet-playground-wasm-v2-${{ runner.os }}-${{ runner.arch }}-emsdk-4.0.20-$(git rev-parse HEAD:vendor/llama.cpp)-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'mise.lock', 'scripts/build-wllama-playground.sh', 'scripts/generate-emscripten-bindings.sh', 'scripts/build-jet-web.sh', 'patches/**', 'crates/jet-web/**', 'crates/jet-engine/**', 'crates/jet-llama-sys/**', 'crates/jet-core/**', 'crates/jet-decision/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore playground build cache
         uses: actions/cache/restore@v6
-        id: playground-cache
         with:
           path: |
-            playground/generated
             target/wasm32-unknown-emscripten
             target/wllama-playground-src
             target/emscripten-4.0.20-sysroot
@@ -60,14 +61,10 @@ jobs:
             ~/.cargo/registry/src
           key: ${{ steps.playground-cache-meta.outputs.key }}
           restore-keys: |
-            jet-playground-wasm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.playground-cache-meta.outputs.llama }}-
+            jet-playground-wasm-v2-${{ runner.os }}-${{ runner.arch }}-emsdk-4.0.20-${{ steps.playground-cache-meta.outputs.llama }}-
+            jet-playground-wasm-v2-${{ runner.os }}-${{ runner.arch }}-emsdk-4.0.20-
       - name: Build playground Wasm module
-        run: |
-          if [ -d playground/generated/wllama ]; then
-            echo "Using cached playground Wasm under playground/generated/wllama"
-          else
-            mise run playground:wllama
-          fi
+        run: mise run playground:wllama
       - name: Install playground frontend dependencies
         # Parent docs package.json must not capture this install.
         working-directory: playground
@@ -84,12 +81,11 @@ jobs:
           name: playground-dist
           path: playground/dist
           retention-days: 2
-      - name: Save playground Wasm cache
+      - name: Save playground build cache
         if: ${{ success() && github.event_name != 'pull_request' }}
         uses: actions/cache/save@v6
         with:
           path: |
-            playground/generated
             target/wasm32-unknown-emscripten
             target/wllama-playground-src
             target/emscripten-4.0.20-sysroot

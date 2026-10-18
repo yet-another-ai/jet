@@ -38,10 +38,12 @@ settings are changed by the workflow.
 
 The Documentation workflow has two jobs:
 
-1. **Playground Wasm** builds the Emscripten/WebGPU module (Docker + nightly Rust
-   + Emscripten 4.0.20), then the playground frontend with base `/playground/`.
-   Generated bindings stay on-demand and are not committed. Trusted runs cache the
-   Wasm inputs/outputs; pull requests may restore that cache.
+1. **Playground Wasm** always builds the Emscripten/WebGPU module (Docker + nightly
+   Rust + Emscripten 4.0.20), then the playground frontend with base `/playground/`.
+   Generated bindings stay on-demand and are not committed. Trusted runs cache only
+   intermediate build inputs (Cargo/Emscripten sysroot trees), keyed on source and
+   toolchain hashes; the final `playground/generated` tree is never restored as a
+   skip-the-build artifact. Pull requests may restore that intermediate cache.
 2. **VitePress** installs the locked Node and pnpm tools, builds the docs site,
    merges the playground dist at `/playground/`, and uploads the combined static
    tree as a GitHub Pages artifact.
