@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+vision = ["jet-engine/vision"]
+
 [dependencies]
 actix-web.workspace = true
 jet-core.workspace = true

@@ -10,7 +10,10 @@ use std::time::{Duration, Instant};
 use actix_web::error::{InternalError, JsonPayloadError};
 use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
-use jet_core::http::{HttpDecisionRequest, HttpDecisionResponse, HttpErrorResponse};
+use jet_core::http::{
+    HttpDecisionInput, HttpDecisionRequest, HttpDecisionResponse, HttpErrorResponse,
+    HttpImageLimits,
+};
 use jet_core::{DecisionRequest, DecisionResponse, JetError, NoulQuestion, Question, Result};
 use jet_engine::{Engine, EngineConfig};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
@@ -62,10 +65,35 @@ pub async fn serve(config: ServerConfig, engine_config: EngineConfig) -> Result<
     listener.set_nonblocking(true)?;
     let address = listener.local_addr()?;
     let model_id = engine_config.model_id.clone();
-    let (worker, startup) = Worker::spawn(&config, model_id, move || {
+    #[cfg(feature = "vision")]
+    let image_limits = engine_config.vision.as_ref().map(|vision| HttpImageLimits {
+        max_images: vision.max_images,
+        max_image_bytes: vision.max_image_bytes,
+    });
+    #[cfg(not(feature = "vision"))]
+    let image_limits = None;
+    let (worker, startup) = Worker::spawn(&config, model_id, image_limits, move || {
         let mut engine = Engine::load(engine_config)?;
         engine.decide(warmup_request())?;
-        Ok(move |request| engine.decide(request))
+        Ok(move |request| match request {
+            HttpDecisionInput::Text(request) => engine.decide(request),
+            #[cfg(feature = "vision")]
+            HttpDecisionInput::Images(request) => {
+                let response = engine.decide_images(request)?;
+                Ok(DecisionResponse {
+                    model: response.model,
+                    answers: response.answers,
+                    usage: jet_core::Usage {
+                        input_tokens: response.usage.input_tokens,
+                        output_tokens: response.usage.output_tokens,
+                    },
+                })
+            }
+            #[cfg(not(feature = "vision"))]
+            HttpDecisionInput::Images(_) => Err(JetError::UnsupportedModel(
+                "image inputs require a vision-enabled server and --mmproj-path".to_owned(),
+            )),
+        })
     })?;
     if let Err(error) = startup.await.map_err(|_| worker_stopped()).and_then(|r| r) {
         worker.shutdown().await?;
@@ -138,7 +166,7 @@ async fn termination_signal() -> std::io::Result<()> {
 type InferenceResult = std::result::Result<HttpDecisionResponse, ServiceError>;
 
 struct Job {
-    request: DecisionRequest,
+    request: HttpDecisionInput,
     queued_at: Instant,
     deadline: Instant,
     reply: oneshot::Sender<InferenceResult>,
@@ -158,6 +186,7 @@ struct State {
     request_timeout: Duration,
     api_key: Option<String>,
     immediate_slot: Option<Arc<Semaphore>>,
+    image_limits: Option<HttpImageLimits>,
 }
 
 impl State {
@@ -182,11 +211,12 @@ impl Worker {
     fn spawn<F, S>(
         config: &ServerConfig,
         model_id: String,
+        image_limits: Option<HttpImageLimits>,
         factory: F,
     ) -> Result<(Self, oneshot::Receiver<Result<()>>)>
     where
         F: FnOnce() -> Result<S> + Send + 'static,
-        S: FnMut(DecisionRequest) -> Result<DecisionResponse> + 'static,
+        S: FnMut(HttpDecisionInput) -> Result<DecisionResponse> + 'static,
     {
         let capacity = if config.queue_enabled {
             config.queue_capacity
@@ -202,6 +232,7 @@ impl Worker {
             request_timeout: config.request_timeout,
             api_key: config.api_key.clone(),
             immediate_slot: (!config.queue_enabled).then(|| Arc::new(Semaphore::new(1))),
+            image_limits,
         });
         let (started, startup) = oneshot::channel();
         let thread = thread::Builder::new()
@@ -428,7 +459,10 @@ async fn decisions(
     if !state.is_ready() {
         return ServiceError::unavailable().response();
     }
-    let request = match body.into_inner().into_decision(&state.model_id) {
+    let request = match body
+        .into_inner()
+        .into_input(&state.model_id, state.image_limits)
+    {
         Ok(request) => request,
         Err(error) => return ServiceError::from_engine(error).response(),
     };
@@ -471,12 +505,17 @@ async fn models(request: HttpRequest, state: web::Data<State>) -> HttpResponse {
     if !authorized(&request, &state) {
         return unauthorized();
     }
+    let input_modalities: &[&str] = if state.image_limits.is_some() {
+        &["text", "image"]
+    } else {
+        &["text"]
+    };
     HttpResponse::Ok().json(serde_json::json!({
         "data": [{
             "id": state.model_id,
             "name": state.model_id,
             "architecture": {
-                "input_modalities": ["text"],
+                "input_modalities": input_modalities,
                 "output_modalities": ["decisions"]
             }
         }]

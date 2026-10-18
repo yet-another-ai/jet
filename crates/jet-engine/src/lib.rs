@@ -8,15 +8,15 @@ mod vision;
 #[cfg(feature = "vision")]
 pub use config::VisionConfig;
 pub use config::{Backend, EngineConfig, ExecutionMode, ThinkingConfig, ThinkingMode};
+#[cfg(feature = "vision")]
+pub use jet_core::ImageInput;
 pub use jet_decision::{
     ExportedPrompts, ExportedQuestion, PromptCandidate, PromptMessage, export_prompts,
 };
 pub use timing::EngineTimings;
 pub use trace::{EngineTrace, ScoringCandidateTrace, ScoringJobTrace};
 #[cfg(feature = "vision")]
-pub use vision::{
-    ImageInput, MultimodalDecisionRequest, MultimodalDecisionResponse, MultimodalUsage,
-};
+pub use vision::{MultimodalDecisionRequest, MultimodalDecisionResponse, MultimodalUsage};
 
 use jet_core::{DecisionRequest, DecisionResponse, JetError, Result};
 use serde::Serialize;
@@ -68,6 +68,15 @@ impl Engine {
         request: MultimodalDecisionRequest,
     ) -> Result<MultimodalDecisionResponse> {
         vision::decide_multimodal(&mut self.scorer, &self.model_id, request)
+    }
+
+    /// Score a state containing text and images in their original order.
+    #[cfg(feature = "vision")]
+    pub fn decide_images(
+        &mut self,
+        request: jet_core::ImageDecisionRequest,
+    ) -> Result<MultimodalDecisionResponse> {
+        vision::decide_images(&mut self.scorer, &self.model_id, request)
     }
 
     /// Return cumulative stage timings, or zeros if collection is disabled.

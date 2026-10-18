@@ -3,7 +3,8 @@ use std::ffi::{CStr, CString, c_char, c_void};
 
 use super::*;
 use crate::config::VisionConfig;
-use crate::vision::{ImageInput, validate_image_format, validate_image_id};
+use crate::vision::{validate_image_format, validate_image_id};
+use jet_core::ImageInput;
 
 unsafe extern "C" {
     fn jet_vision_init(
@@ -172,16 +173,6 @@ impl LlamaScorer {
         job: &ScoreJob,
         images: &[ImageInput],
     ) -> Result<(ScoreResult, usize)> {
-        self.validate_images(images)?;
-        let config = self.config.vision.as_ref().ok_or_else(|| {
-            JetError::UnsupportedModel("vision projector is not configured".to_owned())
-        })?;
-        let max_pixels = config.max_image_pixels;
-        let vision = self
-            .vision
-            .as_ref()
-            .ok_or_else(|| JetError::NativeRuntime("vision projector is unavailable".to_owned()))?;
-        let vision_ptr = vision.0.as_ptr();
         let mut content = String::new();
         for image in images {
             content.push_str(&format!("Image {}:\n<__media__>\n", image.id));
@@ -192,7 +183,26 @@ impl LlamaScorer {
             user_content: content,
             targets: job.targets.clone(),
         };
-        let rendered = self.preparer()?.disabled_prompt(&multimodal_job)?;
+        self.score_ordered_vision_job(&multimodal_job, images)
+    }
+
+    /// Score an already escaped prompt containing internal media markers.
+    pub(crate) fn score_ordered_vision_job(
+        &mut self,
+        job: &ScoreJob,
+        images: &[ImageInput],
+    ) -> Result<(ScoreResult, usize)> {
+        self.validate_images(images)?;
+        let config = self.config.vision.as_ref().ok_or_else(|| {
+            JetError::UnsupportedModel("vision projector is not configured".to_owned())
+        })?;
+        let max_pixels = config.max_image_pixels;
+        let vision = self
+            .vision
+            .as_ref()
+            .ok_or_else(|| JetError::NativeRuntime("vision projector is unavailable".to_owned()))?;
+        let vision_ptr = vision.0.as_ptr();
+        let rendered = self.preparer()?.disabled_prompt(job)?;
         let prompt = CString::new(rendered.text)
             .map_err(|_| JetError::InvalidRequest("rendered prompt contains NUL".to_owned()))?;
         let targets = job

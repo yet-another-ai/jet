@@ -6,5 +6,5 @@ pub use evaluator::{
 };
 pub use prompt::{
     AnswerKind, Candidate, ExportedPrompts, ExportedQuestion, PromptCandidate, PromptMessage,
-    QuestionPlan, SYSTEM_INSTRUCTION, export_prompts, prepare_request,
+    QuestionPlan, SYSTEM_INSTRUCTION, export_prompts, prepare_image_request, prepare_request,
 };

@@ -169,8 +169,8 @@ fn http_json(
     Ok(HttpResponse { status, body })
 }
 
-fn wait_until_ready(child: &mut ChildGuard, address: SocketAddr) -> TestResult {
-    let deadline = Instant::now() + Duration::from_secs(120);
+fn wait_until_ready(child: &mut ChildGuard, address: SocketAddr, timeout: Duration) -> TestResult {
+    let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child.0.try_wait()? {
             return Err(format!("jet serve exited before readiness: {status}").into());
@@ -187,7 +187,7 @@ fn wait_until_ready(child: &mut ChildGuard, address: SocketAddr) -> TestResult {
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err("jet serve did not become ready within 120 seconds".into());
+            return Err(format!("jet serve did not become ready within {timeout:?}").into());
         }
         thread::sleep(Duration::from_millis(50));
     }
@@ -241,7 +241,7 @@ fn served_decisions_match_single_request_jsonl_results() -> TestResult {
         .env("JET_API_KEY", API_KEY);
     engine_options(&mut serve_command, &model_path);
     let mut server = ChildGuard(serve_command.spawn()?);
-    wait_until_ready(&mut server, address)?;
+    wait_until_ready(&mut server, address, Duration::from_secs(120))?;
 
     let timeout = Duration::from_secs(30);
     assert_eq!(
@@ -314,5 +314,238 @@ fn served_decisions_match_single_request_jsonl_results() -> TestResult {
         assert_eq!(actual, expected);
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "vision")]
+fn inline_image(bytes: &[u8]) -> Value {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    json!({
+        "type": "image_url",
+        "image_url": {"url": format!("data:image/png;base64,{}", STANDARD.encode(bytes))}
+    })
+}
+
+#[cfg(feature = "vision")]
+fn color_question(instructions: &str) -> Value {
+    json!({
+        "type": "choice",
+        "instructions": instructions,
+        "criteria": {"blue": "Blue", "red": "Red"}
+    })
+}
+
+#[cfg(feature = "vision")]
+fn assert_decision_timings(response: &Value) {
+    assert!(
+        response["inference_ms"]
+            .as_f64()
+            .is_some_and(|milliseconds| milliseconds.is_finite() && milliseconds > 0.0),
+        "missing positive inference_ms: {response}"
+    );
+    assert!(
+        response["queue_ms"]
+            .as_f64()
+            .is_some_and(|milliseconds| milliseconds.is_finite() && milliseconds >= 0.0),
+        "missing nonnegative queue_ms: {response}"
+    );
+}
+
+#[cfg(feature = "vision")]
+#[test]
+#[ignore = "requires JET_VISION_MODEL_PATH and JET_VISION_MMPROJ_PATH; runs real CPU image inference"]
+fn served_images_use_pixels_and_preserve_interleaved_order() -> TestResult {
+    let model = std::env::var_os("JET_VISION_MODEL_PATH")
+        .ok_or("JET_VISION_MODEL_PATH is required for the HTTP vision test")?;
+    let mmproj = std::env::var_os("JET_VISION_MMPROJ_PATH")
+        .ok_or("JET_VISION_MMPROJ_PATH is required for the HTTP vision test")?;
+    let red = inline_image(include_bytes!("../../../tests/fixtures/vision/red.png"));
+    let blue = inline_image(include_bytes!("../../../tests/fixtures/vision/blue.png"));
+
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    drop(listener);
+
+    // Load once and reuse the same process for all vision, rejection, and recovery checks.
+    let mut command = jet_command();
+    command
+        .args(["serve", "--bind"])
+        .arg(address.to_string())
+        .arg("--model-path")
+        .arg(model)
+        .arg("--mmproj-path")
+        .arg(mmproj)
+        .env("JET_API_KEY", API_KEY)
+        .args([
+            "--model-id",
+            MODEL_ID,
+            "--backend",
+            "cpu",
+            "--thinking",
+            "disabled",
+            "--threads",
+            "8",
+            "--context-tokens",
+            "4096",
+            "--token-batch",
+            "512",
+            "--micro-batch",
+            "128",
+            "--max-sequences",
+            "2",
+            "--max-images",
+            "2",
+            "--max-image-bytes",
+            "1024",
+            "--image-max-tokens",
+            "64",
+            "--request-timeout-ms",
+            "300000",
+        ]);
+    let mut server = ChildGuard(command.spawn()?);
+    wait_until_ready(&mut server, address, Duration::from_secs(90))?;
+
+    let timeout = Duration::from_secs(305);
+    let models = http_json(
+        address,
+        "GET",
+        "/api/v1/models",
+        Some(API_KEY),
+        None,
+        timeout,
+    )?;
+    assert_eq!(models.status, 200);
+    let models: Value = serde_json::from_slice(&models.body)?;
+    assert_eq!(models["data"][0]["id"], MODEL_ID);
+    assert_eq!(
+        models["data"][0]["architecture"]["input_modalities"],
+        json!(["text", "image"])
+    );
+
+    let post = |request: Value, status: u16| -> TestResult<Value> {
+        let started = Instant::now();
+        let response = http_json(
+            address,
+            "POST",
+            "/api/alpha/decisions",
+            Some(API_KEY),
+            Some(&request),
+            timeout,
+        )?;
+        assert_eq!(
+            response.status,
+            status,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let response: Value = serde_json::from_slice(&response.body)?;
+        eprintln!(
+            "HTTP vision fixture: status={status}, elapsed={:?}, answers={}, inference_ms={}",
+            started.elapsed(),
+            response["answers"],
+            response["inference_ms"]
+        );
+        if status == 200 {
+            assert_decision_timings(&response);
+        } else {
+            assert_eq!(response["error"]["code"], status);
+        }
+        Ok(response)
+    };
+
+    let mut oversized_png = b"\x89PNG\r\n\x1a\n".to_vec();
+    oversized_png.resize(1025, 0);
+    for state in [
+        // Valid signature, invalid raster: exercises native decode failure and recovery.
+        json!([inline_image(b"\x89PNG\r\n\x1a\n")]),
+        json!([{"type": "image_url", "image_url": {"url": "data:image/png;base64,%%%="}}]),
+        json!([red.clone(), blue.clone(), red.clone()]),
+        json!([inline_image(&oversized_png)]),
+    ] {
+        post(
+            json!({
+                "model": MODEL_ID,
+                "state": state,
+                "questions": {"color": color_question("Which color fills the image?")}
+            }),
+            400,
+        )?;
+    }
+
+    let text = post(
+        json!({
+            "model": MODEL_ID,
+            "state": "The signal is red.",
+            "questions": {"color": color_question("What color is the signal?")}
+        }),
+        200,
+    )?;
+    assert_eq!(text["answers"]["color"]["choice"], "red", "{text}");
+
+    for (image, expected) in [(red.clone(), "red"), (blue.clone(), "blue")] {
+        let mut request = json!({
+            "model": MODEL_ID,
+            "state": ["Inspect the following image.", image],
+            "questions": {"color": color_question("Which color fills the image?")}
+        });
+        if expected == "red" {
+            request["questions"]["is_red"] = json!({
+                "type": "noul",
+                "instructions": "Is the image red?"
+            });
+            request["questions"]["redness"] = json!({
+                "type": "score",
+                "instructions": "How much of the image is red?",
+                "criteria": ["None of it is red", "All of it is red"]
+            });
+        }
+        let response = post(request, 200)?;
+        assert_eq!(
+            response["answers"]["color"]["choice"], expected,
+            "{response}"
+        );
+        if expected == "red" {
+            for (question, field) in [("is_red", "noul"), ("redness", "score")] {
+                assert!(
+                    response["answers"][question][field]
+                        .as_f64()
+                        .is_some_and(|value| value.is_finite() && (0.0..=1.0).contains(&value)),
+                    "missing {question} {field}: {response}"
+                );
+            }
+        }
+    }
+
+    for (first, second, first_color, second_color) in [
+        (red.clone(), blue.clone(), "red", "blue"),
+        (blue, red, "blue", "red"),
+    ] {
+        let response = post(
+            json!({
+                "model": MODEL_ID,
+                "state": [
+                    "Inspect these two images in the given order. First image:",
+                    first,
+                    "Second image:",
+                    second,
+                    "Answer each question using the indicated image position."
+                ],
+                "questions": {
+                    "first_color": color_question("Which color fills the first image?"),
+                    "second_color": color_question("Which color fills the second image?")
+                }
+            }),
+            200,
+        )?;
+        assert_eq!(
+            response["answers"]["first_color"]["choice"], first_color,
+            "{response}"
+        );
+        assert_eq!(
+            response["answers"]["second_color"]["choice"], second_color,
+            "{response}"
+        );
+    }
     Ok(())
 }

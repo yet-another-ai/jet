@@ -1,18 +1,16 @@
 use std::collections::BTreeMap;
 
-use jet_core::{Answer, DecisionRequest, JetError, Question, Result};
+use jet_core::{
+    Answer, DecisionContentPart, DecisionRequest, ImageDecisionRequest, ImageInput, JetError,
+    Question, Result,
+};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::llama::LlamaScorer;
-use jet_decision::{build_response, plan_to_job, prepare_request};
-
-#[derive(Debug, Clone)]
-pub struct ImageInput {
-    pub id: String,
-    pub media_type: String,
-    pub data: Vec<u8>,
-}
+use jet_decision::{
+    QuestionPlan, build_response, plan_to_job, prepare_image_request, prepare_request,
+};
 
 #[derive(Debug, Clone)]
 pub struct MultimodalDecisionRequest {
@@ -50,17 +48,57 @@ pub(crate) fn decide_multimodal(
         questions: request.questions,
     };
     let plans = prepare_request(&decision)?;
+    score_plans(
+        scorer,
+        model_id,
+        request.request_id,
+        plans,
+        request.images,
+        false,
+    )
+}
+
+pub(crate) fn decide_images(
+    scorer: &mut LlamaScorer,
+    model_id: &str,
+    request: ImageDecisionRequest,
+) -> Result<MultimodalDecisionResponse> {
+    let plans = prepare_image_request(&request)?;
+    // Move image buffers into native scoring order without cloning their bytes.
+    let images = request
+        .state
+        .into_iter()
+        .filter_map(|part| match part {
+            DecisionContentPart::Image(image) => Some(image),
+            DecisionContentPart::Text(_) => None,
+        })
+        .collect();
+    score_plans(scorer, model_id, None, plans, images, true)
+}
+
+fn score_plans(
+    scorer: &mut LlamaScorer,
+    model_id: &str,
+    request_id: Option<String>,
+    plans: Vec<QuestionPlan>,
+    images: Vec<ImageInput>,
+    ordered: bool,
+) -> Result<MultimodalDecisionResponse> {
     let mut scores = Vec::with_capacity(plans.len());
     let mut image_tokens = 0_u64;
     for plan in &plans {
         let job = plan_to_job(plan);
-        let (score, count) = scorer.score_vision_job(&job, &request.images)?;
+        let (score, count) = if ordered {
+            scorer.score_ordered_vision_job(&job, &images)?
+        } else {
+            scorer.score_vision_job(&job, &images)?
+        };
         image_tokens = image_tokens.saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
         scores.push(score);
     }
     let response = build_response(model_id, &plans, &scores)?;
     Ok(MultimodalDecisionResponse {
-        request_id: request.request_id,
+        request_id,
         model: response.model,
         answers: response.answers,
         usage: MultimodalUsage {
@@ -87,17 +125,12 @@ pub(crate) fn validate_image_id(id: &str) -> Result<()> {
 }
 
 pub(crate) fn validate_image_format(image: &ImageInput) -> Result<()> {
-    let png = image.data.starts_with(b"\x89PNG\r\n\x1a\n");
-    let jpeg = image.data.starts_with(b"\xff\xd8\xff");
-    let correct = matches!(image.media_type.as_str(), "image/png" if png)
-        || matches!(image.media_type.as_str(), "image/jpeg" if jpeg);
-    if !correct {
-        return Err(JetError::InvalidRequest(format!(
+    image.validate_format().map_err(|_| {
+        JetError::InvalidRequest(format!(
             "image {:?} must contain PNG or JPEG bytes matching media_type",
             image.id
-        )));
-    }
-    Ok(())
+        ))
+    })
 }
 
 #[cfg(test)]

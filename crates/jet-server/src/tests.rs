@@ -31,6 +31,147 @@ fn body() -> Value {
     })
 }
 
+fn image_body() -> Value {
+    let mut request = body();
+    request["state"] = json!([
+        "First image:",
+        {"type": "image_url", "image_url": {
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        }},
+        "Decide from this image."
+    ]);
+    request
+}
+
+#[actix_web::test]
+async fn image_http_contract_dispatches_to_the_owner_and_keeps_timing_fields() -> Result<()> {
+    let caller = thread::current().id();
+    let (recorded, received) = sync_mpsc::channel();
+    let limits = HttpImageLimits {
+        max_images: 1,
+        max_image_bytes: 1_024,
+    };
+    let (worker, startup) = Worker::spawn(
+        &config(),
+        "test-model".to_owned(),
+        Some(limits),
+        move || {
+            Ok(move |request| {
+                recorded
+                    .send((thread::current().id(), request))
+                    .map_err(|_| worker_stopped())?;
+                Ok(response())
+            })
+        },
+    )?;
+    startup.await.map_err(|_| worker_stopped())??;
+    let app = awtest::init_service(
+        App::new()
+            .app_data(web::Data::from(worker.state.clone()))
+            .app_data(json_config(1_024))
+            .configure(routes),
+    )
+    .await;
+    let result = awtest::call_service(
+        &app,
+        awtest::TestRequest::post()
+            .uri("/api/alpha/decisions")
+            .set_json(image_body())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(result.status(), StatusCode::OK);
+    let result: Value = awtest::read_body_json(result).await;
+    assert_eq!(result["answers"]["q"]["noul"], 0.75);
+    assert_eq!(
+        result["usage"],
+        json!({"input_tokens": 12, "output_tokens": 2})
+    );
+    for field in ["inference_ms", "queue_ms"] {
+        assert!(
+            result[field]
+                .as_f64()
+                .is_some_and(|ms| ms.is_finite() && ms >= 0.0)
+        );
+    }
+    let (owner, input) = received.try_recv().map_err(|_| worker_stopped())?;
+    assert_ne!(owner, caller);
+    let HttpDecisionInput::Images(input) = input else {
+        return Err(JetError::NativeRuntime("expected image input".to_owned()));
+    };
+    assert!(matches!(&input.state[..], [
+        jet_core::DecisionContentPart::Text(before),
+        jet_core::DecisionContentPart::Image(image),
+        jet_core::DecisionContentPart::Text(after),
+    ] if before == "First image:" && after == "Decide from this image."
+        && image.media_type == "image/png" && image.data.starts_with(b"\x89PNG\r\n\x1a\n")));
+
+    let catalog = models(
+        awtest::TestRequest::get().to_http_request(),
+        web::Data::from(worker.state.clone()),
+    )
+    .await;
+    assert_eq!(
+        read_response(catalog).await?["data"][0]["architecture"]["input_modalities"],
+        json!(["text", "image"])
+    );
+
+    let mut invalid = image_body();
+    invalid["state"][1]["image_url"]["url"] = json!("https://example.com/image.png");
+    let result = awtest::call_service(
+        &app,
+        awtest::TestRequest::post()
+            .uri("/api/alpha/decisions")
+            .set_json(invalid)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(result.status(), StatusCode::BAD_REQUEST);
+    let result: Value = awtest::read_body_json(result).await;
+    assert_eq!(result["error"]["code"], 400);
+    assert!(result.get("inference_ms").is_none());
+    assert!(received.try_recv().is_err());
+    // A validation failure does not poison the worker or text requests.
+    assert_eq!(call(worker.state.clone()).await?.status(), StatusCode::OK);
+    assert!(matches!(
+        received.try_recv(),
+        Ok((_, HttpDecisionInput::Text(_)))
+    ));
+    worker.shutdown().await
+}
+
+#[actix_web::test]
+async fn text_only_server_rejects_images_before_scheduling() -> Result<()> {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let recorded = calls.clone();
+    let worker = start(&config(), move || {
+        Ok(move |_| {
+            recorded.fetch_add(1, Ordering::SeqCst);
+            Ok(response())
+        })
+    })
+    .await?;
+    let result = decisions(
+        awtest::TestRequest::post().to_http_request(),
+        web::Json(serde_json::from_value(image_body())?),
+        web::Data::from(worker.state.clone()),
+    )
+    .await;
+    assert_eq!(result.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let catalog = models(
+        awtest::TestRequest::get().to_http_request(),
+        web::Data::from(worker.state.clone()),
+    )
+    .await;
+    assert_eq!(
+        read_response(catalog).await?["data"][0]["architecture"]["input_modalities"],
+        json!(["text"])
+    );
+    assert_eq!(call(worker.state.clone()).await?.status(), StatusCode::OK);
+    worker.shutdown().await
+}
+
 fn response() -> DecisionResponse {
     DecisionResponse {
         model: "test-model".to_owned(),
@@ -45,9 +186,9 @@ fn response() -> DecisionResponse {
 async fn start<F, S>(config: &ServerConfig, factory: F) -> Result<Worker>
 where
     F: FnOnce() -> Result<S> + Send + 'static,
-    S: FnMut(DecisionRequest) -> Result<DecisionResponse> + 'static,
+    S: FnMut(HttpDecisionInput) -> Result<DecisionResponse> + 'static,
 {
-    let (worker, startup) = Worker::spawn(config, "test-model".to_owned(), factory)?;
+    let (worker, startup) = Worker::spawn(config, "test-model".to_owned(), None, factory)?;
     startup.await.map_err(|_| worker_stopped())??;
     Ok(worker)
 }
@@ -56,7 +197,7 @@ fn job(deadline: Instant) -> (Work, oneshot::Receiver<InferenceResult>) {
     let (reply, result) = oneshot::channel();
     (
         Work::Decide(Job {
-            request: warmup_request(),
+            request: HttpDecisionInput::Text(warmup_request()),
             queued_at: Instant::now(),
             deadline,
             reply,
@@ -262,7 +403,7 @@ async fn json_auth_models_and_validation_share_http_contract() -> Result<()> {
 #[actix_web::test]
 async fn readiness_tracks_startup_failure_and_shutdown() -> Result<()> {
     let (release, gate) = sync_mpsc::channel();
-    let (worker, startup) = Worker::spawn(&config(), "test-model".to_owned(), move || {
+    let (worker, startup) = Worker::spawn(&config(), "test-model".to_owned(), None, move || {
         gate.recv_timeout(Duration::from_secs(5))
             .map_err(|_| worker_stopped())?;
         Ok(|_| Ok(response()))
@@ -286,8 +427,8 @@ async fn readiness_tracks_startup_failure_and_shutdown() -> Result<()> {
     );
     assert_eq!(call(state).await?.status(), StatusCode::SERVICE_UNAVAILABLE);
 
-    let (worker, startup) = Worker::spawn(&config(), "test-model".to_owned(), || {
-        Err::<fn(DecisionRequest) -> Result<DecisionResponse>, _>(JetError::InvalidRequest(
+    let (worker, startup) = Worker::spawn(&config(), "test-model".to_owned(), None, || {
+        Err::<fn(HttpDecisionInput) -> Result<DecisionResponse>, _>(JetError::InvalidRequest(
             "load failed".to_owned(),
         ))
     })?;
