@@ -5,11 +5,12 @@ description: Run Jet's full decision pipeline in the browser with WebGPU and Was
 
 # WebGPU playground
 
-The [interactive playground](/playground/) runs Jet's decision contract in a
-compatible browser. It accepts a `DecisionRequest` and returns the same
-`DecisionResponse` shape as the native engine.
+The [interactive playground](/playground/){target="_self"} runs Jet's decision
+contract in a compatible browser. It accepts a `DecisionRequest` and returns the
+same `DecisionResponse` shape as the native engine.
 
-Open the live app: [jet.yetanother.ai/playground/](/playground/)
+Open the live app:
+[jet.yetanother.ai/playground/](/playground/){target="_self"}
 
 ## What it runs
 
@@ -45,6 +46,12 @@ implement a second scorer.
 - A model URL that allows cross-origin browser downloads
 - Cross-origin isolation (`SharedArrayBuffer`), because the Wasm module is built
   with atomics / imported memory for multithreaded execution
+
+Links from the docs into `/playground/` use a full page load (`target="_self"`).
+The playground is a separate SPA merged into the docs deploy, not a VitePress
+route, so client-side routing would 404 until refresh. On GitHub Pages the
+playground may reload once more while the COOP/COEP service worker takes
+control.
 
 The docs site enables isolation in two ways:
 
