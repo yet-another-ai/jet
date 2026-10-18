@@ -61,7 +61,8 @@ run = "sh scripts/build-jet-web.sh"
 [tasks."playground:install"]
 description = "Install the playground frontend dependencies"
 dir = "playground"
-run = "pnpm install"
+# Ignore the repo-root docs package.json so deps land in playground/node_modules.
+run = "pnpm install --ignore-workspace"
 
 [tasks."playground:dev"]
 description = "Start the Jet WebGPU playground"

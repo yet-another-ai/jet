@@ -45,6 +45,8 @@ mise exec -- cargo clippy --locked --workspace --all-targets --no-default-featur
 mise exec -- cargo test --locked --workspace --no-default-features
 mise run package:cpu
 mise exec -- pnpm docs:build
+# Optional: embed the WebGPU playground into the docs build
+# mise run playground:wllama && mise exec -- pnpm docs:build
 ```
 
 Python tooling (offline helpers under `training/` and `tests/accuracy/`):

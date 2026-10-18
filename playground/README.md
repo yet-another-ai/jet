@@ -2,6 +2,9 @@
 
 This playground runs the complete JET decision contract in a browser. It accepts a `DecisionRequest` and returns the same `DecisionResponse` shape as the native engine.
 
+Production builds ship as part of the VitePress documentation site at
+[`/playground/`](https://jet.yetanother.ai/playground/) (same GitHub Pages deploy as the docs). There is no separate playground hosting.
+
 The browser pipeline is one Emscripten module:
 
 ```text
@@ -38,13 +41,19 @@ mise run playground:dev
 
 The first run clones the pinned wllama commit, applies `patches/wllama-jet-engine.patch`, compiles `jet-web` and Jet's vendored llama.cpp into one WebGPU Wasm module, and installs the frontend dependencies. Open the local URL printed by Vite, load the default Qwen3 GGUF, then select **Load & run**.
 
-Create a production bundle with:
+Embed the playground into a docs-site build (base path `/playground/`):
 
 ```sh
-mise run playground:build
+mise run playground:wllama
+mise exec -- pnpm docs:build
 ```
 
-The generated wllama package and single Wasm file are under `playground/generated/`. The production output is under `playground/dist/`. Git ignores both directories.
+`scripts/build-docs.sh` builds VitePress, then either embeds this app into
+`docs/.vitepress/dist/playground/` or writes a stub when the Wasm module is
+absent. CI builds the Wasm module in the Documentation workflow and merges the
+same assets into the Pages artifact.
+
+The generated wllama package and single Wasm file are under `playground/generated/`. Local Vite output is under `playground/dist/` when you run `playground:build` without docs env overrides. Git ignores both directories.
 
 `jet-llama-sys` uses bindings generated for Emscripten's memory32 ABI when `webgpu` and `external-link` are enabled. The normal native build keeps its 64-bit bindings. The browser bindings are generated on demand and are not tracked; `playground:dev` and `playground:build` generate them before compiling the module. Regenerate them after changing the wrapper or vendored llama.cpp headers with:
 
@@ -59,6 +68,15 @@ The generator uses the Emscripten 4.0.20 sysroot from the pinned wllama build. R
 - A browser with WebGPU enabled.
 - Enough device and system memory for the GGUF model and Jet inference context.
 - A model URL that allows cross-origin browser downloads.
-- Cross-origin opener and embedder headers. The included Vite development and preview servers set them. A production host must also send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
+- Cross-origin isolation for `SharedArrayBuffer` (Wasm atomics / imported memory).
+
+Isolation is provided by:
+
+- Vite `server` / `preview` headers in this app and in the VitePress docs config
+  (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`).
+- On GitHub Pages (no custom headers), `playground/public/coi-serviceworker.js`
+  patches COOP/COEP for `/playground/` only.
+
+User-facing docs live under [WebGPU playground](https://jet.yetanother.ai/guide/playground).
 
 The adapter uses up to nine sequences per scoring wave. Large requests are split into additional waves when their prompts and candidate continuations exceed the sequence or context capacity.
