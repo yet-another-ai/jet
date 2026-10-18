@@ -23,8 +23,8 @@ pub struct HttpDecisionRequest {
 }
 
 impl HttpDecisionRequest {
-    /// Validate the HTTP contract and remove transport-only fields.
-    pub fn into_decision(self, model_id: &str) -> Result<DecisionRequest> {
+    /// Validate the HTTP contract, normalize choice descriptions, and remove transport-only fields.
+    pub fn into_decision(mut self, model_id: &str) -> Result<DecisionRequest> {
         if self.model != model_id {
             return Err(JetError::InvalidRequest(format!(
                 "model must match the loaded model {model_id:?}"
@@ -53,7 +53,7 @@ impl HttpDecisionRequest {
         }
 
         validate_text(&self.state, "state")?;
-        for (name, question) in &self.questions {
+        for (name, question) in &mut self.questions {
             let path = format!("questions.{name}");
             match question {
                 Question::Noul(question) => {
@@ -65,8 +65,10 @@ impl HttpDecisionRequest {
                 }
                 Question::Choice(question) => {
                     validate_text(&question.instructions, &format!("{path}.instructions"))?;
-                    for (choice, description) in &question.criteria {
-                        if !description.is_null() {
+                    for (choice, description) in &mut question.criteria {
+                        if description.is_null() {
+                            *description = Value::String(choice.clone());
+                        } else {
                             validate_text(description, &format!("{path}.criteria.{choice}"))?;
                         }
                     }
@@ -164,17 +166,16 @@ mod tests {
     }
 
     #[test]
-    fn compatible_questions_reach_engine_without_transport_metadata() -> Result<()> {
+    fn compatible_questions_are_normalized_without_transport_metadata() -> Result<()> {
         let mut input = request();
         input["provider"] = json!({});
         input["session_id"] = json!("界".repeat(256));
         input["trace"] = json!({"trace_id": "trace-123", "custom": {"attempt": 1}});
         input["user"] = json!("user-123");
-        let expected: DecisionRequest = serde_json::from_value(
-            json!({"state": input["state"], "questions": input["questions"]}),
-        )?;
+        let mut expected = json!({"state": input["state"], "questions": input["questions"]});
+        expected["questions"]["team"]["criteria"]["billing"] = json!("billing");
 
-        assert_eq!(convert(input)?, expected);
+        assert_eq!(convert(input)?, serde_json::from_value(expected)?);
         Ok(())
     }
 

@@ -121,8 +121,10 @@ preserved in `answers`.
 
 HTTP text values in `state`, `instructions`, and criteria must be strings,
 objects, or arrays; scalar booleans and numbers are rejected at those positions.
-Choice descriptions may also be `null`. A `score` requires at least one
-criterion, and explicit `noul` criteria require both `false` and `true`.
+Choice descriptions may also be `null`; Jet then uses that option's key as its
+candidate text. Explicit descriptions and nested `null` values are preserved.
+A `score` requires at least one criterion, and explicit `noul` criteria require
+both `false` and `true`.
 `session_id` and `user` are optional strings of at most 256 characters; `trace`
 is an optional object. Metadata is accepted but is not persisted, reported to a
 provider, or included in model prompts.
