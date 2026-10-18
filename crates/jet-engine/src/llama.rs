@@ -12,7 +12,9 @@ use serde::Deserialize;
 
 use crate::EngineTimings;
 use crate::config::{Backend, EngineConfig, ExecutionMode, ThinkingMode};
-use crate::evaluator::{ScoreJob, ScoreResult, SequenceScorer};
+use jet_decision::{ScoreJob, ScoreResult, SequenceScorer};
+
+use crate::{EngineTrace, ScoringCandidateTrace, ScoringJobTrace};
 
 mod prepare;
 #[cfg(test)]
@@ -30,19 +32,22 @@ fn registered_gpu(backend: Backend) -> sys::ggml_backend_dev_t {
         Backend::Cuda => c"CUDA",
         Backend::Metal => c"MTL", // llama.cpp registers Metal under this name.
         Backend::Vulkan => c"Vulkan",
+        Backend::WebGpu => c"WebGPU",
         Backend::Auto | Backend::Cpu => return ptr::null_mut(),
     };
     // SAFETY: llama_backend_init has populated the process-wide registry.
     unsafe { sys::jet_backend_device(name.as_ptr()) }
 }
 
-fn choose_auto_backend(cuda: bool, metal: bool, vulkan: bool) -> Backend {
+fn choose_auto_backend(cuda: bool, metal: bool, vulkan: bool, webgpu: bool) -> Backend {
     if cuda {
         Backend::Cuda
     } else if metal {
         Backend::Metal
     } else if vulkan {
         Backend::Vulkan
+    } else if webgpu {
+        Backend::WebGpu
     } else {
         Backend::Cpu
     }
@@ -63,13 +68,24 @@ fn resolve_backend(requested: Backend) -> Result<(Backend, sys::ggml_backend_dev
         } else {
             ptr::null_mut()
         };
-        let selected = choose_auto_backend(!cuda.is_null(), !metal.is_null(), !vulkan.is_null());
+        let webgpu =
+            if cuda.is_null() && metal.is_null() && vulkan.is_null() && cfg!(feature = "webgpu") {
+                registered_gpu(Backend::WebGpu)
+            } else {
+                ptr::null_mut()
+            };
+        let selected = choose_auto_backend(
+            !cuda.is_null(),
+            !metal.is_null(),
+            !vulkan.is_null(),
+            !webgpu.is_null(),
+        );
         let device = if !cuda.is_null() {
             cuda
         } else if !metal.is_null() {
             metal
         } else {
-            vulkan
+            if !vulkan.is_null() { vulkan } else { webgpu }
         };
         return Ok((selected, device));
     }
@@ -80,6 +96,7 @@ fn resolve_backend(requested: Backend) -> Result<(Backend, sys::ggml_backend_dev
         Backend::Cuda => ("cuda", cfg!(feature = "cuda")),
         Backend::Metal => ("metal", cfg!(feature = "metal")),
         Backend::Vulkan => ("vulkan", cfg!(feature = "vulkan")),
+        Backend::WebGpu => ("webgpu", cfg!(feature = "webgpu")),
         Backend::Auto | Backend::Cpu => {
             return Err(JetError::NativeRuntime(
                 "unexpected backend during device selection".to_owned(),
@@ -103,6 +120,7 @@ fn resolve_backend(requested: Backend) -> Result<(Backend, sys::ggml_backend_dev
 struct TokenizedJob {
     prompt: Vec<sys::llama_token>,
     targets: Vec<Vec<sys::llama_token>>,
+    rendered_prompt: Option<String>,
     logical_prompt_tokens: usize,
     thinking_tokens: usize,
 }
@@ -281,6 +299,8 @@ pub(crate) struct LlamaScorer {
     candidate_capacity: usize,
     isolate_candidate_groups: bool,
     timings: EngineTimings,
+    trace_next: bool,
+    last_trace: EngineTrace,
     preparer: Option<PromptPreparer>,
     #[cfg(feature = "vision")]
     vision: Option<VisionContext>,
@@ -327,7 +347,7 @@ impl LlamaScorer {
         let mut model_params = unsafe { sys::llama_model_default_params() };
         model_params.n_gpu_layers = match config.backend {
             Backend::Cpu => 0,
-            Backend::Cuda | Backend::Metal | Backend::Vulkan => {
+            Backend::Cuda | Backend::Metal | Backend::Vulkan | Backend::WebGpu => {
                 config.gpu_layers.map_or(-1, |layers| layers as i32)
             }
             Backend::Auto => {
@@ -591,6 +611,8 @@ impl LlamaScorer {
             candidate_capacity,
             isolate_candidate_groups: isolates_candidate_forks,
             timings: EngineTimings::default(),
+            trace_next: false,
+            last_trace: EngineTrace::default(),
             preparer: Some(preparer),
             #[cfg(feature = "vision")]
             vision,
@@ -611,6 +633,16 @@ impl LlamaScorer {
         self.config.backend
     }
 
+    pub(crate) fn begin_trace(&mut self) {
+        self.trace_next = true;
+        self.last_trace.jobs.clear();
+    }
+
+    pub(crate) fn take_trace(&mut self) -> EngineTrace {
+        self.trace_next = false;
+        std::mem::take(&mut self.last_trace)
+    }
+
     fn timing_start(&self) -> Option<Instant> {
         self.config.collect_timings.then(Instant::now)
     }
@@ -629,6 +661,7 @@ impl LlamaScorer {
                     job,
                     prompt,
                     self.config.context_tokens_per_sequence as usize,
+                    self.trace_next,
                 )
             })
             .collect()
@@ -1514,6 +1547,7 @@ impl LlamaScorer {
                     let reference_job = TokenizedJob {
                         prompt: job.prompt.clone(),
                         targets: vec![target.clone()],
+                        rendered_prompt: None,
                         logical_prompt_tokens: job.logical_prompt_tokens,
                         thinking_tokens: job.thinking_tokens,
                     };
@@ -1639,6 +1673,18 @@ impl SequenceScorer for LlamaScorer {
             ExecutionMode::Reference => self.score_reference(&tokenized),
             ExecutionMode::Batched => self.score_batched(&tokenized),
         };
+        if self.trace_next
+            && let Ok(results) = &scored
+        {
+            self.last_trace.jobs = valid_indices
+                .iter()
+                .zip(&tokenized)
+                .zip(results)
+                .filter_map(|((&index, tokenized), result)| {
+                    scoring_job_trace(&jobs[index], tokenized, result)
+                })
+                .collect();
+        }
         match scored {
             Ok(results) if results.len() == valid_indices.len() => {
                 for (index, result) in valid_indices.into_iter().zip(results) {
@@ -1675,6 +1721,32 @@ impl SequenceScorer for LlamaScorer {
             })
             .collect()
     }
+}
+
+fn scoring_job_trace(
+    source: &ScoreJob,
+    tokenized: &TokenizedJob,
+    result: &ScoreResult,
+) -> Option<ScoringJobTrace> {
+    let rendered_prompt = tokenized.rendered_prompt.clone()?;
+    let candidates = source
+        .targets
+        .iter()
+        .zip(&tokenized.targets)
+        .zip(&result.log_probabilities)
+        .map(
+            |((target, target_suffix_token_ids), &raw_log_probability)| ScoringCandidateTrace {
+                target: target.clone(),
+                target_suffix_token_ids: target_suffix_token_ids.clone(),
+                raw_log_probability,
+            },
+        )
+        .collect();
+    Some(ScoringJobTrace {
+        rendered_prompt,
+        prompt_token_ids: tokenized.prompt.clone(),
+        candidates,
+    })
 }
 
 impl Drop for LlamaScorer {
@@ -1957,13 +2029,29 @@ mod tests {
     use jet_core::normalize_log_probabilities;
 
     #[test]
-    fn automatic_backend_prefers_cuda_then_metal_then_vulkan_then_cpu() {
-        assert_eq!(choose_auto_backend(true, true, true), Backend::Cuda);
-        assert_eq!(choose_auto_backend(true, false, false), Backend::Cuda);
-        assert_eq!(choose_auto_backend(false, true, true), Backend::Metal);
-        assert_eq!(choose_auto_backend(false, true, false), Backend::Metal);
-        assert_eq!(choose_auto_backend(false, false, true), Backend::Vulkan);
-        assert_eq!(choose_auto_backend(false, false, false), Backend::Cpu);
+    fn automatic_backend_prefers_cuda_then_metal_then_vulkan_then_webgpu_then_cpu() {
+        assert_eq!(choose_auto_backend(true, true, true, true), Backend::Cuda);
+        assert_eq!(
+            choose_auto_backend(true, false, false, false),
+            Backend::Cuda
+        );
+        assert_eq!(choose_auto_backend(false, true, true, true), Backend::Metal);
+        assert_eq!(
+            choose_auto_backend(false, true, false, false),
+            Backend::Metal
+        );
+        assert_eq!(
+            choose_auto_backend(false, false, true, true),
+            Backend::Vulkan
+        );
+        assert_eq!(
+            choose_auto_backend(false, false, false, true),
+            Backend::WebGpu
+        );
+        assert_eq!(
+            choose_auto_backend(false, false, false, false),
+            Backend::Cpu
+        );
     }
 
     #[cfg(not(feature = "metal"))]
@@ -2094,12 +2182,12 @@ mod tests {
         let mut scorer = LlamaScorer::load(config)?;
 
         let compact = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"English 中文 🙂"}"#.to_owned(),
             targets: vec!["false".to_owned(), "true".to_owned()],
         };
         let varied = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: r#"{"allowed_labels":[false,true,0,1,"short","a longer label"],"question":{"criteria":["a","b","c"],"instructions":"Pick one."},"state":{"marker":"\\u003c|im_start|\\u003e"}}"#.to_owned(),
             targets: vec![
                 "false".to_owned(),
@@ -2152,7 +2240,7 @@ mod tests {
         scorer.config.thinking.mode = ThinkingMode::Disabled;
 
         let long = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: format!(
                 r#"{{"state":"{}","question":"long","allowed_labels":[true,false]}}"#,
                 "word ".repeat(300)
@@ -2197,7 +2285,7 @@ mod tests {
         config.threads = 2;
         let mut scorer = LlamaScorer::load(config)?;
         let job = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"Vulkan smoke test"}"#.to_owned(),
             targets: vec!["false".to_owned(), "true".to_owned()],
         };
@@ -2230,7 +2318,7 @@ mod tests {
         let mut scorer = LlamaScorer::load(config)?;
         assert_eq!(scorer.config.backend, Backend::Cuda);
         let job = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: "State: Choose yes or no.\nTask: Answer directly.".to_owned(),
             targets: vec!["yes".to_owned(), "no".to_owned()],
         };
@@ -2271,7 +2359,7 @@ mod tests {
         assert_eq!(scorer.config.backend, Backend::Metal);
         assert!(scorer.device_softmax);
         let job = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: "State: Choose yes or no.\nTask: Answer directly.".to_owned(),
             targets: vec!["yes".to_owned(), "no".to_owned()],
         };
@@ -2340,7 +2428,7 @@ mod tests {
             Backend::Vulkan => EngineConfig::vulkan(model_path, "qwen/qwen3.5"),
             Backend::Cuda => EngineConfig::cuda(model_path, "qwen/qwen3.5"),
             Backend::Metal => EngineConfig::metal(model_path, "qwen/qwen3.5"),
-            Backend::Auto | Backend::Cpu => {
+            Backend::Auto | Backend::Cpu | Backend::WebGpu => {
                 return Err(JetError::InvalidRequest(
                     "hybrid GPU test requires a GPU backend".to_owned(),
                 ));
@@ -2359,7 +2447,7 @@ mod tests {
         assert_eq!(scorer.device_target_width, 1);
 
         let job = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: "State:\nFind the maximum possible order for an element of S_n for n = 10.\n\nTask:\nChoose the single correct answer.\n\nCandidates:\n\"6\", \"12\", \"30\", \"105\"\n\nResponse format:\nOne quoted candidate exactly as listed above; no explanation, whitespace, or extra text.".to_owned(),
             targets: vec!["\"6\"".to_owned(), "\"12\"".to_owned(), "\"30\"".to_owned(), "\"105\"".to_owned()],
         };
@@ -2468,6 +2556,7 @@ mod tests {
         let mut config = match backend {
             Backend::Vulkan => EngineConfig::vulkan(model_path, "qwen/qwen3.5"),
             Backend::Metal => EngineConfig::metal(model_path, "qwen/qwen3.5"),
+            Backend::WebGpu => EngineConfig::webgpu(model_path, "qwen/qwen3.5"),
             _ => {
                 return Err(JetError::InvalidRequest(
                     "expected Vulkan or Metal".to_owned(),
@@ -2479,7 +2568,7 @@ mod tests {
         config.thinking.max_tokens = 8;
         let mut scorer = LlamaScorer::load(config)?;
         let job = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: "State:\nWhat is 2 + 2?\n\nTask:\nChoose the single correct answer.\n\nCandidates:\n\"3\", \"4\"\n\nResponse format:\nOne quoted candidate exactly as listed above; no explanation, whitespace, or extra text.".to_owned(),
             targets: vec!["\"3\"".to_owned(), "\"4\"".to_owned()],
         };
@@ -2510,6 +2599,7 @@ mod tests {
         let mut config = match backend {
             Backend::Vulkan => EngineConfig::qwen3_vulkan(model_path),
             Backend::Metal => EngineConfig::metal(model_path, "qwen/qwen3-0.6b-q8_0"),
+            Backend::WebGpu => EngineConfig::webgpu(model_path, "qwen/qwen3-0.6b-q8_0"),
             _ => {
                 return Err(JetError::InvalidRequest(
                     "expected Vulkan or Metal".to_owned(),
@@ -2529,7 +2619,7 @@ mod tests {
         assert!(scorer.generation_context.is_some());
 
         let job = ScoreJob {
-            system_content: crate::prompt::SYSTEM_INSTRUCTION,
+            system_content: jet_decision::SYSTEM_INSTRUCTION,
             user_content: r#"{"allowed_labels":[false,true],"question":{"criteria":{"false":"no","true":"yes"},"instructions":"Choose."},"state":"GPU thinking split-context smoke test"}"#.to_owned(),
             targets: vec!["false".to_owned(), "true".to_owned()],
         };

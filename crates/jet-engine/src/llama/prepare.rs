@@ -162,6 +162,7 @@ impl PromptPreparer {
         job: &ScoreJob,
         prompt: PreparedPrompt,
         limit: usize,
+        capture_trace: bool,
     ) -> Result<TokenizedJob> {
         if prompt.tokens.is_empty() {
             return Err(JetError::UnsupportedModel(
@@ -169,6 +170,7 @@ impl PromptPreparer {
             ));
         }
         let mut targets = Vec::with_capacity(job.targets.len());
+        let rendered_prompt = capture_trace.then(|| prompt.text.clone());
         let mut combined_text = prompt.text;
         let prefix_len = combined_text.len();
         for target in &job.targets {
@@ -195,6 +197,7 @@ impl PromptPreparer {
         Ok(TokenizedJob {
             prompt: prompt.tokens,
             targets,
+            rendered_prompt,
             logical_prompt_tokens: prompt.logical_tokens,
             thinking_tokens: prompt.thinking_tokens,
         })
@@ -205,6 +208,7 @@ struct PreparationBatch {
     jobs: Vec<ScoreJob>,
     limit: usize,
     timings: bool,
+    capture_trace: bool,
     output: SyncSender<(Result<TokenizedJob>, f64)>,
 }
 
@@ -222,9 +226,9 @@ impl PreparationWorker {
                 for batch in batches {
                     for job in batch.jobs {
                         let started = batch.timings.then(Instant::now);
-                        let result = preparer
-                            .disabled_prompt(&job)
-                            .and_then(|prompt| preparer.finish(&job, prompt, batch.limit));
+                        let result = preparer.disabled_prompt(&job).and_then(|prompt| {
+                            preparer.finish(&job, prompt, batch.limit, batch.capture_trace)
+                        });
                         // Do not charge queue backpressure to preparation time.
                         let elapsed = elapsed_ms(started);
                         if batch.output.send((result, elapsed)).is_err() {
@@ -244,6 +248,7 @@ impl PreparationWorker {
         jobs: &[ScoreJob],
         limit: usize,
         timings: bool,
+        capture_trace: bool,
     ) -> Result<Receiver<(Result<TokenizedJob>, f64)>> {
         // Two queued results plus at most one locally prepared result awaiting send.
         let (output, results) = mpsc::sync_channel(2);
@@ -254,6 +259,7 @@ impl PreparationWorker {
                 jobs: jobs.to_vec(),
                 limit,
                 timings,
+                capture_trace,
                 output,
             })
             .map_err(|_| worker_stopped())?;
@@ -290,6 +296,7 @@ impl LlamaScorer {
                     jobs,
                     self.config.context_tokens_per_sequence as usize,
                     self.config.collect_timings,
+                    self.trace_next,
                 )
         })();
         let receiver = match setup {
@@ -301,8 +308,10 @@ impl LlamaScorer {
                     .collect();
             }
         };
-        jobs.iter()
-            .map(|_| {
+        let mut results = Vec::with_capacity(jobs.len());
+        let mut traces = Vec::new();
+        for source in jobs {
+            let result = (|| {
                 let waited = self.timing_start();
                 let prepared = receiver.recv();
                 self.timings.prepare_wait_ms += elapsed_ms(waited);
@@ -318,10 +327,21 @@ impl LlamaScorer {
                         "native scorer returned an unexpected number of results".to_owned(),
                     ));
                 }
-                scores
+                let score = scores
                     .pop()
-                    .ok_or_else(|| JetError::NativeRuntime("scorer omitted a job".to_owned()))
-            })
-            .collect()
+                    .ok_or_else(|| JetError::NativeRuntime("scorer omitted a job".to_owned()))?;
+                if self.trace_next
+                    && let Some(trace) = scoring_job_trace(source, &job, &score)
+                {
+                    traces.push(trace);
+                }
+                Ok(score)
+            })();
+            results.push(result);
+        }
+        if self.trace_next {
+            self.last_trace.jobs = traces;
+        }
+        results
     }
 }

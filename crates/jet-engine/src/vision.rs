@@ -4,9 +4,8 @@ use jet_core::{Answer, DecisionRequest, JetError, Question, Result};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::evaluator::{build_response, plan_to_job};
 use crate::llama::LlamaScorer;
-use crate::prompt::prepare_request;
+use jet_decision::{build_response, plan_to_job, prepare_request};
 
 #[derive(Debug, Clone)]
 pub struct ImageInput {

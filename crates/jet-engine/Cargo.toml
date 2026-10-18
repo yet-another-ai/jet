@@ -12,13 +12,15 @@ vulkan = ["jet-llama-sys/vulkan"]
 cuda = ["jet-llama-sys/cuda"]
 metal = ["jet-llama-sys/metal"]
 vision = ["jet-llama-sys/vision"]
+external-link = ["jet-llama-sys/external-link"]
+webgpu = ["jet-llama-sys/webgpu", "external-link"]
 
 [dependencies]
 jet-core.workspace = true
+jet-decision.workspace = true
 jet-llama-sys.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tera.workspace = true
 tracing.workspace = true
 
 [lints]

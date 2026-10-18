@@ -8,14 +8,14 @@ use jet_core::{
 use crate::prompt::{AnswerKind, QuestionPlan, SYSTEM_INSTRUCTION, prepare_request};
 
 #[derive(Debug, Clone)]
-pub(crate) struct ScoreJob {
+pub struct ScoreJob {
     pub system_content: &'static str,
     pub user_content: String,
     pub targets: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ScoreResult {
+pub struct ScoreResult {
     /// Raw sums from teacher-forced scoring; length normalization happens in build_response.
     pub log_probabilities: Vec<f64>,
     pub prompt_tokens: usize,
@@ -25,11 +25,11 @@ pub(crate) struct ScoreResult {
     pub prefill_count: usize,
 }
 
-pub(crate) trait SequenceScorer {
+pub trait SequenceScorer {
     fn score_batch(&mut self, jobs: &[ScoreJob]) -> Vec<Result<ScoreResult>>;
 }
 
-pub(crate) fn decide_batch<S: SequenceScorer>(
+pub fn decide_batch<S: SequenceScorer>(
     scorer: &mut S,
     model_id: &str,
     requests: &[DecisionRequest],
@@ -93,7 +93,7 @@ fn fill_scoring_errors(slots: &mut [Option<Result<DecisionResponse>>], message: 
     }
 }
 
-pub(crate) fn plan_to_job(plan: &QuestionPlan) -> ScoreJob {
+pub fn plan_to_job(plan: &QuestionPlan) -> ScoreJob {
     ScoreJob {
         system_content: SYSTEM_INSTRUCTION,
         user_content: plan.user_content.clone(),
@@ -105,7 +105,7 @@ pub(crate) fn plan_to_job(plan: &QuestionPlan) -> ScoreJob {
     }
 }
 
-pub(crate) fn build_response(
+pub fn build_response(
     model_id: &str,
     plans: &[QuestionPlan],
     scores: &[ScoreResult],

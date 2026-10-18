@@ -16,6 +16,8 @@ vulkan = []
 cuda = []
 metal = []
 vision = []
+external-link = []
+webgpu = ["external-link"]
 
 [build-dependencies]
 bindgen = { version = "0.72", optional = true }

@@ -1,5 +1,10 @@
 /target/
 /dist/
+/playground/dist/
+/playground/generated/
+/playground/node_modules/
+# Generated Emscripten bindings for the WebGPU playground
+/crates/jet-llama-sys/src/bindings_emscripten.rs
 /models/
 /tests/accuracy/data/
 /tests/accuracy/generated*/
@@ -20,6 +25,7 @@ __pycache__/
 
 # VitePress documentation
 /node_modules/
+/.pnpm-store/
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 /docs/.vitepress/temp/

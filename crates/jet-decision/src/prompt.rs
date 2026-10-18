@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tera::{Context, Tera};
 
-pub(crate) const SYSTEM_INSTRUCTION: &str = "You are a careful decision classifier. Choose by meaning, not by candidate position. Reply with exactly one quoted candidate as listed, with no explanation, whitespace, or extra text.";
+pub const SYSTEM_INSTRUCTION: &str = "You are a careful decision classifier. Choose by meaning, not by candidate position. Reply with exactly one quoted candidate as listed, with no explanation, whitespace, or extra text.";
 
 const QUESTION_TEMPLATE: &str = r#"Context:
 {{ state }}
@@ -81,20 +81,20 @@ pub fn export_prompts(request: &DecisionRequest) -> Result<ExportedPrompts> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AnswerKind {
+pub enum AnswerKind {
     Noul,
     Choice,
     Score,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Candidate {
+pub struct Candidate {
     pub key: String,
     pub target: String,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct QuestionPlan {
+pub struct QuestionPlan {
     pub question_id: String,
     pub kind: AnswerKind,
     pub user_content: String,
@@ -108,7 +108,7 @@ struct PromptContext {
     candidates: Vec<String>,
 }
 
-pub(crate) fn prepare_request(request: &DecisionRequest) -> Result<Vec<QuestionPlan>> {
+pub fn prepare_request(request: &DecisionRequest) -> Result<Vec<QuestionPlan>> {
     validate_content("state", &request.state)?;
     if request.questions.is_empty() {
         return Err(JetError::InvalidRequest(

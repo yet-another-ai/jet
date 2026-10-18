@@ -1,8 +1,10 @@
 [workspace]
 members = [
     "crates/jet-core",
+    "crates/jet-decision",
     "crates/jet-llama-sys",
     "crates/jet-engine",
+    "crates/jet-web",
     "crates/jet-server",
     "crates/jet-cli",
     "xtask",
@@ -28,6 +30,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 jet-core = { path = "crates/jet-core" }
+jet-decision = { path = "crates/jet-decision" }
 jet-engine = { path = "crates/jet-engine" }
 jet-server = { path = "crates/jet-server" }
 jet-llama-sys = { path = "crates/jet-llama-sys" }

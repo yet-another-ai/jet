@@ -250,6 +250,7 @@ impl LlamaScorer {
         let tokenized = TokenizedJob {
             prompt: tail,
             targets: suffixes,
+            rendered_prompt: None,
             logical_prompt_tokens: expanded,
             thinking_tokens: 0,
         };
@@ -393,6 +394,7 @@ impl LlamaScorer {
                 let reference_job = TokenizedJob {
                     prompt: job.prompt.clone(),
                     targets: vec![target.clone()],
+                    rendered_prompt: None,
                     logical_prompt_tokens: expanded,
                     thinking_tokens: 0,
                 };

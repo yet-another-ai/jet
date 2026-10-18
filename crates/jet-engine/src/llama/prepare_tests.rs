@@ -33,7 +33,7 @@ impl Drop for VocabularyModel {
 
 fn fixture() -> ScoreJob {
     ScoreJob {
-        system_content: crate::prompt::SYSTEM_INSTRUCTION,
+        system_content: jet_decision::SYSTEM_INSTRUCTION,
         user_content: "Choose a description: English 中文 🙂. Is the sky usually blue?".to_owned(),
         targets: vec!["\"yes\"".to_owned(), "\"no\"".to_owned()],
     }
@@ -157,11 +157,11 @@ fn cached_preparation_matches_legacy_and_keeps_validation() -> Result<()> {
 
     let prompt = preparer.disabled_prompt(&job)?;
     let prompt_len = prompt.tokens.len();
-    let tokenized = preparer.finish(&job, prompt, 4_096)?;
+    let tokenized = preparer.finish(&job, prompt, 4_096, false)?;
     let required = prompt_len + tokenized.targets.iter().map(Vec::len).max().unwrap_or(0);
-    preparer.finish(&job, preparer.disabled_prompt(&job)?, required)?;
+    preparer.finish(&job, preparer.disabled_prompt(&job)?, required, false)?;
     assert!(matches!(
-        preparer.finish(&job, preparer.disabled_prompt(&job)?, required - 1),
+        preparer.finish(&job, preparer.disabled_prompt(&job)?, required - 1, false,),
         Err(JetError::ContextExceeded { .. })
     ));
     let mut empty_target = job.clone();
@@ -170,7 +170,8 @@ fn cached_preparation_matches_legacy_and_keeps_validation() -> Result<()> {
         preparer.finish(
             &empty_target,
             preparer.disabled_prompt(&empty_target)?,
-            4_096
+            4_096,
+            false,
         ),
         Err(JetError::InvalidRequest(_))
     ));
@@ -189,15 +190,18 @@ fn cached_preparation_matches_legacy_and_keeps_validation() -> Result<()> {
     // a subsequent batch must not receive leftovers from the abandoned one.
     // SAFETY: this worker is explicitly dropped before model.
     let worker = PreparationWorker::new(unsafe { PromptPreparer::new(model.0) }?)?;
-    let abandoned = worker.submit(&vec![job.clone(); 8], 4_096, false)?;
+    let abandoned = worker.submit(&vec![job.clone(); 8], 4_096, false, false)?;
     drop(abandoned);
-    let received = worker.submit(&[nul, job], 4_096, false)?;
+    let received = worker.submit(&[nul, job], 4_096, false, false)?;
     let outputs = received.into_iter().collect::<Vec<_>>();
     assert_eq!(outputs.len(), 2);
     assert!(matches!(outputs[0].0, Err(JetError::InvalidRequest(_))));
     assert!(outputs[1].0.is_ok());
     assert!(outputs.iter().all(|(_, elapsed)| *elapsed == 0.0));
-    assert_eq!(worker.submit(&[], 4_096, true)?.into_iter().count(), 0);
+    assert_eq!(
+        worker.submit(&[], 4_096, true, false)?.into_iter().count(),
+        0
+    );
     drop(worker);
     Ok(())
 }

@@ -1,0 +1,11 @@
+diff --git a/ggml/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp b/ggml/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp
+index a7ff36030..17adadf80 100644
+--- a/ggml/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp
++++ b/ggml/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp
+@@ -2632 +2632,2 @@ class ggml_webgpu_shader_lib {
+-        defines.push_back(std::string("WG_SIZE=") + std::to_string(context.max_wg_size));
++        const uint32_t wg_size = std::min(context.max_wg_size, 128u);
++        defines.push_back(std::string("WG_SIZE=") + std::to_string(wg_size));
+@@ -2636 +2637 @@ class ggml_webgpu_shader_lib {
+-        pipeline_decisions->wg_size     = context.max_wg_size;
++        pipeline_decisions->wg_size     = wg_size;

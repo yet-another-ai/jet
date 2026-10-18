@@ -780,14 +780,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "jet-decision"
+version = "0.1.0"
+dependencies = [
+ "jet-core",
+ "serde",
+ "serde_json",
+ "tera",
+]
+
+[[package]]
 name = "jet-engine"
 version = "0.1.0"
 dependencies = [
  "jet-core",
+ "jet-decision",
  "jet-llama-sys",
  "serde",
  "serde_json",
- "tera",
  "tracing",
 ]
 
@@ -810,6 +820,16 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jet-web"
+version = "0.1.0"
+dependencies = [
+ "jet-core",
+ "jet-engine",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

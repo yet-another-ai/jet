@@ -1,0 +1,24 @@
+[package]
+name = "jet-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+repository = "https://github.com/yet-another-ai/jet"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+jet-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "emscripten")'.dependencies]
+jet-engine = { workspace = true, features = ["webgpu", "external-link"] }
+
+[target.'cfg(not(target_os = "emscripten"))'.dependencies]
+jet-engine.workspace = true
+
+[lints]
+workspace = true

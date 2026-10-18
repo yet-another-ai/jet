@@ -1,0 +1,470 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4248078..6a039d7 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -28,7 +28,7 @@ set(WLLAMA_LINK_OPTIONS
+     -sSTACK_SIZE=5MB
+     -sALLOW_MEMORY_GROWTH=1
+     -sFORCE_FILESYSTEM=1
+-    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
++    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_jet_action,_wllama_jet_output_len,_wllama_exit,_wllama_debug
+     -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,MEMFS,FS,mmapAlloc,ENV,wasmMemory
+     -sNO_EXIT_RUNTIME=1
+     -sIMPORTED_MEMORY=1
+@@ -42,8 +42,6 @@ set(WLLAMA_LINK_OPTIONS
+     -Wl,--wrap,fread
+     -Wl,--wrap,fseek
+     -Wl,--wrap,ftell
+-    -Wl,--wrap,abort
+-    -Wl,--wrap,ggml_graph_plan # for test-backend-ops
+ )
+
+ if (WLLAMA_COMPAT)
+@@ -60,59 +58,28 @@ if (WLLAMA_COMPAT)
+     )
+ else()
+     list(APPEND WLLAMA_COMPILE_OPTIONS
+-        -sMEMORY64=1
+         -fwasm-exceptions
+     )
+     list(APPEND WLLAMA_LINK_OPTIONS
+-        -sMEMORY64=1
+         -fwasm-exceptions
+         -sJSPI
+-        -sJSPI_EXPORTS=['wllama_start','wllama_action']
++        -sJSPI_EXPORTS=['wllama_start','wllama_action','wllama_jet_action']
+     )
+ endif()
+
+ add_compile_options(${WLLAMA_COMPILE_OPTIONS})
+ add_link_options(${WLLAMA_LINK_OPTIONS})
+
+-add_subdirectory(llama.cpp)
++set(JET_ROOT "/jet" CACHE PATH "Path to the Jet source tree")
++set(JET_LLAMA_DIR "${JET_ROOT}/vendor/llama.cpp" CACHE PATH "Path to Jet's llama.cpp source")
++set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
++add_subdirectory(${JET_LLAMA_DIR} llama.cpp)
+
+-set(LLAMA_INSTALL_VERSION 0.0.${LLAMA_BUILD_NUMBER})
+-add_subdirectory(llama.cpp/tools/mtmd)
+-
+-file(GLOB_RECURSE LLAMA_COMMON_SRC
+-    CONFIGURE_DEPENDS
+-    llama.cpp/common/*.cpp
+-    llama.cpp/common/*.h
+-    llama.cpp/common/*.hpp
+-    llama.cpp/common/jinja/*.cpp
+-    llama.cpp/common/jinja/*.h
+-)
+-
+-list(REMOVE_ITEM LLAMA_COMMON_SRC
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/arg.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/console.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/debug.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/fit.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/hf-cache.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/log.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/preset.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/download.cpp
++set(WLLAMA_SRC
++    ${JET_ROOT}/crates/jet-web/src/wllama_bridge.cpp
++    ${JET_ROOT}/crates/jet-llama-sys/src/wrapper.cpp
+ )
+
+-set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
+-    llama.cpp/tools/server/server-task.cpp
+-    llama.cpp/tools/server/server-chat.cpp
+-    llama.cpp/tools/server/server-common.cpp
+-    llama.cpp/tools/server/server-decision.cpp
+-    llama.cpp/tools/server/server-schema.cpp
+-    llama.cpp/tools/server/server-stream.cpp
+-)
+-
+-set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
+-    cpp/wllama.cpp
+-    cpp/glue.hpp
+-    llama.cpp/include/llama.h)
+-
+ if(WLLAMA_TEST_BACKEND)
+     message(WARNING "Building wllama with test-backend-ops included")
+     set(TEST_BACKEND_OPS_SRC ${CMAKE_CURRENT_BINARY_DIR}/test-backend-ops.cpp)
+@@ -124,11 +91,12 @@ if(WLLAMA_TEST_BACKEND)
+ endif()
+
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cpp)
+-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include)
+-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common)
+-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/vendor)
+-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/server)
+-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd)
++include_directories(${JET_LLAMA_DIR}/include)
++include_directories(${JET_LLAMA_DIR}/ggml/include)
++include_directories(${JET_LLAMA_DIR}/common)
++include_directories(${JET_LLAMA_DIR}/vendor)
+
+ add_executable(wllama ${WLLAMA_SRC})
+-target_link_libraries(wllama PRIVATE ggml llama mtmd ${CMAKE_THREAD_LIBS_INIT})
++add_library(jet_web STATIC IMPORTED GLOBAL)
++set_target_properties(jet_web PROPERTIES IMPORTED_LOCATION "${JET_ROOT}/target/wasm32-unknown-emscripten/release/libjet_web.a")
++target_link_libraries(wllama PRIVATE jet_web llama-common llama ggml ${CMAKE_THREAD_LIBS_INIT})
+diff --git a/scripts/docker-compose.yml b/scripts/docker-compose.yml
+index ac0208d..89e5901 100644
+--- a/scripts/docker-compose.yml
++++ b/scripts/docker-compose.yml
+@@ -15,6 +15,7 @@ services:
+       - SKIP_COMPAT=${SKIP_COMPAT:-}
+     volumes:
+       - ..:/source:Z
++      - ${JET_REPO_ROOT}:/jet:Z
+     entrypoint: /bin/bash
+     command:
+       - -c
+@@ -39,7 +40,7 @@ services:
+           CMAKE_EXTRA_FLAGS="-DWLLAMA_TEST_BACKEND=ON";
+         fi
+
+-        emcmake cmake .. -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
++        emcmake cmake .. -DJET_LLAMA_DIR=/source/jet-llama.cpp -DLLAMA_WASM_MEM64=OFF -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
+         emmake make wllama -j$$(nproc)
+
+         # go back to root
+diff --git a/src/types/types.ts b/src/types/types.ts
+index de08636..7063024 100644
+--- a/src/types/types.ts
++++ b/src/types/types.ts
+@@ -1,5 +1,6 @@
+ // Note: snake_case is used to match llama.cpp's naming convention
+ export interface LoadModelParams {
++  jet?: JetEngineConfig;
+   log_level?: LogLevel;
+   seed?: number;
+   n_ctx?: number;
+@@ -77,6 +78,30 @@ export interface LoadModelParams {
+   default_template_kwargs?: Record<string, any>;
+ }
+
++export interface JetEngineConfig {
++  model_id: string;
++  gpu_layers?: number;
++  cpu_moe_layers?: number;
++  use_mmap?: boolean;
++  context_tokens_per_sequence?: number;
++  token_batch?: number;
++  micro_batch?: number;
++  max_sequences?: number;
++  preparation_pipeline?: boolean;
++  max_output_rows?: number;
++  threads?: number;
++  execution_mode?: 'reference' | 'batched';
++  thinking?: {
++    mode?: 'disabled' | 'auto' | 'required';
++    max_tokens?: number;
++    temperature?: number;
++    top_k?: number;
++    top_p?: number;
++    seed?: number;
++  };
++  collect_timings?: boolean;
++}
++
+ // Note: snake_case is used to match llama.cpp's naming convention
+ export interface LoadedContextInfo {
+   n_vocab: number;
+diff --git a/src/wllama.ts b/src/wllama.ts
+index 6ecbb68..4e6d152 100644
+--- a/src/wllama.ts
++++ b/src/wllama.ts
+@@ -194,6 +194,7 @@ export class Wllama {
+   private chatTemplate?: string;
+   private metadata?: ModelMetadata;
+   private hasEncoder: boolean = false;
++  private jetLoaded: boolean = false;
+   private decoderStartToken: number = -1;
+
+   // note: we overlay instead of using llama-server default_template_kwargs, because we cannot transfer complex data structure via GLUE
+@@ -261,7 +262,7 @@ export class Wllama {
+    * Check if the model is loaded via `loadModel()`
+    */
+   isModelLoaded(): boolean {
+-    return !!this.proxy && !!this.metadata;
++    return !!this.proxy && (this.jetLoaded || !!this.metadata);
+   }
+
+   /**
+@@ -520,6 +521,17 @@ export class Wllama {
+
+     // load the model
+     this.logger().debug('Loading model...');
++    if (params.jet) {
++      const result = await this.proxy.jetAction<any>('load', {
++        ...params.jet,
++        model_path: `models/${modelFiles.llm[0].name}`,
++      });
++      if (result.error) {
++        throw new WllamaError(result.error.message, 'load_error');
++      }
++      this.jetLoaded = true;
++      return;
++    }
+     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
+       _name: 'load_req',
+       log_level: logLevel,
+@@ -624,6 +636,42 @@ export class Wllama {
+     this.logger().debug({ loadedCtxInfo });
+   }
+
++  async jetDecide(request: unknown): Promise<unknown> {
++    this.checkModelLoaded();
++    const result = await this.proxy.jetAction<any>('decide', request);
++    if (result.error) {
++      throw new WllamaError(result.error.message, 'inference_error');
++    }
++    return result;
++  }
++
++  async jetDecideTrace(request: unknown): Promise<unknown> {
++    this.checkModelLoaded();
++    const result = await this.proxy.jetAction<any>('decide_trace', request);
++    if (result.error) {
++      throw new WllamaError(result.error.message, 'inference_error');
++    }
++    return result;
++  }
++
++  async jetDecideBatch(requests: unknown[]): Promise<unknown[]> {
++    this.checkModelLoaded();
++    const result = await this.proxy.jetAction<any>('decide_batch', requests);
++    if (result.error) {
++      throw new WllamaError(result.error.message, 'inference_error');
++    }
++    return result;
++  }
++
++  async jetTimings(): Promise<unknown> {
++    this.checkModelLoaded();
++    const result = await this.proxy.jetAction<any>('timings', {});
++    if (result.error) {
++      throw new WllamaError(result.error.message, 'inference_error');
++    }
++    return result;
++  }
++
+   getLoadedContextInfo(): LoadedContextInfo {
+     this.checkModelLoaded();
+     if (!this.loadedContextInfo) {
+@@ -918,6 +966,7 @@ export class Wllama {
+   async exit(): Promise<void> {
+     await this.proxy?.wllamaExit();
+     this.proxy = null as any;
++    this.jetLoaded = false;
+   }
+
+   /**
+diff --git a/src/worker.ts b/src/worker.ts
+index 3cdc7c9..513369f 100644
+--- a/src/worker.ts
++++ b/src/worker.ts
+@@ -43,6 +43,7 @@ interface TaskParam {
+     | 'fs.read_res'
+     | 'wllama.start'
+     | 'wllama.action'
++    | 'jet.action'
+     | 'wllama.exit'
+     | 'wllama.debug';
+   args: any[];
+@@ -224,6 +225,15 @@ export class ProxyToWorker {
+     return parsedResult as T;
+   }
+
++  async jetAction<T>(name: string, body: unknown): Promise<T> {
++    const result = await this.pushTask({
++      verb: 'jet.action',
++      args: [name, body],
++      callbackId: this.taskId++,
++    });
++    return result as T;
++  }
++
+   async wllamaExit(): Promise<void> {
+     if (this.worker) {
+       // we don't actually need to send exit
+diff --git a/src/workers-code/llama-cpp.js b/src/workers-code/llama-cpp.js
+index d0792b5..7702e6a 100644
+--- a/src/workers-code/llama-cpp.js
++++ b/src/workers-code/llama-cpp.js
+@@ -2,6 +2,8 @@
+ let wllamaMalloc;
+ let wllamaStart;
+ let wllamaAction;
++let wllamaJetAction;
++let wllamaJetOutputLen;
+ let wllamaExit;
+ let wllamaDebug;
+
+@@ -35,9 +37,13 @@ const getHeapU8 = () => {
+ };
+
+ const toSizeT = (num) => {
+-  return isCompat ? Number(num) : BigInt(num);
++  return Number(num);
+ };
+
++// WebAssembly i32 results enter JavaScript as signed numbers. Heap offsets are
++// unsigned memory32 addresses, including addresses at and above 0x80000000.
++const toHeapOffset = (ptr) => Number(ptr) >>> 0;
++
+ // Get module config that forwards stdout/err to main thread
+ const getWModuleConfig = (_argMainScriptBlob) => {
+   var pathConfig = RUN_OPTIONS.pathConfig;
+@@ -127,7 +133,6 @@ const getWasmMemory = () => {
+         initial: toSizeT(minBytes / 65536),
+         maximum: toSizeT(maxBytes / 65536),
+         shared: true,
+-        address: isCompat ? undefined : 'i64',
+       });
+       return wasmMemory;
+     } catch (e) {
+@@ -181,7 +186,7 @@ const patchHeapFS = () => {
+     const name = stream.node.name;
+     if (fsNameToFile[name]) {
+       const f = fsNameToFile[name];
+-      const ptr = Number(f.ptr);
++      const ptr = toHeapOffset(f.ptr);
+       stream.node.contents = getHeapU8().subarray(ptr, ptr + f.size);
+       stream.node.usedBytes = f.size;
+     }
+@@ -213,7 +218,7 @@ const patchHeapFS = () => {
+     const name = stream.node.name;
+     if (fsNameToFile[name]) {
+       const f = fsNameToFile[name];
+-      const mmapPtr = f.ptr + toSizeT(position);
++      const mmapPtr = toHeapOffset(toHeapOffset(f.ptr) + Number(position));
+       return {
+         ptr: mmapPtr,
+         allocated: false,
+@@ -235,7 +240,7 @@ const heapfsAlloc = (name, size, allocBuffer) => {
+     throw new Error('File size must be bigger than 0');
+   }
+   const m = Module;
+-  const ptr = toSizeT(allocBuffer ? m.mmapAlloc(size) : 0);
++  const ptr = toHeapOffset(allocBuffer ? m.mmapAlloc(size) : 0);
+   const file = {
+     ptr: ptr,
+     size: size,
+@@ -256,7 +261,7 @@ const heapfsWrite = (id, buffer, offset) => {
+         `File ID ${id} write out of bound, afterWriteByte = ${afterWriteByte} while size = ${size}`
+       );
+     }
+-    getHeapU8().set(buffer, Number(ptr) + offset);
++    getHeapU8().set(buffer, toHeapOffset(ptr) + offset);
+     return buffer.byteLength;
+   } else {
+     throw new Error(`File ID ${id} not found in heapfs`);
+@@ -296,7 +301,7 @@ const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
+   }
+
+   const bytes = new Uint8Array(data);
+-  getHeapU8().set(bytes, out_ptr);
++  getHeapU8().set(bytes, toHeapOffset(out_ptr));
+   return toSizeT(bytes.length);
+ };
+
+@@ -363,10 +368,11 @@ const runAction = async (data) => {
+   const argEncodedMsg = args[1];
+   try {
+     const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
++    const inputOffset = toHeapOffset(inputPtr);
+     // copy data to wasm heap
+     const inputBuffer = new Uint8Array(
+       getHeapU8().buffer,
+-      Number(inputPtr),
++      inputOffset,
+       argEncodedMsg.byteLength
+     );
+     inputBuffer.set(argEncodedMsg, 0);
+@@ -374,14 +380,14 @@ const runAction = async (data) => {
+     // length of output buffer is written at the first 4 bytes of input buffer
+     const outputLen = new Uint32Array(
+       getHeapU8().buffer,
+-      Number(inputPtr),
++      inputOffset,
+       1
+     )[0];
+     // copy the output buffer to JS heap
+     const outputBuffer = new Uint8Array(outputLen);
+     const outputSrcView = new Uint8Array(
+       getHeapU8().buffer,
+-      Number(outputPtr),
++      toHeapOffset(outputPtr),
+       outputLen
+     );
+     outputBuffer.set(outputSrcView, 0); // copy it
+@@ -391,6 +397,29 @@ const runAction = async (data) => {
+   }
+ };
+
++const runJetAction = async (data) => {
++  const { args, callbackId } = data;
++  const action = args[0];
++  const request = new TextEncoder().encode(JSON.stringify(args[1]) + '\0');
++  try {
++    const inputPtr = await wllamaMalloc(toSizeT(request.byteLength), 0);
++    new Uint8Array(
++      getHeapU8().buffer,
++      toHeapOffset(inputPtr),
++      request.byteLength
++    ).set(request);
++    const outputPtr = await wllamaJetAction(action, inputPtr);
++    const outputLen = wllamaJetOutputLen();
++    const output = Uint8Array.from(
++      new Uint8Array(getHeapU8().buffer, toHeapOffset(outputPtr), outputLen)
++    );
++    const decoded = new TextDecoder().decode(output);
++    msg({ callbackId, result: JSON.parse(decoded) });
++  } catch (err) {
++    handleError(err);
++  }
++};
++
+ function handleError(err) {
+   // If WASM already aborted, onAbort already sent signal.abort; skip to avoid
+   // re-reporting the resulting WebAssembly.RuntimeError as a JS exception.
+@@ -447,7 +476,7 @@ onmessage = async (e) => {
+         // init FS
+         patchHeapFS();
+         // init cwrap
+-        const pointer = isCompat ? 'number' : 'bigint';
++        const pointer = 'number';
+         // TODO: note sure why emscripten cannot bind if there is only 1 argument
+         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
+           'number',
+@@ -460,6 +489,17 @@ onmessage = async (e) => {
+           ['string', pointer],
+           true
+         );
++        wllamaJetAction = callWrapper(
++          'wllama_jet_action',
++          pointer,
++          ['string', pointer],
++          true
++        );
++        wllamaJetOutputLen = Module.cwrap(
++          'wllama_jet_output_len',
++          'number',
++          []
++        );
+         wllamaExit = callWrapper('wllama_exit', 'string', []);
+         wllamaDebug = callWrapper('wllama_debug', 'string', []);
+         msg({ callbackId, result: null });
+@@ -525,6 +565,11 @@ onmessage = async (e) => {
+     return;
+   }
+
++  if (verb === 'jet.action') {
++    await runWasmCall(callbackId, () => runJetAction(e.data));
++    return;
++  }
++
+   if (verb === 'wllama.exit') {
+     await runWasmCall(callbackId, async () => {
+       try {

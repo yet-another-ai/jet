@@ -6,6 +6,52 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[cfg(feature = "generate-bindings")]
+fn binding_builder(
+    wrapper_header: &Path,
+    include_dir: &Path,
+    ggml_include_dir: &Path,
+) -> bindgen::Builder {
+    bindgen::Builder::default()
+        .header(wrapper_header.display().to_string())
+        .clang_arg(format!("-I{}", include_dir.display()))
+        .clang_arg(format!("-I{}", ggml_include_dir.display()))
+        .allowlist_type("llama_.*")
+        .allowlist_function("llama_.*")
+        .allowlist_var("LLAMA_.*")
+        .allowlist_function("jet_.*")
+        // FILE is only passed by pointer. Its libc-specific layout must never
+        // enter bindings shared by the Rust and C++ halves of Jet.
+        .blocklist_type("FILE")
+        .raw_line("#[repr(C)] pub struct FILE { _unused: [u8; 0] }")
+        .derive_default(true)
+        .generate_comments(false)
+}
+
+#[cfg(feature = "generate-bindings")]
+fn extern_blocks(bindings: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut output = String::new();
+    let mut extern_depth = 0_i32;
+    for line in bindings.lines() {
+        if extern_depth == 0 && line.trim() == "unsafe extern \"C\" {" {
+            extern_depth = 1;
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+        if extern_depth > 0 {
+            output.push_str(line);
+            output.push('\n');
+            extern_depth += line.matches('{').count() as i32;
+            extern_depth -= line.matches('}').count() as i32;
+        }
+    }
+    if extern_depth != 0 {
+        return Err("unterminated extern block in checked native bindings".into());
+    }
+    Ok(output)
+}
+
+#[cfg(feature = "generate-bindings")]
 fn compiler_system_include_args() -> Vec<String> {
     let compiler = env::var_os("CC").unwrap_or_else(|| "cc".into());
     let Ok(output) = Command::new(compiler)
@@ -51,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wrapper = manifest_dir.join("src/wrapper.cpp");
     let wrapper_header = manifest_dir.join("src/wrapper.h");
     let checked_bindings = manifest_dir.join("src/bindings.rs");
+    let checked_emscripten_bindings = manifest_dir.join("src/bindings_emscripten.rs");
 
     println!(
         "cargo:rerun-if-changed={}",
@@ -63,6 +110,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", wrapper.display());
     println!("cargo:rerun-if-changed={}", wrapper_header.display());
     println!("cargo:rerun-if-changed={}", checked_bindings.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        checked_emscripten_bindings.display()
+    );
     println!("cargo:rerun-if-env-changed=LLAMA_CPP_SRC");
     println!("cargo:rerun-if-env-changed=VULKAN_SDK");
     println!("cargo:rerun-if-env-changed=JET_CUDA_ARCHITECTURES");
@@ -70,6 +121,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
     println!("cargo:rerun-if-env-changed=CUDACXX");
     println!("cargo:rerun-if-env-changed=JET_CPU_PORTABLE");
+    println!("cargo:rerun-if-env-changed=JET_EMSCRIPTEN_SYSROOT");
+
+    let out_bindings = PathBuf::from(env::var("OUT_DIR").unwrap_or_default()).join("bindings.rs");
+    if env::var_os("CARGO_FEATURE_EXTERNAL_LINK").is_some() {
+        let target = env::var("TARGET")?;
+        if target == "wasm32-unknown-emscripten" {
+            if env::var_os("CARGO_FEATURE_WEBGPU").is_none() {
+                return Err(
+                    "external-link on wasm32-unknown-emscripten requires the webgpu feature".into(),
+                );
+            }
+            // The native bindings contain 64-bit layout tests. Select bindings
+            // generated against Emscripten's memory32 ABI.
+            #[cfg(not(feature = "generate-bindings"))]
+            {
+                if !checked_emscripten_bindings.is_file() {
+                    return Err(format!(
+                        "missing {}; run `mise run playground:bindings` or `sh scripts/generate-emscripten-bindings.sh` before building the WebGPU playground",
+                        checked_emscripten_bindings.display()
+                    )
+                    .into());
+                }
+                fs::copy(&checked_emscripten_bindings, out_bindings)?;
+            }
+            #[cfg(feature = "generate-bindings")]
+            {
+                let emscripten_sysroot = env::var("JET_EMSCRIPTEN_SYSROOT")?;
+                let mut bindings =
+                    binding_builder(&wrapper_header, &include_dir, &ggml_include_dir)
+                        // Function declarations recursively pull these opaque ggml
+                        // and Jet types into native bindings. Emscripten libclang
+                        // omits those declarations, so allowlist the types directly.
+                        .allowlist_type("ggml_.*")
+                        .allowlist_type("gguf_.*")
+                        .allowlist_type("jet_.*")
+                        .clang_arg("--target=wasm32-unknown-emscripten")
+                        .clang_arg(format!("--sysroot={emscripten_sysroot}"))
+                        .generate()?
+                        .to_string();
+                // libclang omits static-link function declarations for the
+                // Emscripten target. They carry no target layout, so reuse the
+                // extern blocks generated from the same headers while keeping
+                // every type and layout assertion Emscripten-generated.
+                bindings.push_str(&extern_blocks(&fs::read_to_string(&checked_bindings)?)?);
+                fs::write(&checked_emscripten_bindings, &bindings)?;
+                fs::write(out_bindings, bindings)?;
+            }
+        } else {
+            // Native all-feature checks do not link llama.cpp, but still need
+            // bindings whose ABI matches their target.
+            fs::copy(checked_bindings, out_bindings)?;
+        }
+        return Ok(());
+    }
+
+    if env::var_os("CARGO_FEATURE_WEBGPU").is_some() {
+        return Err(
+            "the webgpu feature requires external-link; Jet's WebGPU llama.cpp is built by the wllama/Emscripten pipeline"
+                .into(),
+        );
+    }
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
@@ -278,23 +390,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     }
 
-    let out_bindings = PathBuf::from(env::var("OUT_DIR").unwrap_or_default()).join("bindings.rs");
     #[cfg(feature = "generate-bindings")]
     {
-        let mut binding_builder = bindgen::Builder::default()
-            .header(wrapper_header.display().to_string())
-            .clang_arg(format!("-I{}", include_dir.display()))
-            .clang_arg(format!("-I{}", ggml_include_dir.display()))
-            .allowlist_type("llama_.*")
-            .allowlist_function("llama_.*")
-            .allowlist_var("LLAMA_.*")
-            .allowlist_function("jet_.*")
-            // FILE is only passed by pointer. Its libc-specific layout must
-            // never enter the checked bindings used across supported targets.
-            .blocklist_type("FILE")
-            .raw_line("#[repr(C)] pub struct FILE { _unused: [u8; 0] }")
-            .derive_default(true)
-            .generate_comments(false);
+        let mut binding_builder = binding_builder(&wrapper_header, &include_dir, &ggml_include_dir);
         for argument in compiler_system_include_args() {
             binding_builder = binding_builder.clang_arg(argument);
         }
