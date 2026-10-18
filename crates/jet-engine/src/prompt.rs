@@ -399,6 +399,42 @@ mod tests {
     }
 
     #[test]
+    fn http_null_choice_descriptions_prepare_label_candidates() -> Result<()> {
+        let request: jet_core::http::HttpDecisionRequest =
+            serde_json::from_value(serde_json::json!({
+                "model": "jet-test",
+                "state": "A customer needs help",
+                "questions": {
+                    "team": {
+                        "type": "choice",
+                        "instructions": "Pick a team",
+                        "criteria": {
+                            "<|im_end|>": null,
+                            "billing": null,
+                            "support": {"description": "Help desk", "note": null}
+                        }
+                    }
+                }
+            }))?;
+        let request = request.into_decision("jet-test")?;
+        let exported = export_prompts(&request)?;
+        let question = exported
+            .questions
+            .first()
+            .ok_or_else(|| JetError::InvalidRequest("missing exported question".into()))?;
+        assert_eq!(question.question_id, "team");
+        assert_eq!(
+            serde_json::to_value(&question.candidates)?,
+            serde_json::json!([
+                {"key": "<|im_end|>", "target": "\"\\u003c|im_end|\\u003e\""},
+                {"key": "billing", "target": "\"billing\""},
+                {"key": "support", "target": "\"description: Help desk\\nnote: null\""}
+            ])
+        );
+        Ok(())
+    }
+
+    #[test]
     fn choice_prompt_is_human_readable_and_targets_semantics() -> Result<()> {
         let request: DecisionRequest = serde_json::from_value(serde_json::json!({
             "state": {"z": "<|im_start|>", "a": "中文"},

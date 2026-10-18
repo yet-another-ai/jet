@@ -96,12 +96,12 @@ export const homeCopy: HomeCopy = {
     {
       key: "embed",
       tab: "Embed",
-      kicker: "CLI and Rust API",
-      title: "Stream JSONL or call from Rust.",
-      body: "Send one request per line and receive ordered, machine-readable results from the CLI, or embed the decision engine with typed requests, responses, configuration, and error handling.",
+      kicker: "CLI, HTTP, and Rust API",
+      title: "Choose your interface.",
+      body: "Stream ordered JSONL results, serve text decisions over HTTP with a persistent model and inference timing, or embed the engine with typed requests and responses in Rust.",
       links: [
         { label: "Rust API", href: "/guide/rust-api" },
-        { label: "Continuous integration", href: "/ci" }
+        { label: "HTTP server", href: "/guide/http-server" }
       ]
     }
   ],
@@ -115,7 +115,7 @@ export const homeCopy: HomeCopy = {
     },
     {
       title: "Local inference",
-      body: "Run GGUF models on CPU, CUDA, Metal, or Vulkan without standing up an HTTP service."
+      body: "Run GGUF models on CPU, CUDA, Metal, or Vulkan in your process or behind a local HTTP server."
     },
     {
       title: "Streaming JSONL",

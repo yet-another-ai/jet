@@ -7,6 +7,8 @@ description: The JSONL protocol for Jet decision requests, answer types, errors,
 
 The CLI accepts UTF-8 JSON Lines: every non-empty line is one complete request. Jet returns one line for each request, preserves input order, and exits with a nonzero status if any line fails.
 
+The [HTTP server](./http-server) uses the same question and answer types, requires a `model` field, and adds `inference_ms` to successful responses. Its HTTP status codes and error envelope are documented separately.
+
 ## Request object
 
 Each request contains two fields:

@@ -58,5 +58,6 @@ The names `urgent`, `owner`, and `severity` are preserved in the response. Choic
 ## Next steps
 
 - Read [Requests and responses](./requests-and-responses) for every question and result shape.
+- Run the [HTTP server](./http-server) to share a loaded model with HTTP clients.
 - See [Build and advanced usage](../advanced) for GPU backends, performance controls, thinking, and multimodal input.
 - Use the [Rust API](./rust-api) when Jet should run inside your process.

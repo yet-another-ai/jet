@@ -1,4 +1,5 @@
 mod error;
+pub mod http;
 mod math;
 mod protocol;
 

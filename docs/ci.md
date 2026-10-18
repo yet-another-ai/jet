@@ -20,6 +20,8 @@ settings are changed by the workflow.
 - Linux x64, Windows x64 and macOS arm64 run locked CPU-only Cargo Clippy and
   workspace tests. Linux also checks formatting and the CPU `vision` feature's
   validation/unit tests. Model-dependent tests keep their existing `#[ignore]`.
+  HTTP protocol, route, and scheduler tests use model-free fixtures; real-model
+  HTTP inference checks remain opt-in.
 - macOS supports Apple Silicon ARM64 only. Both component workflows verify
   `runner.arch` and `uname -m` before any checkout/build/test. There are no Intel
   macOS matrix entries or archives; the native packager also rejects that host.
@@ -61,8 +63,9 @@ newer explicit 26.04 labels. The single Gate and Python checks also use 26.04.
 `cargo xtask package` builds the actual release CLI with `--locked` and no
 optional features; the release optimization profile is preserved. It includes
 Jet/llama.cpp licenses, README and small JSONL fixtures.
-It extracts each archive and checks `--version`, `--help`, and model-free
-`export-prompts` JSONL output. It never publishes a release or signs an artifact.
+It extracts each archive and checks `--version`, `--help`, `serve --help`, and
+model-free `export-prompts` JSONL output. Server mode is included in the standard
+CPU archive. It never publishes a release or signs an artifact.
 Linux packages use the host glibc/C++ runtime (Ubuntu 26.04 baseline), macOS uses
 system libraries, and Windows statically links the MSVC runtime. These are CPU packages, not
 GPU runtime bundles. GPU packaging scripts remain available for local use.
