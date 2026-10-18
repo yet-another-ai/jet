@@ -299,12 +299,18 @@ fn served_decisions_match_single_request_jsonl_results() -> TestResult {
         assert!(
             actual["inference_ms"]
                 .as_f64()
-                .is_some_and(|milliseconds| milliseconds > 0.0)
+                .is_some_and(|milliseconds| milliseconds.is_finite() && milliseconds > 0.0)
         );
-        actual
+        assert!(
+            actual["queue_ms"]
+                .as_f64()
+                .is_some_and(|milliseconds| milliseconds.is_finite() && milliseconds >= 0.0)
+        );
+        let fields = actual
             .as_object_mut()
-            .ok_or("decision response must be an object")?
-            .remove("inference_ms");
+            .ok_or("decision response must be an object")?;
+        fields.remove("inference_ms");
+        fields.remove("queue_ms");
         assert_eq!(actual, expected);
     }
 

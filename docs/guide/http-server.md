@@ -1,6 +1,6 @@
 ---
 title: HTTP server
-description: Serve local text decisions with Actix, a persistent model, bounded queueing, and per-request inference timing.
+description: Serve local text decisions with Actix, a persistent model, optional bounded queueing, and per-request inference and queue timing.
 ---
 
 # HTTP server
@@ -8,8 +8,8 @@ description: Serve local text decisions with Actix, a persistent model, bounded 
 `jet serve` keeps one model loaded and serves text decisions over HTTP. It uses
 the basic request and response fields of the
 [OpenRouter Decisions API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request)
-and adds `inference_ms` to each successful response. It supports `noul`, `choice`,
-and `score`; it does not implement the rest of the OpenRouter platform.
+and adds `inference_ms` and `queue_ms` to each successful response. It supports
+`noul`, `choice`, and `score`; it does not implement the rest of the OpenRouter platform.
 
 ## Start the server
 
@@ -38,12 +38,15 @@ Server configuration:
 | --- | --- | --- |
 | `--bind` | `127.0.0.1:8080` | Address on which to listen. |
 | `--model-id` | `qwen/qwen3-0.6b-q8_0` | Model identifier clients must supply; examples here explicitly use `local/jet`. |
-| `--queue-capacity` | `1` | Maximum waiting requests, excluding the running request. |
+| `--queue-capacity` | `1` | Maximum waiting requests when queueing is enabled, excluding the running request. |
+| `--no-queue` | Off | Reject new requests with `429` while another request is admitted or running. |
 | `--request-timeout-ms` | `30000` | Deadline for queueing and inference after request validation. |
 | `--http-workers` | `2` | Actix HTTP workers; does not increase inference concurrency. |
 | `--max-body-bytes` | `1048576` | Maximum request body size in bytes. |
 
-The queue, timeout, worker count, and body limit must be positive.
+The queue capacity, timeout, worker count, and body limit must be positive.
+Queueing is enabled by default. `--no-queue` cannot be combined with an explicit
+`--queue-capacity` value.
 
 ## Send a decision request
 
@@ -102,7 +105,8 @@ measured results:
     }
   },
   "usage": {"input_tokens": 128, "output_tokens": 9},
-  "inference_ms": 12.34
+  "inference_ms": 12.34,
+  "queue_ms": 0.08
 }
 ```
 
@@ -112,6 +116,15 @@ prompt construction, tokenization, model scoring, and result normalization.
 It excludes model loading, HTTP parsing, queueing, response serialization, and
 network transit. It is neither pure GPU kernel time nor the cumulative engine
 timing reported by the JSONL CLI's `--timings` option.
+
+`queue_ms` is the elapsed time, in milliseconds, from accepted submission after
+request validation to the start of `Engine::decide`, also measured with a
+monotonic clock. It includes waiting behind earlier requests and the handoff to
+the inference thread. It excludes HTTP parsing and validation. Even with
+`--no-queue`, thread handoff can produce a small positive `queue_ms`. The sum of
+these fields excludes response serialization and network transit, so it is not
+the complete client-observed latency. Error responses do not include either
+timing field.
 
 ## Compatibility
 
@@ -172,16 +185,31 @@ The inference worker starts an available request immediately. It never waits
 to fill a cross-request batch. Candidate batching inside an individual engine
 call remains enabled when using batched execution.
 
-One request can run while up to `--queue-capacity` requests wait. A full queue
-returns `429` immediately. Increasing this limit allows more requests to wait;
-it does not add model execution parallelism and can increase tail latency.
+Queueing is enabled by default: one request can run while up to
+`--queue-capacity` requests wait. A full queue returns `429` immediately.
+Increasing this limit allows more requests to wait; it does not add model
+execution parallelism and can increase tail latency.
+
+To disable the waiting queue, start the server with `--no-queue`:
+
+```sh
+./target/release/jet serve \
+  --model-path models/Qwen3-0.6B-Q8_0.gguf \
+  --model-id local/jet \
+  --no-queue
+```
+
+In this mode, one request can be admitted at a time. Further requests receive
+`429` immediately, including during the handoff to the inference thread.
 
 The request deadline covers queueing plus inference after validation, excluding
 body upload and JSON parsing. Work whose deadline expires or whose waiting
 handler is cancelled before execution is skipped. This does not guarantee
-immediate detection of every client disconnect. An HTTP timeout does not interrupt a native
-inference call that has already started: that call continues to occupy the
-worker until it completes, and its result is discarded.
+immediate detection of every client disconnect. An HTTP timeout or handler
+cancellation does not interrupt a native inference call that has already
+started: that call continues to occupy the worker until it completes, and its
+result is discarded. With `--no-queue`, new requests continue to receive `429`
+while that call is running.
 
 Errors use an HTTP status code and a numeric `error.code`:
 
@@ -197,7 +225,7 @@ Errors use an HTTP status code and a numeric `error.code`:
 | `405` | Unsupported method on a Decisions or models route. |
 | `413` | Request body exceeds the configured limit. |
 | `415` | Request is not sent with a supported JSON content type. |
-| `429` | Inference queue is full. |
+| `429` | Inference queue is full, or another request is admitted or running with `--no-queue`. |
 | `500` | Internal inference failure. |
 | `503` | Inference worker is unavailable. |
 | `504` | Request deadline elapsed while waiting or running. |
@@ -207,8 +235,8 @@ requests can receive a body error before `401`.
 
 ## Measure latency
 
-Measure client-observed latency as well as `inference_ms`. Client latency also
-includes queueing, HTTP processing, and network transit. Use the same model,
+Measure client-observed latency as well as `inference_ms` and `queue_ms`.
+Client latency also includes HTTP processing and network transit. Use the same model,
 backend, inference parameters, and representative requests when comparing
 direct Rust calls, a persistent JSONL process, and HTTP.
 
