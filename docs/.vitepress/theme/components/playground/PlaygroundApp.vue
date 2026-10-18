@@ -42,8 +42,18 @@ const elapsedMs = ref(0);
 const requestView = ref<'editor' | 'json'>('editor');
 const resultView = ref<'scores' | 'json'>('scores');
 const shown = ref(false)
-const runtimeReady = ref(true)
+const bootstrapped = ref(false)
+const runtimeReady = ref(false)
+const coiReady = ref(false)
+const coiBlocked = ref(false)
 const busy = computed(() => loading.value || running.value);
+const controlsEnabled = computed(
+  () => bootstrapped.value && runtimeReady.value && coiReady.value && webGpu && !coiBlocked.value,
+);
+const showRuntimeMissing = computed(
+  () => bootstrapped.value && !runtimeReady.value && !coiBlocked.value,
+);
+const showCoiBlocked = computed(() => bootstrapped.value && coiBlocked.value);
 
 const downloadPercent = computed(() =>
   download.value.total > 0 ? Math.round((download.value.loaded / download.value.total) * 100) : 0,
@@ -86,10 +96,18 @@ watch(
 );
 
 onMounted(() => {
-  ensurePlaygroundCoi()
-  void probeRuntime().then((ok) => {
-    runtimeReady.value = ok
-  })
+  void (async () => {
+    const coi = await ensurePlaygroundCoi()
+    if (coi === 'reloading') return
+    if (coi === 'unavailable') {
+      coiBlocked.value = true
+      coiReady.value = false
+    } else {
+      coiReady.value = true
+    }
+    runtimeReady.value = await probeRuntime()
+    bootstrapped.value = true
+  })()
   requestAnimationFrame(() => (shown.value = true))
 })
 
@@ -195,7 +213,7 @@ async function run(): Promise<void> {
 
 <template>
   <div class="playground-shell shell" :class="{ 'is-shown': shown }">
-    <div v-if="!runtimeReady" class="runtime-missing" role="status">
+    <div v-if="showRuntimeMissing" class="runtime-missing" role="status">
       <h2>Playground Wasm not built</h2>
       <p>
         This docs build did not include the WebGPU Wasm module. Build it locally,
@@ -203,6 +221,15 @@ async function run(): Promise<void> {
       </p>
       <p><code>mise run playground:wllama && mise exec -- pnpm docs:build</code></p>
       <p>See the <a href="/guide/playground">playground guide</a> for requirements.</p>
+    </div>
+    <div v-else-if="showCoiBlocked" class="runtime-missing" role="status">
+      <h2>Cross-origin isolation unavailable</h2>
+      <p>
+        This browser session could not enable
+        <code>SharedArrayBuffer</code> (COOP/COEP) for the playground. Use a
+        secure context with service workers, or open the page in a full browser
+        tab (not a restricted iframe).
+      </p>
     </div>
     <header class="hero">
       <p class="hero__kicker reveal" style="--line: 0">WebGPU playground</p>
@@ -348,7 +375,7 @@ async function run(): Promise<void> {
         v-if="!modelLoaded"
         class="island__button"
         type="button"
-        :disabled="busy || !webGpu || !runtimeReady"
+        :disabled="busy || !controlsEnabled"
         @click="ensureModel"
       >
         Load model
@@ -356,7 +383,7 @@ async function run(): Promise<void> {
       <button
         class="island__button island__button--solid"
         type="button"
-        :disabled="busy || !webGpu || !runtimeReady"
+        :disabled="busy || !controlsEnabled"
         @click="run"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7.5-4.5z" /></svg>

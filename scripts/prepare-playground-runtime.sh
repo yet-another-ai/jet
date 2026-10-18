@@ -2,6 +2,9 @@
 # Copy playground/generated/wllama into docs/public/playground-runtime and mark
 # it ready for the VitePress playground page. Exit 1 if the Wasm tree is absent
 # unless JET_PLAYGROUND_RUNTIME_OPTIONAL=1.
+#
+# Prefer generated/ when present so a fresh playground:wllama always refreshes
+# docs/public. Fall back to an existing public tree (CI download artifact).
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -12,18 +15,18 @@ mark_ready() {
   printf '%s\n' '{"ok":true}' >"$public_runtime/ready.json"
 }
 
-if [ -d "$public_runtime" ] && [ -f "$public_runtime/index.js" ]; then
-  mark_ready
-  echo "Playground runtime ready at $public_runtime"
-  exit 0
-fi
-
 if [ -d "$generated" ] && [ -f "$generated/index.js" ]; then
   rm -rf "$public_runtime"
   mkdir -p "$(dirname -- "$public_runtime")"
   cp -R "$generated" "$public_runtime"
   mark_ready
   echo "Copied playground Wasm runtime to $public_runtime"
+  exit 0
+fi
+
+if [ -d "$public_runtime" ] && [ -f "$public_runtime/index.js" ]; then
+  mark_ready
+  echo "Playground runtime ready at $public_runtime"
   exit 0
 fi
 
