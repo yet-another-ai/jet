@@ -104,24 +104,8 @@ for example `bash scripts/run-a770-full-mmlu.sh 4b 9b` to extend an existing stu
 
 For long runs, launch the benchmark as a detached systemd user service so that
 interrupting a terminal or assistant task does not terminate the experiment.
-`scripts/check-a770-mmlu.py` is a one-shot checker suitable for a 30-minute user
-timer. It takes the completed 4B and 9B artifact directories, benchmark and timer
-unit names, and a status-file path (see `--help`). It never calls a model or API.
-Once both full runs pass validation, it imports their measurements into the paper's
-JSON and A770 table, updates the accompanying evidence and protocol, regenerates
-the chart, and builds the PDF. It stops its timer on completion or failure.
 An interrupted run is retained and excluded; rerun it in a new directory instead
-of combining partial-run timings. The generated PDF should receive visual review
-before external circulation.
-
-The September 29 continuation uses `jet-a770-9b-20260929.service` and
-`jet-a770-check-20260929.timer`. Inspect them without invoking an assistant:
-
-```sh
-systemctl --user list-timers 'jet-a770*'
-journalctl --user -u jet-a770-check-20260929.service -n 20
-cat tests/accuracy/generated/a770-large-monitor-20260929/status.json
-```
+of combining partial-run timings.
 
 Build the executable from the current source before running: an older binary
 rejected duplicate choice texts and small positive Vulkan log-probabilities

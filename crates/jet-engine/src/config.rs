@@ -161,7 +161,6 @@ impl EngineConfig {
     pub fn vulkan(model_path: impl Into<PathBuf>, model_id: impl Into<String>) -> Self {
         let mut config = Self::auto(model_path, model_id);
         config.backend = Backend::Vulkan;
-        config.max_output_rows = 256;
         config
     }
 

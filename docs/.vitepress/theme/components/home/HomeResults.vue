@@ -35,7 +35,6 @@ interface ScatterPoint {
   short: string
   accuracy: number
   rate: number
-  caseId: string
   x: number
   y: number
 }
@@ -81,7 +80,6 @@ const points = computed((): ScatterPoint[] => {
         short: shortLabel(model),
         accuracy: row.accuracy,
         rate: row.rate,
-        caseId: row.caseId,
         x: xFor(row.rate),
         y: yFor(row.accuracy)
       }

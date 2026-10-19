@@ -235,39 +235,20 @@ fn main() -> ExitCode {
         .with_writer(io::stderr)
         .init();
 
-    match Cli::parse().command {
-        Command::Serve(args) => match serve::run(args) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("jet: {error}");
-                ExitCode::FAILURE
-            }
-        },
-        Command::ExportPrompts(args) => match run_export_prompts(args) {
-            Ok(had_errors) if had_errors => ExitCode::FAILURE,
-            Ok(_) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("jet: {error}");
-                ExitCode::FAILURE
-            }
-        },
-        Command::Judge(args) => match run_judge(args) {
-            Ok(had_errors) if had_errors => ExitCode::FAILURE,
-            Ok(_) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("jet: {error}");
-                ExitCode::FAILURE
-            }
-        },
+    let result = match Cli::parse().command {
+        Command::Serve(args) => serve::run(args).map(|()| false),
+        Command::ExportPrompts(args) => run_export_prompts(args),
+        Command::Judge(args) => run_judge(args),
         #[cfg(feature = "vision")]
-        Command::JudgeMultimodal(args) => match run_judge_multimodal(args) {
-            Ok(had_errors) if had_errors => ExitCode::FAILURE,
-            Ok(_) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("jet: {error}");
-                ExitCode::FAILURE
-            }
-        },
+        Command::JudgeMultimodal(args) => run_judge_multimodal(args),
+    };
+    match result {
+        Ok(true) => ExitCode::FAILURE,
+        Ok(false) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("jet: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
