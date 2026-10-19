@@ -276,7 +276,7 @@ fn finish_plan(
 ) -> Result<QuestionPlan> {
     let mut targets = BTreeSet::new();
     for candidate in &candidates {
-        if !targets.insert(candidate.target.clone()) && kind != AnswerKind::Choice {
+        if !targets.insert(&candidate.target) && kind != AnswerKind::Choice {
             return Err(JetError::InvalidRequest(format!(
                 "question {question_id:?} contains duplicate rendered candidate {:?}",
                 candidate.target
@@ -322,10 +322,8 @@ fn render_value_at(value: &Value, indent: usize, output: &mut String) {
                 output.push_str("- ");
                 if matches!(value, Value::Array(_) | Value::Object(_)) {
                     output.push('\n');
-                    render_value_at(value, indent + 2, output);
-                } else {
-                    render_value_at(value, indent + 2, output);
                 }
+                render_value_at(value, indent + 2, output);
             }
         }
         Value::Object(values) => {
@@ -339,11 +337,10 @@ fn render_value_at(value: &Value, indent: usize, output: &mut String) {
                 output.push(':');
                 if matches!(value, Value::Array(_) | Value::Object(_)) {
                     output.push('\n');
-                    render_value_at(value, indent + 2, output);
                 } else {
                     output.push(' ');
-                    render_value_at(value, indent + 2, output);
                 }
+                render_value_at(value, indent + 2, output);
             }
         }
     }

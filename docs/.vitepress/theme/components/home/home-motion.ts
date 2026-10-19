@@ -3,9 +3,6 @@ import { onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue"
 export const clamp = (value: number, min = 0, max = 1): number =>
   Math.min(max, Math.max(min, value))
 
-export const easeInOut = (x: number): number =>
-  x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2
-
 export const smoothstep = (edge0: number, edge1: number, x: number): number => {
   const t = clamp((x - edge0) / (edge1 - edge0))
   return t * t * (3 - 2 * t)

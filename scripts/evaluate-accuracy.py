@@ -170,7 +170,6 @@ def evaluate(gold: list[dict[str, Any]], responses: list[dict[str, Any]],
             "prediction": prediction,
             "correct": (prediction in accepted if task_type == "choice"
                         else prediction == expected["gold"]),
-            "gold_probability": probability_gold,
             "gold_nll": -math.log(probability_gold),
             "confidence": confidence,
             "brier": brier,
@@ -219,6 +218,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
         print(f"evaluate-accuracy: {error}", file=sys.stderr)
         sys.exit(1)

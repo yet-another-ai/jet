@@ -21,7 +21,6 @@ pub struct ScoreResult {
     pub prompt_tokens: usize,
     pub thinking_tokens: usize,
     pub target_token_counts: Vec<usize>,
-    #[allow(dead_code)]
     pub prefill_count: usize,
 }
 
@@ -42,9 +41,8 @@ pub fn decide_batch<S: SequenceScorer>(
     for (request_index, request) in requests.iter().enumerate() {
         match prepare_request(request) {
             Ok(plans) => {
-                let job_start = jobs.len();
                 jobs.extend(plans.iter().map(plan_to_job));
-                prepared.push((request_index, plans, job_start));
+                prepared.push((request_index, plans));
             }
             Err(error) => slots[request_index] = Some(Err(error)),
         }
@@ -54,10 +52,13 @@ pub fn decide_batch<S: SequenceScorer>(
         let scored = scorer.score_batch(&jobs);
         if scored.len() == jobs.len() {
             let mut scored = scored.into_iter();
-            for (request_index, plans, _job_start) in prepared {
+            for (request_index, plans) in prepared {
+                // Consume the whole request before propagating its first scoring error.
                 let request_scores = scored
                     .by_ref()
                     .take(plans.len())
+                    .collect::<Vec<_>>()
+                    .into_iter()
                     .collect::<Result<Vec<_>>>();
                 slots[request_index] = Some(
                     request_scores.and_then(|scores| build_response(model_id, &plans, &scores)),
@@ -435,14 +436,16 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_question_fails_its_request_without_hiding_other_requests() -> Result<()> {
-        struct PartialScorer;
+    fn failed_question_results_stay_with_their_request() -> Result<()> {
+        struct PartialScorer {
+            fail_at: usize,
+        }
         impl SequenceScorer for PartialScorer {
             fn score_batch(&mut self, jobs: &[ScoreJob]) -> Vec<Result<ScoreResult>> {
                 jobs.iter()
                     .enumerate()
                     .map(|(index, job)| {
-                        if index == 0 {
+                        if index == self.fail_at {
                             Err(JetError::ContextExceeded {
                                 required: 11,
                                 limit: 10,
@@ -450,7 +453,7 @@ mod tests {
                         } else {
                             Ok(ScoreResult {
                                 log_probabilities: vec![0.0; job.targets.len()],
-                                prompt_tokens: 2,
+                                prompt_tokens: index + 1,
                                 thinking_tokens: 0,
                                 target_token_counts: vec![1; job.targets.len()],
                                 prefill_count: 1,
@@ -463,18 +466,54 @@ mod tests {
 
         let first: DecisionRequest = serde_json::from_value(serde_json::json!({
             "state": "first",
-            "questions": {"q": {"type": "noul", "instructions": "pick"}}
+            "questions": {
+                "a": {"type": "noul", "instructions": "pick"},
+                "b": {"type": "noul", "instructions": "pick"},
+                "c": {"type": "noul", "instructions": "pick"}
+            }
         }))?;
         let second: DecisionRequest = serde_json::from_value(serde_json::json!({
             "state": "second",
-            "questions": {"q": {"type": "noul", "instructions": "pick"}}
+            "questions": {
+                "q": {
+                    "type": "choice",
+                    "instructions": "pick",
+                    "criteria": {"a": "Alpha", "b": "Beta", "c": "Gamma"}
+                }
+            }
         }))?;
-        let responses = decide_batch(&mut PartialScorer, "m", &[first, second]);
-        assert!(matches!(
-            responses.first(),
-            Some(Err(JetError::ContextExceeded { .. }))
-        ));
-        assert!(matches!(responses.get(1), Some(Ok(_))));
+        for fail_at in 0..first.questions.len() {
+            let responses = decide_batch(
+                &mut PartialScorer { fail_at },
+                "m",
+                &[first.clone(), second.clone()],
+            );
+            assert_eq!(responses.len(), 2);
+            assert!(matches!(
+                responses.first(),
+                Some(Err(JetError::ContextExceeded {
+                    required: 11,
+                    limit: 10,
+                }))
+            ));
+            let response = match &responses[1] {
+                Ok(response) => response,
+                Err(error) => {
+                    return Err(JetError::NativeRuntime(format!(
+                        "later request failed after question {fail_at}: {error}"
+                    )));
+                }
+            };
+            assert_eq!(response.usage.input_tokens, 4);
+            assert_eq!(response.usage.output_tokens, 3);
+            match response.answers.get("q") {
+                Some(Answer::Choice(answer)) => {
+                    assert_eq!(answer.choice, "a");
+                    assert_eq!(answer.probabilities.len(), 3);
+                }
+                _ => return Err(JetError::NativeRuntime("missing choice answer".into())),
+            }
+        }
         Ok(())
     }
 }

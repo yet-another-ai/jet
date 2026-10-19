@@ -766,7 +766,6 @@ dependencies = [
  "jet-server",
  "serde",
  "serde_json",
- "tracing",
  "tracing-subscriber",
 ]
 
