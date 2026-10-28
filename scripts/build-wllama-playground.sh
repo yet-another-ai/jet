@@ -45,3 +45,4 @@ npm run build
 rm -rf "$output_dir" "$legacy_output_dir"
 mkdir -p "$(dirname -- "$output_dir")"
 cp -R "$source_dir/esm" "$output_dir"
+node "$repo_root/scripts/write-playground-runtime-manifest.mjs"

@@ -1,92 +1,55 @@
 ---
 title: WebGPU playground
-description: Run Jet's full decision pipeline in the browser with WebGPU and Wasm.
+description: Run Jet's full decision pipeline in your browser on Hugging Face Spaces.
 ---
 
 # WebGPU playground
 
-The [interactive playground](/playground/) runs Jet's decision contract in a
-compatible browser. It accepts a `DecisionRequest` and returns the same
-`DecisionResponse` shape as the native engine.
+**[Open Jet Playground on Hugging Face](https://huggingface.co/spaces/yet-another-ai/jet-playground)**
 
-Open the live app: [jet.yetanother.ai/playground/](/playground/)
-
-The UI is a VitePress page (no sidebar) that mounts client-only Vue components
-from the docs theme. The Wasm/wllama runtime is served from
-`/playground-runtime/` on the same site.
+The playground is an independent Vue application hosted as a static Hugging Face
+Space. It runs Jet Qwen3.5 0.8B Q8_0 on your device with WebGPU and Wasm.
+The initial model download is about 812 MB; wllama caches it in browser storage.
+Decision inputs stay in the browser and are not sent to an inference server.
 
 ## What it runs
 
-One Emscripten module carries the browser pipeline:
-
-```text
-DecisionRequest
-      │
-      ▼
-jet-engine + jet-decision + jet-core (Rust)
-  validate + render + tokenize + schedule
-      │
-      ▼
-Jet's vendored llama.cpp (C/C++)
-  WebGPU inference + teacher-forced token log probabilities
-      │
-      ▼
-jet-decision (the same Rust code as native Jet)
-  length normalization + softmax + answer mapping + usage
-      │
-      ▼
-DecisionResponse
-```
-
-The module calls the original `Engine::decide` path. wllama supplies browser
-workers, model download/cache, HeapFS, and the TypeScript facade. It does not
-implement a second scorer.
+The application accepts a `DecisionRequest` and returns the native
+`DecisionResponse` shape. Its patched wllama bundle calls Jet's original
+Rust `Engine::decide` path: prompt preparation, tokenization, llama.cpp candidate
+scoring, length normalization, softmax, and answer mapping. There is no separate
+JavaScript scorer.
 
 ## Browser requirements
 
-- A browser with WebGPU enabled
-- Enough device and system memory for the GGUF model and Jet inference context
-- A model URL that allows cross-origin browser downloads
-- Cross-origin isolation (`SharedArrayBuffer`), because the Wasm module is built
-  with atomics / imported memory for multithreaded execution
+- A current desktop Chrome or Edge with WebGPU enabled.
+- Enough GPU and system memory for the model and inference context.
+- Cross-origin isolation and `SharedArrayBuffer`. The Space sends COOP/COEP
+  response headers directly; no service worker is needed.
 
-The docs site enables isolation in two ways:
+If the embedded Space cannot enable isolation, use its **Open in a new tab**
+link. Browser support and performance vary by device.
 
-- **Local `docs:dev` / `docs:preview`:** Vite sends
-  `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`.
-- **GitHub Pages:** Pages cannot set those headers, so the playground page loads
-  a scoped [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker)
-  under `/playground/` (it may reload once to take control).
+## Models
 
-Normal VitePress client navigation to `/playground/` works; the page is part of
-the docs SPA.
+- [Jet Qwen3.5 0.8B](https://huggingface.co/yet-another-ai/Jet-Qwen3.5-0.8B):
+  the default browser model, plus Transformers weights and its LoRA adapter.
+- [Jet Qwen3.5 4B](https://huggingface.co/yet-another-ai/Jet-Qwen3.5-4B):
+  weights, adapter and GGUF for native Jet. Its Q8_0 weights exceed this browser
+  runtime's 4 GiB Wasm address space.
 
-## Build locally
+Model cards contain training methods, data attribution, archived evaluation
+results, and limitations. These are text-only supervised LoRA adaptations.
 
-Install the root mise toolchain. Docker must be running because wllama builds
-llama.cpp with Emscripten in a pinned container.
+## Development
 
-```sh
-mise install
-mise run playground:dev
-```
+UI source, its lockfile, local development instructions, and deployed runtime
+live in the [Space repository](https://huggingface.co/spaces/yet-another-ai/jet-playground/tree/main).
 
-That builds the Wasm module, copies it to `docs/public/playground-runtime/`
-(including `ready.json`), and starts VitePress. To reuse an existing Wasm build
-with a plain docs server:
+Jet retains ownership of the Rust/Wasm build and llama.cpp patches. Run
+`mise run playground:wllama` to build a new runtime, or download the
+`playground-runtime` artifact from the standalone **Playground runtime** Actions
+workflow. See [runtime build notes](https://github.com/yet-another-ai/jet/blob/main/playground/README.md).
 
-```sh
-mise run playground:prepare
-mise exec -- pnpm docs:dev
-```
-
-Without a Wasm build, `pnpm docs:build` still succeeds and the playground page
-shows an in-app stub. CI sets `JET_DOCS_REQUIRE_PLAYGROUND=1` so the docs
-workflow fails if the module is missing.
-
-Emscripten bindings stay on-demand and gitignored. Regenerate them after changing
-the wrapper or vendored llama.cpp headers with `mise run playground:bindings`.
-
-See [playground/README.md](https://github.com/yet-another-ai/jet/blob/main/playground/README.md)
-for Wasm build notes.
+Documentation builds only require Node and pnpm; they do not build or bundle the
+playground runtime.

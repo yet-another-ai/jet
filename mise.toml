@@ -58,11 +58,6 @@ run = "sh scripts/generate-emscripten-bindings.sh"
 description = "Build Jet's browser decision pipeline"
 run = "sh scripts/build-jet-web.sh"
 
-[tasks."playground:prepare"]
-description = "Copy playground Wasm into docs/public/playground-runtime (writes ready.json)"
-run = "sh scripts/prepare-playground-runtime.sh"
-
-[tasks."playground:dev"]
-description = "Build playground Wasm and start VitePress with the runtime in docs/public"
-depends = ["playground:wllama", "playground:prepare"]
-run = "pnpm docs:dev"
+[tasks."playground:export"]
+description = "Export the generated runtime and provenance to a Space checkout"
+run = "node scripts/export-playground-runtime.mjs"

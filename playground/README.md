@@ -1,63 +1,47 @@
-# JET WebGPU playground runtime
+# Jet WebGPU runtime
 
-The interactive playground UI lives in the VitePress docs theme
-(`docs/.vitepress/theme/components/playground/`) and is served at
-[`/playground/`](https://jet.yetanother.ai/playground/) as part of the
-documentation site.
+The independent [Jet Playground Space](https://huggingface.co/spaces/yet-another-ai/jet-playground)
+owns the Vue UI, its frontend build, and the deployed runtime. Model artifacts
+live in the corresponding Hugging Face Model repositories. The documentation
+site links to the Space and builds without Wasm.
 
-This directory holds the **Wasm build pipeline** for that page: scripts clone a
-pinned wllama commit, apply Jet patches, and emit the Emscripten/WebGPU module
-under `playground/generated/wllama` (gitignored). The docs build copies that
-tree into `docs/public/playground-runtime/` so the page can load it.
+This directory remains the output location for Jet's **Wasm build pipeline**.
+Rust crates, vendored llama.cpp, and Jet's wllama/WebGPU patches are maintained
+here so browser and native scoring use the same implementation.
 
-## Build the Wasm module
+## Build
 
-Install the root mise toolchain. Docker must be running because wllama builds
-llama.cpp with Emscripten in a pinned container.
-
-```sh
-mise install
-mise run playground:dev
-```
-
-That builds Wasm, copies it to `docs/public/playground-runtime/` (with
-`ready.json`), and starts VitePress. Or prepare an existing build and serve docs:
+Install the root mise toolchain and start Docker. Run:
 
 ```sh
 mise run playground:wllama
-mise run playground:prepare
-mise exec -- pnpm docs:dev
 ```
 
-Production-style docs build (copies the runtime when present):
+The script clones a pinned wllama revision, applies Jet patches, generates
+Emscripten memory32 bindings on demand, and emits the complete runtime into
+`playground/generated/wllama/` (gitignored). Bindings can also be regenerated
+with `mise run playground:bindings`.
+
+The standalone **Playground runtime** Actions workflow builds the same runtime
+and retains the `playground-runtime` artifact for 14 days. CI runs it separately
+from the documentation build and requires it in Gate.
+
+## Update the Space
+
+Clone the Space using SSH:
 
 ```sh
-mise run playground:wllama
-mise exec -- pnpm docs:build
-mise exec -- pnpm docs:preview
+git clone git@hf.co:spaces/yet-another-ai/jet-playground
 ```
 
-Without a Wasm build, `pnpm docs:build` still succeeds; the playground page shows
-an in-app stub. CI sets `JET_DOCS_REQUIRE_PLAYGROUND=1` so the Documentation
-workflow fails if the module is missing.
-
-## Bindings
-
-`jet-llama-sys` uses bindings generated for Emscripten's memory32 ABI when
-`webgpu` and `external-link` are enabled. Bindings are generated on demand and
-are not tracked. Regenerate after changing the wrapper or vendored llama.cpp
-headers:
+From Jet, export the complete generated tree and provenance into that checkout:
 
 ```sh
-mise run playground:bindings
+mise exec -- node scripts/export-playground-runtime.mjs ../jet-playground
 ```
 
-## Cross-origin isolation
-
-The Wasm module needs `SharedArrayBuffer` (atomics / imported memory). Locally,
-VitePress sends COOP/COEP headers. On GitHub Pages, the playground page loads
-`/playground/coi-serviceworker.js` (scoped to `/playground/`) to patch those
-headers.
-
-See the [user guide](https://jet.yetanother.ai/guide/playground) for browser
-requirements and the decision pipeline overview.
+In the Space checkout run `npm ci`, `npm run build`, and `npm run dev`.
+Verify model download and a complete decision in a supported browser, then
+commit the source and generated static files, then push the Space. Its static
+SDK serves the prebuilt files directly, without hosted build credits.
+COOP/COEP headers are configured in the Space README and local Vite server.

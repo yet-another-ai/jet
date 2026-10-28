@@ -73,24 +73,6 @@ body {
   background: var(--vp-c-bg) !important;
 }
 
-.jet-playground .VPNavBar::before {
-  background-color: color-mix(in srgb, var(--vp-c-bg) 62%, transparent);
-  backdrop-filter: blur(18px) saturate(1.4);
-}
-
-.jet-playground .VPNavBar .divider-line {
-  background-color: transparent;
-}
-
-.jet-playground .VPContent {
-  padding: 0 !important;
-}
-
-.jet-playground .VPPage {
-  padding: 0 !important;
-  max-width: none !important;
-}
-
 @media (prefers-reduced-motion: reduce) {
   html {
     transition: none;

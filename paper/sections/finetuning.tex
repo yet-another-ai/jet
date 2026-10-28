@@ -21,7 +21,11 @@ evaluation questions are excluded. MMLU is not used for training or model
 selection, although these checks cannot rule out paraphrases or pretraining
 contamination. The completed adapter is unchanged for the new inference
 evaluation; full training settings and export provenance are retained in the
-repository.
+repository.\footnote{Open model releases include LoRA adapters, merged weights,
+Q8\_0 GGUF files, training/export provenance, and SHA-256 checksums:
+Qwen3.5-4B, \url{https://huggingface.co/yet-another-ai/Jet-Qwen3.5-4B};
+companion Qwen3.5-0.8B,
+\url{https://huggingface.co/yet-another-ai/Jet-Qwen3.5-0.8B}.}
 
 \subsection{Matched-Protocol Evaluation}
 Both deployed artifacts use Q8\_0 quantization and the same 14,042 MMLU

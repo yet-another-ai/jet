@@ -4,7 +4,7 @@ Jet makes local decisions with a language model. Give it some context and a fixe
 
 Jet runs on CPU by default. Optional CUDA, Metal, and Vulkan backends can offload inference to a local GPU. With the `vision` feature and a compatible model, it can also answer questions about images.
 
-The [WebGPU playground](https://jet.yetanother.ai/playground/) runs the full decision pipeline in a compatible browser (Vue + a patched wllama/WebGPU runtime) as a page of the documentation site.
+The [WebGPU playground](https://huggingface.co/spaces/yet-another-ai/jet-playground) runs the full decision pipeline in your browser using Jet Qwen3.5 0.8B and a patched wllama/WebGPU runtime. [0.8B](https://huggingface.co/yet-another-ai/Jet-Qwen3.5-0.8B) and [4B](https://huggingface.co/yet-another-ai/Jet-Qwen3.5-4B) model releases are hosted on Hugging Face.
 
 ## What you can do
 
@@ -100,7 +100,7 @@ Some models expose a supported reasoning protocol. `--thinking auto --thinking-t
 - [Documentation website](https://jet.yetanother.ai/)
 - [Getting started](https://jet.yetanother.ai/guide/getting-started)
 - [Build, GPU backends, CLI options, and multimodal usage](docs/advanced.md)
-- [WebGPU playground](https://jet.yetanother.ai/playground/) ([guide](docs/guide/playground.md), [developer notes](playground/README.md))
+- [WebGPU playground](https://huggingface.co/spaces/yet-another-ai/jet-playground) ([guide](docs/guide/playground.md), [developer notes](playground/README.md))
 - [HTTP server](docs/guide/http-server.md)
 - [Rust API crates](crates/jet-engine/src/lib.rs)
 - [Accuracy evaluation](tests/accuracy/README.md)

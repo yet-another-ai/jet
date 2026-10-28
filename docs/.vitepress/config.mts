@@ -2,11 +2,6 @@ import { defineConfig } from 'vitepress'
 
 const repository = 'https://github.com/yet-another-ai/jet'
 
-const isolationHeaders = {
-  'Cross-Origin-Embedder-Policy': 'require-corp',
-  'Cross-Origin-Opener-Policy': 'same-origin'
-}
-
 export default defineConfig({
   title: 'Jet',
   titleTemplate: ':title · Jet',
@@ -27,24 +22,10 @@ export default defineConfig({
     }],
     ['meta', { name: 'twitter:card', content: 'summary' }]
   ],
-  vite: {
-    // COOP/COEP enable SharedArrayBuffer for the playground Wasm runtime during
-    // local docs:dev / docs:preview. GitHub Pages uses coi-serviceworker under
-    // /playground/ instead (see ensure-coi.ts).
-    server: {
-      fs: {
-        allow: ['..']
-      },
-      headers: isolationHeaders
-    },
-    preview: {
-      headers: isolationHeaders
-    }
-  },
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
-      { text: 'Playground', link: '/playground/' },
+      { text: 'Playground', link: 'https://huggingface.co/spaces/yet-another-ai/jet-playground' },
       { text: 'Results', link: '/results' },
       { text: 'Advanced', link: '/advanced' },
       { text: 'Get Jet', link: '/#get-jet' },
