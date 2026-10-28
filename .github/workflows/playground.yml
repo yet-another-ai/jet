@@ -1,0 +1,85 @@
+name: Playground runtime
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playground-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  playground:
+    name: Playground Wasm
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && github.token || '' }}
+        with:
+          version: 2026.10.0
+          add_shims_to_path: false
+          install_args: --locked node pnpm cmake
+          github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
+          cache_key_prefix: jet-mise-docs-playground-v1
+      - name: Install Rust nightly for Wasm
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-emscripten
+          components: rust-src
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.20
+      - name: Identify playground cache inputs
+        id: playground-cache-meta
+        shell: bash
+        run: |
+          # Exact key covers every rebuild input. Intermediate-only caches may
+          # restore across key prefixes; the Wasm build always runs so a partial
+          # hit cannot publish stale playground/generated output.
+          echo "llama=$(git rev-parse HEAD:vendor/llama.cpp)" >> "$GITHUB_OUTPUT"
+          echo "key=jet-playground-wasm-v2-${{ runner.os }}-${{ runner.arch }}-emsdk-4.0.20-$(git rev-parse HEAD:vendor/llama.cpp)-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'mise.lock', 'scripts/build-wllama-playground.sh', 'scripts/write-playground-runtime-manifest.mjs', 'scripts/generate-emscripten-bindings.sh', 'scripts/build-jet-web.sh', 'patches/**', 'crates/jet-web/**', 'crates/jet-engine/**', 'crates/jet-llama-sys/**', 'crates/jet-core/**', 'crates/jet-decision/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore playground build cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            target/wasm32-unknown-emscripten
+            target/wllama-playground-src
+            target/emscripten-4.0.20-sysroot
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+          key: ${{ steps.playground-cache-meta.outputs.key }}
+          restore-keys: |
+            jet-playground-wasm-v2-${{ runner.os }}-${{ runner.arch }}-emsdk-4.0.20-${{ steps.playground-cache-meta.outputs.llama }}-
+            jet-playground-wasm-v2-${{ runner.os }}-${{ runner.arch }}-emsdk-4.0.20-
+      - name: Build playground Wasm module
+        run: mise run playground:wllama
+      - name: Upload playground runtime
+        uses: actions/upload-artifact@v7
+        with:
+          name: playground-runtime
+          path: playground/generated/wllama
+          retention-days: 14
+      - name: Save playground build cache
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            target/wasm32-unknown-emscripten
+            target/wllama-playground-src
+            target/emscripten-4.0.20-sysroot
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+          key: ${{ steps.playground-cache-meta.outputs.key }}

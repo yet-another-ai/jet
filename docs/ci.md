@@ -5,7 +5,7 @@ description: Jet's CPU test, package, dependency, permission, and cache policies
 
 # Continuous integration
 
-CI uses separate reusable Test, Build, and Documentation workflows, with one final
+CI uses separate reusable Test, Build, Documentation, and Playground runtime workflows, with one final
 aggregate `Gate` in the entry workflow. Protect `main` with that single required
 check (`Gate` under the `CI` workflow). It runs on every pull request, main push,
 or manual dispatch. The reusable workflows also accept `workflow_dispatch` so a
@@ -36,27 +36,22 @@ settings are changed by the workflow.
 
 ## Documentation
 
-The Documentation workflow has two jobs:
+The Documentation workflow installs locked Node/pnpm dependencies, builds
+VitePress, and uploads a GitHub Pages artifact. It does not compile or bundle
+Wasm. The `/playground/` page preserves the old entry URL with a link to the
+independent [Hugging Face Space](https://huggingface.co/spaces/yet-another-ai/jet-playground).
+A successful main-branch Gate deploys the documentation artifact to GitHub Pages.
 
-1. **Playground Wasm** always builds the Emscripten/WebGPU module (Docker + nightly
-   Rust + Emscripten 4.0.20) into `playground/generated/wllama`. Generated bindings
-   stay on-demand and are not committed. Trusted runs cache only intermediate build
-   inputs (Cargo/Emscripten sysroot trees), keyed on source and toolchain hashes;
-   the final `playground/generated` tree is never restored as a skip-the-build
-   artifact. Pull requests may restore that intermediate cache.
-2. **VitePress** installs the locked Node and pnpm tools, copies the Wasm runtime
-   into `docs/public/playground-runtime/`, builds the docs site (including the
-   `/playground/` page), and uploads the static tree as a GitHub Pages artifact.
+The separate **Playground runtime** workflow builds the Emscripten/WebGPU
+module (Docker + nightly Rust + Emscripten 4.0.20) into
+`playground/generated/wllama`. Bindings stay on-demand. Trusted runs cache only
+intermediate Cargo/Emscripten inputs, keyed on source and toolchain hashes;
+pull requests can restore these caches. The final runtime is always built and
+uploaded as `playground-runtime`, retained for 14 days. Gate requires this
+workflow as well as Test, Build and Documentation.
 
-Pull requests must pass this build. A successful main-branch Gate deploys the same
-artifact to GitHub Pages. GitHub Pages cannot set COOP/COEP headers; the playground
-page registers a scoped `coi-serviceworker` under `/playground/` so
-`SharedArrayBuffer` works in production. Local `docs:dev` / `docs:preview` send
-those headers from Vite instead.
-
-Locally, `pnpm docs:build` (`scripts/build-docs.sh`) copies the runtime when
-`playground/generated/wllama` exists; otherwise the playground page shows an
-in-app stub unless `JET_DOCS_REQUIRE_PLAYGROUND=1`.
+Space deployment is maintained in its own repository. A tested runtime can be
+exported with `scripts/export-playground-runtime.mjs` and pushed via SSH.
 
 ## Packaging
 

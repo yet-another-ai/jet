@@ -113,3 +113,16 @@ and compatibility details.
 | Implementation and review rules | `agents/docs/engineering-standards.md` |
 | Durable decision rationale | `agents/docs/adr/` when a maintainer requests a record |
 | CI matrix, caches, Gate | `docs/ci.md` |
+
+## Hugging Face releases and browser application
+
+The Jet repository owns Rust/native/Wasm scoring, training tooling, and the
+documentation site. Model releases (merged weights, adapters, GGUF, provenance
+and evaluation reports) live in `yet-another-ai/Jet-Qwen3.5-0.8B` and
+`yet-another-ai/Jet-Qwen3.5-4B` on Hugging Face.
+
+`yet-another-ai/jet-playground` is an independent static Space with Vue UI source
+and a pinned browser model. It consumes Jet's patched Wasm runtime, built here
+and exported with `scripts/export-playground-runtime.mjs`. The app calls the
+original Rust decision engine; it must not duplicate candidate scoring in JS.
+The documentation site links to the Space and has no Wasm build dependency.
